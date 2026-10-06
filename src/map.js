@@ -1119,6 +1119,41 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   drawMuster(ctx, g, time, p.muster || 0);
   if (p.stallHour === hour) drawStall(ctx, g, time);
   if (feastLive(p, hour)) drawFeast(ctx, g, time);
+  if (p.vein) drawVein(ctx, g, time, p.vein);
+}
+
+function drawVein(ctx, g, time, kind) {
+  const x = g.x - g.r * 0.74;
+  const y = g.y + g.r * 0.22;
+  if (kind === "spring") {
+    ctx.fillStyle = "#6e8f9a";
+    ctx.beginPath();
+    ctx.ellipse(x, y, 9, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(243, 230, 200, 0.75)";
+    ctx.beginPath();
+    ctx.ellipse(x - 1, y - 1 + Math.sin(time * 3) * 0.6, 3, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  if (kind === "iron") {
+    ctx.fillStyle = "#3a2a22";
+    ctx.beginPath();
+    ctx.moveTo(x - 9, y + 5);
+    ctx.lineTo(x, y - 9);
+    ctx.lineTo(x + 9, y + 5);
+    ctx.fill();
+    ctx.fillStyle = "#a14a3c";
+    ctx.fillRect(x - 2, y - 1, 3, 3);
+    return;
+  }
+  ctx.fillStyle = "#efe6d6";
+  ctx.beginPath();
+  ctx.ellipse(x, y, 10, 4.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f3e6c8";
+  ctx.fillRect(x - 4, y - 7, 2, 4);
+  ctx.fillRect(x + 2, y - 8, 2, 5);
 }
 
 function drawBountyMark(ctx, g, time) {

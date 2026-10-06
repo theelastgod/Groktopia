@@ -590,6 +590,57 @@ test("a bounty needs a scout, pays the taker, and returns if it expires", () => 
   assert.ok(seat.gold >= held + 200);
 });
 
+test("prospecting strikes a vein and a spring feeds the fields", () => {
+  const w = newWorld({ seed: 33 });
+  const you = byId(w, "you");
+  const purse = you.utopia;
+  const gold = you.gold;
+  const struck = applyAction(w, "you", { type: "prospect" });
+  assert.equal(struck.ok, true);
+  assert.ok(["salt", "iron", "spring"].includes(you.vein));
+  assert.equal(you.veinUntil, 8);
+  assert.equal(you.gold, gold - 180);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.vein, EARN.vein);
+  assert.equal(you.utopia, purse + EARN.vein);
+  assert.equal(applyAction(w, "you", { type: "prospect" }).ok, false);
+  const poor = newWorld({ seed: 34 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "prospect" }).ok, false);
+
+  const wet = newWorld({ seed: 35 });
+  const dry = newWorld({ seed: 35 });
+  for (const realm of [wet, dry]) {
+    const seat = byId(realm, "you");
+    seat.peasants = 100;
+    seat.grain = 0;
+    seat.buildings.field = 10;
+    seat.buildings.workshop = 0;
+    realm.provinces = [seat];
+  }
+  const quiet = byId(dry, "you");
+  const bare = offense(quiet);
+  quiet.vein = "iron";
+  quiet.veinUntil = 8;
+  assert.ok(offense(quiet) > bare);
+  quiet.vein = "";
+  byId(wet, "you").vein = "spring";
+  byId(wet, "you").veinUntil = 8;
+  advanceHour(wet);
+  advanceHour(dry);
+  assert.ok(byId(wet, "you").grain > byId(dry, "you").grain);
+
+  const aged = newWorld({ seed: 36 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 7;
+  seat.vein = "salt";
+  seat.veinUntil = 8;
+  advanceHour(aged);
+  assert.equal(aged.hour, 8);
+  assert.equal(seat.vein, "");
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

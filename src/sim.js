@@ -26,6 +26,7 @@ export const EARN = {
   stall: 28,
   feast: 30,
   bounty: 40,
+  vein: 34,
 };
 
 export const FACTIONS = {
@@ -235,6 +236,8 @@ export function blankProvince(partial) {
     musterUntil: 0,
     stallHour: -1,
     feastUntil: 0,
+    vein: "",
+    veinUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -358,7 +361,8 @@ export function offense(p) {
   const oath = p.studies && p.studies.oath ? 1.05 : 1;
   const levy = p.doctrine === "levy" ? 1.05 : 1;
   const ash = p.relics && p.relics.barrow ? 1.04 : 1;
-  return Math.floor((p.soldiers * 3 + (p.muster || 0) * 2 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash);
+  const seam = p.vein === "iron" ? 1.04 : 1;
+  return Math.floor((p.soldiers * 3 + (p.muster || 0) * 2 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash * seam);
 }
 
 export function defense(p) {
@@ -512,6 +516,7 @@ export const AMBITIONS = [
   { id: "stall", name: "Open the stall", purse: 35, blurb: "Sell grain at the stall.", match: (action) => action.type === "stall" && action.mode !== "buy" },
   { id: "feast", name: "Set the table", purse: 35, blurb: "Call a feast.", match: (action) => action.type === "feast" },
   { id: "bounty", name: "Post a price", purse: 40, blurb: "Put a bounty on a camp.", match: (action) => action.type === "bounty" },
+  { id: "vein", name: "Strike a vein", purse: 35, blurb: "Prospect the acres.", match: (action) => action.type === "prospect" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -553,6 +558,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "stall") result = doStall(world, actor, action.mode);
   else if (action.type === "feast") result = doFeast(world, actor);
   else if (action.type === "bounty") result = doBounty(world, actor, action.target);
+  else if (action.type === "prospect") result = doProspect(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -962,6 +968,41 @@ function expireBounties(world) {
   }
 }
 
+export const VEINS = {
+  salt: { name: "Salt Pan", line: "Workshops take 6% more gold." },
+  iron: { name: "Iron Seam", line: "The host hits 4% harder." },
+  spring: { name: "Sweet Spring", line: "Fields yield 6% more grain." },
+};
+
+function settleVein(p, hour) {
+  if (!p || !p.vein) return;
+  if (typeof p.veinUntil === "number" && p.veinUntil > (hour || 0)) return;
+  p.vein = "";
+  p.veinUntil = 0;
+}
+
+function doProspect(world, actor) {
+  if (actor.vein && actor.veinUntil > (world.hour || 0)) return fail(`The ${VEINS[actor.vein].name} already holds through hour ${actor.veinUntil - 1}.`);
+  settleVein(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 180) return fail("Prospecting wants 180 gold.");
+  const kinds = Object.keys(VEINS);
+  const kind = kinds[Math.floor(world.rng.next() * kinds.length)];
+  actor.gold -= 180;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.vein = kind;
+  actor.veinUntil = (world.hour || 0) + 8;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.vein;
+    notePurse(actor, "vein", EARN.vein);
+    purse = ` Purse +${formatUtopia(EARN.vein)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} strikes a ${VEINS[kind].name} through hour ${actor.veinUntil - 1}. ${VEINS[kind].line}${purse}`);
+  return { ok: true, message: `${VEINS[kind].name}. ${VEINS[kind].line}${purse}` };
+}
+
 function doFeast(world, actor) {
   if (feastLive(actor, world.hour)) return fail(`The tables are already set through hour ${actor.feastUntil - 1}.`);
   if (actor.orders < 1) return fail("No orders left this hour.");
@@ -1275,6 +1316,8 @@ function economy(p, hour) {
   goldIn = Math.floor(goldIn * season.gold);
   foodIn = Math.floor(foodIn * season.food);
   if (feastLive(p, hour)) goldIn = Math.floor(goldIn * 1.05);
+  if (p.vein === "salt") goldIn = Math.floor(goldIn * 1.06);
+  if (p.vein === "spring") foodIn = Math.floor(foodIn * 1.06);
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -1321,6 +1364,7 @@ export function advanceHour(world) {
   const prevSeason = seasonName(world.hour);
   world.hour += 1;
   for (const p of world.provinces) settleMuster(p, world.hour);
+  for (const p of world.provinces) settleVein(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -1431,6 +1475,7 @@ export function chooseAction(world, agent) {
     return trainBias(agent) || buildIf(agent, "den");
   }
   if (agent.persona === "brine") {
+    if (!agent.vein && agent.gold >= 800 && agent.orders >= 1 && rng.next() < 0.14) return { type: "prospect" };
     const quote = stallQuote(world.hour);
     if (agent.grain >= quote.grain + quote.keep + 800 && agent.orders >= 1 && rng.next() < 0.28) {
       return { type: "stall", mode: "sell" };
