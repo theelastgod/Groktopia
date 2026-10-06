@@ -546,9 +546,24 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
       ctx.fill();
     }
     const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
+    if (march.kind === "trade") {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.fillStyle = "#8a5a32";
+      ctx.fillRect(-8, -4, 14, 8);
+      ctx.fillStyle = "#e2c078";
+      ctx.fillRect(4, -7, 7, 7);
+      ctx.fillStyle = "#24180f";
+      ctx.beginPath();
+      ctx.arc(-4, 5, 2.2, 0, Math.PI * 2);
+      ctx.arc(6, 5, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     const nx = Math.cos(ang + Math.PI / 2);
     const ny = Math.sin(ang + Math.PI / 2);
-    for (let i = 0; i < 5; i++) {
+    if (march.kind !== "trade") for (let i = 0; i < 5; i++) {
       const ox = nx * ((i - 2) * 4);
       const oy = ny * ((i - 2) * 4);
       ctx.fillStyle = i === 2 ? "#f0d7a4" : "#6a3030";
@@ -556,12 +571,14 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
       ctx.arc(x - Math.cos(ang) * i * 5 + ox, y - Math.sin(ang) * i * 5 + oy, i === 2 ? 3.2 : 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.fillStyle = "#e2c078";
-    ctx.beginPath();
-    ctx.moveTo(x + Math.cos(ang) * 2, y + Math.sin(ang) * 2 - 12);
-    ctx.lineTo(x + 9, y - 8);
-    ctx.lineTo(x, y - 5);
-    ctx.fill();
+    if (march.kind !== "trade") {
+      ctx.fillStyle = "#e2c078";
+      ctx.beginPath();
+      ctx.moveTo(x + Math.cos(ang) * 2, y + Math.sin(ang) * 2 - 12);
+      ctx.lineTo(x + 9, y - 8);
+      ctx.lineTo(x, y - 5);
+      ctx.fill();
+    }
     ctx.strokeStyle = "rgba(246, 231, 193, 0.7)";
     ctx.setLineDash([4, 5]);
     ctx.lineDashOffset = -time * 12;

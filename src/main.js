@@ -135,7 +135,7 @@ function act(action, sound) {
 }
 
 function needsMarch(action) {
-  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.spell === "meteor");
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.spell === "meteor");
 }
 
 function order(action, sound) {
@@ -145,7 +145,7 @@ function order(action, sound) {
     if (fromP && target) {
       const from = provinceGeom(fromP);
       const to = provinceGeom(target);
-      march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action: null, sound };
+      march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action: null, sound, kind: action.type === "trade" ? "trade" : "host" };
       bed("battle");
     }
   }
@@ -449,12 +449,13 @@ function cardFor(actor, selected) {
       <button class="btn danger" type="button" data-march="seize">Seize</button>
       <button class="btn danger" type="button" data-march="sack">Sack</button>
       <button class="btn danger" type="button" data-march="raze">Raze</button>
+      ${fresh ? `<button class="btn primary" type="button" data-trade="1">Caravan · 200g</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
       <button class="btn" type="button" data-thief="pilfer">Pilfer</button>
       <button class="btn" type="button" data-thief="arson">Arson</button>
       <button class="btn" type="button" data-spell="meteor">Meteor</button>
     </div>
-    <p class="muted">The party crosses the map, then the hour's order resolves. ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
+    <p class="muted">The party crosses the map, then the hour's order resolves. ${fresh ? "A caravan needs this scout and pays inside the fair band, up to the hour's combat cap." : "Scout the camp before a caravan can roll."} ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
 }
 
 function wonderButtons(actor) {
@@ -491,6 +492,7 @@ function ledgerLine(actor) {
     ["stakes", book.stake],
     ["placement", book.place],
     ["wonders", book.wonder],
+    ["caravans", book.trade],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -715,6 +717,10 @@ app.addEventListener("click", async (event) => {
     order({ type: "spell", spell: node.dataset.spell, target: selectedId }, "spell");
     return;
   }
+  if (node.dataset.trade) {
+    order({ type: "trade", target: selectedId }, "coin");
+    return;
+  }
   if (node.dataset.thief) {
     order({ type: "thief", op: node.dataset.thief, target: selectedId }, "spell");
     return;
@@ -823,7 +829,7 @@ function connectSocket(next) {
       if (from && to) {
         const a = provinceGeom(from);
         const b = provinceGeom(to);
-        march = { ax: a.x, ay: a.y, bx: b.x, by: b.y, t: 0, action: null };
+        march = { ax: a.x, ay: a.y, bx: b.x, by: b.y, t: 0, action: null, kind: msg.kind || "host" };
         play("march");
       }
       return;

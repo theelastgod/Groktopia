@@ -173,6 +173,19 @@ test("a wonder pays once and hides until the builder is scouted", () => {
   assert.equal(kept.wonders.mill, "you");
 });
 
+test("a caravan needs a scout and pays inside the fair band", () => {
+  const w = newWorld({ seed: 13 });
+  const you = byId(w, "you");
+  assert.equal(applyAction(w, "you", { type: "trade", target: "harrow" }).ok, false);
+  you.intel.harrow = { hour: w.hour, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  const before = you.utopia;
+  const res = applyAction(w, "you", { type: "trade", target: "harrow" });
+  assert.equal(res.ok, true);
+  assert.ok(you.utopia > before);
+  assert.ok(you.ledger.trade > 0);
+  assert.ok(you.ledger.trade <= EARN.trade);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

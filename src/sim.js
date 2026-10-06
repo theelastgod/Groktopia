@@ -14,6 +14,7 @@ export const EARN = {
   pilfer: 80,
   pvpFee: 0.05,
   minStake: 100,
+  trade: 60,
   settle: 40,
   charter: 70,
   ledger: 15,
@@ -412,13 +413,13 @@ function casualties(p, frac, rng) {
   p.elites = hit(p.elites);
 }
 
-function grantEarn(actor, base, scale) {
+function grantEarn(actor, base, scale, bucket = "combat") {
   if (scale <= 0) return 0;
   const want = Math.floor(base * scale);
   const got = Math.max(0, Math.min(actor.earnLeft, want));
   actor.utopia += got;
   actor.earnLeft -= got;
-  notePurse(actor, "combat", got);
+  notePurse(actor, bucket, got);
   return got;
 }
 
@@ -445,6 +446,7 @@ export function applyAction(world, actorId, action) {
   if (action.type === "study") return doStudy(world, actor, action.study);
   if (action.type === "doctrine") return doDoctrine(world, actor, action.doctrine);
   if (action.type === "wonder") return doWonder(world, actor, action.wonder);
+  if (action.type === "trade") return doTrade(world, actor, action.target);
   if (action.type === "attack") return doAttack(world, actor, action);
   if (action.type === "spell") return doSpell(world, actor, action);
   if (action.type === "thief") return doThief(world, actor, action);
@@ -597,6 +599,24 @@ function doWonder(world, actor, id) {
   }
   log(world, `${actor.name} raises the ${spec.name}.${purse}`);
   return { ok: true, message: `${spec.name} raised.${purse}` };
+}
+
+function doTrade(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  if (!intelFresh(actor, target.id, world.hour)) return fail("Scout the road before a caravan rolls.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 200) return fail("A caravan wants 200 gold.");
+  const scale = nwFactor(actor, target);
+  actor.gold -= 200;
+  actor.orders -= 1;
+  actor.acted = true;
+  const haul = 90 + Math.floor(Math.min(actor.land, target.land) * 0.35);
+  actor.gold += haul;
+  const earned = grantEarn(actor, EARN.trade, scale, "trade");
+  const purse = earned ? ` Purse +${formatUtopia(earned)} $UTOPIA.` : " Outside the fair band, so the purse stays shut.";
+  log(world, `${actor.name} rolls a caravan to ${target.name} and brings back ${haul} gold.${purse}`);
+  return { ok: true, message: `Caravan returned ${haul} gold.${purse}` };
 }
 
 function onCooldown(actor, target, hour) {
