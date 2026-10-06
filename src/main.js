@@ -41,11 +41,22 @@ let mint = { symbol: "UTOPIA", mint: "", decimals: 6, cluster: "mainnet-beta" };
 let audioReady = false;
 let mounted = false;
 let cam = { x: 0, y: 0, z: 1 };
+let goal = { x: 0, y: 0, z: 1 };
 let march = null;
 let dragging = null;
+let hoverId = null;
+let pointer = null;
+let motes = [];
+let seenLog = "";
+let keys = {};
+let windowBound = false;
 let raf = 0;
 let lastFrame = 0;
 const clips = {};
+
+function clampZoom(z) {
+  return Math.max(0.35, Math.min(2.8, z));
+}
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -163,6 +174,7 @@ function shell() {
       <div class="hud-chip" id="hud-hour"></div>
       <div class="hud-chip"><b id="clock">2:00:00</b><span id="clock-note">age clock</span></div>
       <div class="hud-chip" id="hud-purse"></div>
+      <button class="btn" id="home" type="button">My acres</button>
       <button class="btn" id="fit" type="button">Whole realm</button>
       <button class="btn" id="sound" type="button">${soundOn ? "Sound on" : "Sound off"}</button>
     </header>
@@ -189,16 +201,20 @@ function render() {
     const canvas = document.querySelector("#realm");
     resize();
     const home = provinceGeom(seat());
-    cam = { x: home.x, y: home.y, z: 1.05 };
+    cam = { x: home.x, y: home.y, z: 1.15 };
+    goal = { ...cam };
     bindMap(canvas);
     lastFrame = performance.now();
     const loop = (now) => {
       const dt = Math.min(0.05, (now - lastFrame) / 1000);
       lastFrame = now;
       if (march) {
-        march.t += dt / 0.7;
+        march.t += dt / 1.15;
         if (march.t >= 1) march = null;
       }
+      stepCamera(dt);
+      stepMotes(dt);
+      watchLog();
       const clock = document.querySelector("#clock");
       const noteEl = document.querySelector("#clock-note");
       if (clock) {
@@ -215,21 +231,93 @@ function render() {
   draw();
 }
 
+function pixelRatio() {
+  return Math.min(2, window.devicePixelRatio || 1);
+}
+
 function resize() {
   const canvas = document.querySelector("#realm");
   if (!canvas) return;
-  canvas.width = canvas.clientWidth;
-  canvas.height = canvas.clientHeight;
+  const dpr = pixelRatio();
+  const w = Math.max(1, canvas.clientWidth);
+  const h = Math.max(1, canvas.clientHeight);
+  const bw = Math.floor(w * dpr);
+  const bh = Math.floor(h * dpr);
+  if (canvas.width !== bw || canvas.height !== bh) {
+    canvas.width = bw;
+    canvas.height = bh;
+  }
 }
 
 function draw() {
   const canvas = document.querySelector("#realm");
   if (!canvas || !world) return;
-  if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) resize();
+  const dpr = pixelRatio();
+  const w = Math.max(1, canvas.clientWidth);
+  const h = Math.max(1, canvas.clientHeight);
+  if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) resize();
   const ctx = canvas.getContext("2d");
-  drawRealm(ctx, canvas.width, canvas.height, world, seat().id, selectedId, cam, march);
+  drawRealm(ctx, w, h, world, seat().id, selectedId, cam, march, performance.now() / 1000, hoverId, dpr, motes);
   const mini = document.querySelector("#mini");
   if (mini) drawMini(mini.getContext("2d"), mini.width, mini.height, world, seat().id, cam);
+}
+
+function stepCamera(dt) {
+  const canvas = document.querySelector("#realm");
+  if (!canvas || dragging) return;
+  let vx = 0;
+  let vy = 0;
+  if (keys.w || keys.arrowup) vy -= 1;
+  if (keys.s || keys.arrowdown) vy += 1;
+  if (keys.a || keys.arrowleft) vx -= 1;
+  if (keys.d || keys.arrowright) vx += 1;
+  if (pointer) {
+    const edge = 28;
+    if (pointer.x < edge) vx -= 1;
+    if (pointer.x > pointer.w - edge) vx += 1;
+    if (pointer.y < edge) vy -= 1;
+    if (pointer.y > pointer.h - edge) vy += 1;
+  }
+  if (vx || vy) {
+    const n = Math.hypot(vx, vy) || 1;
+    const speed = 340 / Math.max(0.45, cam.z);
+    goal.x += (vx / n) * speed * dt;
+    goal.y += (vy / n) * speed * dt;
+  }
+  if (keys.q) goal.z = clampZoom(goal.z * (1 - dt * 0.85));
+  if (keys.e) goal.z = clampZoom(goal.z * (1 + dt * 0.85));
+  const k = 1 - Math.exp(-6 * dt);
+  cam.x += (goal.x - cam.x) * k;
+  cam.y += (goal.y - cam.y) * k;
+  cam.z += (goal.z - cam.z) * k;
+}
+
+function stepMotes(dt) {
+  motes = motes.filter((mote) => {
+    mote.x += mote.vx * dt;
+    mote.y += mote.vy * dt;
+    mote.life -= dt * 0.65;
+    return mote.life > 0;
+  });
+}
+
+function burst(x, y, color) {
+  for (let i = 0; i < 16; i++) {
+    const ang = (i / 16) * Math.PI * 2;
+    const speed = 28 + (i % 5) * 10;
+    motes.push({ x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 1, color });
+  }
+}
+
+function watchLog() {
+  const line = world?.log?.[0]?.text || "";
+  if (line === seenLog) return;
+  const previous = seenLog;
+  seenLog = line;
+  if (!previous || !/seized|sacked|razed|meteor|burn|pilfer/i.test(line)) return;
+  const target = byId(world, selectedId) || seat();
+  const g = provinceGeom(target);
+  burst(g.x, g.y, /meteor|burn|razed/i.test(line) ? "#e07a68" : "#e2c078");
 }
 
 function paint() {
@@ -268,6 +356,16 @@ function paint() {
   }
 }
 
+function oddsLine(actor, selected) {
+  const fresh = intelFresh(actor, selected.id, world.hour);
+  if (!fresh) return "Scout to read the garrison. Keys 1, 2, and 3 send seize, sack, and raze.";
+  const off = offense(actor);
+  const def = defense(selected);
+  const ratio = off / Math.max(1, def);
+  const lean = ratio >= 1.25 ? "Your march looks favored." : ratio <= 0.8 ? "Their garrison looks heavier." : "The two hosts look close.";
+  return `${lean} ${off} offense against ${def} defense. Keys 1, 2, and 3 send seize, sack, and raze.`;
+}
+
 function cardFor(actor, selected) {
   const self = selected.id === actor.id;
   const fresh = intelFresh(actor, selected.id, world.hour);
@@ -278,7 +376,8 @@ function cardFor(actor, selected) {
     <p class="muted">${esc(selected.ruler)} · ${esc(f.name)} · ${selected.kind === "agent" ? "Grok agent" : "human"}</p>
     <p>${selected.line ? esc(selected.line) : ""}</p>
     <p class="muted">Land ${selected.land} · empty ${freeLand(selected)} · people ${population(selected)} · networth ${self || fresh ? networth(selected) : "—"}</p>
-    <p>Offense ${self ? offense(actor) : fresh ? fresh.offense : "—"} · defense ${knownDef}. ${esc(band)}</p>`;
+    <p>Offense ${self ? offense(actor) : fresh ? fresh.offense : "—"} · defense ${knownDef}. ${esc(band)}</p>
+    ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
     const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
       const cost = spec.cost(actor.buildings[key]);
@@ -300,7 +399,7 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
-      <p class="muted">Active hour pays ${formatUtopia(EARN.hourActive)} $UTOPIA after you act. Combat pay this hour can still reach ${formatUtopia(actor.earnLeft)}.</p>
+      <p class="muted">Active hour pays ${formatUtopia(EARN.hourActive)} $UTOPIA after you act. Combat pay this hour can still reach ${formatUtopia(actor.earnLeft)}. WASD pans the realm. Q and E zoom. Double-click a holding to center it.</p>
       ${earnStrip(actor)}`;
   }
   const stakeRow = selected.kind === "human"
@@ -335,47 +434,130 @@ function earnStrip(actor) {
     </div>`;
 }
 
+function focusHolding(id) {
+  const target = byId(world, id);
+  if (!target) return;
+  const g = provinceGeom(target);
+  goal.x = g.x;
+  goal.y = g.y;
+  goal.z = Math.max(goal.z, 1.25);
+}
+
+function marchMode(mode) {
+  if (!world || !selectedId || selectedId === seat().id) return;
+  readStake();
+  const target = byId(world, selectedId);
+  order({
+    type: "attack",
+    target: selectedId,
+    mode,
+    stake: target && target.kind === "human" ? stake : 0,
+  }, "march");
+}
+
 function bindMap(canvas) {
+  const track = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    pointer = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+      w: rect.width,
+      h: rect.height,
+    };
+    if (!world) return;
+    const worldPoint = screenToWorld(pointer.x, pointer.y, cam, rect.width, rect.height);
+    hoverId = hitProvince(world.provinces, worldPoint.x, worldPoint.y);
+    canvas.classList.toggle("pointing", Boolean(hoverId) && !dragging);
+  };
   canvas.addEventListener("pointerdown", (event) => {
     dragging = { id: event.pointerId, x: event.clientX, y: event.clientY, cx: cam.x, cy: cam.y, moved: false };
     canvas.setPointerCapture(event.pointerId);
+    canvas.classList.add("dragging");
   });
   canvas.addEventListener("pointermove", (event) => {
+    track(event);
     if (!dragging || dragging.id !== event.pointerId) return;
     const dx = event.clientX - dragging.x;
     const dy = event.clientY - dragging.y;
     if (Math.hypot(dx, dy) > 5) dragging.moved = true;
-    cam.x = dragging.cx - dx / cam.z;
-    cam.y = dragging.cy - dy / cam.z;
+    cam.x = goal.x = dragging.cx - dx / cam.z;
+    cam.y = goal.y = dragging.cy - dy / cam.z;
   });
   canvas.addEventListener("pointerup", (event) => {
     if (!dragging || dragging.id !== event.pointerId) return;
     const moved = dragging.moved;
     dragging = null;
-    if (moved) return;
+    canvas.classList.remove("dragging");
+    track(event);
+    if (moved || !world) return;
+    if (!hoverId) return;
+    selectedId = hoverId;
+    play("click");
+    bed(hoverId === seat().id ? "throne" : "battle");
+    paint();
+  });
+  canvas.addEventListener("pointerleave", () => {
+    pointer = null;
+    hoverId = null;
+    canvas.classList.remove("pointing");
+  });
+  canvas.addEventListener("dblclick", (event) => {
     const rect = canvas.getBoundingClientRect();
     const worldPoint = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
     const id = hitProvince(world.provinces, worldPoint.x, worldPoint.y);
-    if (!id) return;
-    selectedId = id;
-    play("click");
-    bed(id === seat().id ? "throne" : "battle");
-    paint();
+    if (id) focusHolding(id);
   });
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
     const rect = canvas.getBoundingClientRect();
     const before = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
-    const next = Math.max(0.35, Math.min(2.8, cam.z * (event.deltaY > 0 ? 0.92 : 1.08)));
-    cam.z = next;
+    const next = clampZoom(cam.z * (event.deltaY > 0 ? 0.92 : 1.08));
+    cam.z = goal.z = next;
     const after = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
-    cam.x += before.x - after.x;
-    cam.y += before.y - after.y;
+    cam.x = goal.x = cam.x + before.x - after.x;
+    cam.y = goal.y = cam.y + before.y - after.y;
   }, { passive: false });
-  window.addEventListener("resize", () => {
-    resize();
-    draw();
-  });
+  const mini = document.querySelector("#mini");
+  if (mini) {
+    mini.addEventListener("pointerdown", (event) => {
+      const rect = mini.getBoundingClientRect();
+      const sx = (event.clientX - rect.left) * (mini.width / rect.width);
+      const sy = (event.clientY - rect.top) * (mini.height / rect.height);
+      const scale = mini.width / 4800;
+      goal.x = (sx - mini.width / 2) / scale;
+      goal.y = (sy - mini.height / 2) / scale;
+    });
+  }
+  if (!windowBound) {
+    windowBound = true;
+    window.addEventListener("resize", () => {
+      resize();
+      draw();
+    });
+    window.addEventListener("keydown", (event) => {
+      const tag = event.target && event.target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const key = event.key.toLowerCase();
+      keys[key] = true;
+      if (!document.body.classList.contains("playing")) return;
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) event.preventDefault();
+      if (event.repeat) return;
+      if (event.key === "1") marchMode("seize");
+      if (event.key === "2") marchMode("sack");
+      if (event.key === "3") marchMode("raze");
+      if (key === "h") {
+        const home = world && provinceGeom(seat());
+        if (home) {
+          goal.x = home.x;
+          goal.y = home.y;
+          goal.z = 1.25;
+        }
+      }
+    });
+    window.addEventListener("keyup", (event) => {
+      keys[event.key.toLowerCase()] = false;
+    });
+  }
 }
 
 app.addEventListener("click", async (event) => {
@@ -396,9 +578,16 @@ app.addEventListener("click", async (event) => {
     return;
   }
   if (!world) return;
+  if (node.id === "home") {
+    const home = provinceGeom(seat());
+    goal.x = home.x;
+    goal.y = home.y;
+    goal.z = 1.25;
+    return;
+  }
   if (node.id === "fit") {
     const canvas = document.querySelector("#realm");
-    cam = fitCamera(world.provinces, canvas.clientWidth, canvas.clientHeight);
+    goal = fitCamera(world.provinces, canvas.clientWidth, canvas.clientHeight);
     return;
   }
   if (node.id === "sound") {
