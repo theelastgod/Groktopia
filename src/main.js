@@ -14,6 +14,7 @@ import {
   beaconLit,
   bountyOn,
   feastLive,
+  foldLive,
   leveeUp,
   roadLive,
   seasonName,
@@ -567,6 +568,7 @@ function cardFor(actor, selected) {
     ${(selected.smithUntil || 0) > world.hour ? `<p class="muted">The forge is banked through hour ${selected.smithUntil - 1}. Soldiers hit harder while the smoke rises.</p>` : ""}
     ${(selected.sealUntil || 0) > world.hour ? `<p class="muted">The grain bins are sealed through hour ${selected.sealUntil - 1}. A sack takes half the grain.</p>` : ""}
     ${leveeUp(selected, world.hour) ? `<p class="muted">A levee rings the holding through hour ${selected.leveeUntil - 1}. It takes one building blow, and the ditch waters the near fields.</p>` : ""}
+    ${foldLive(selected, world.hour) ? `<p class="muted">A flock of ${selected.fold} is penned through hour ${selected.foldUntil - 1}. Each hour the fold yields wool and milk. A sack scatters them.</p>` : ""}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -591,6 +593,8 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(foldLine(actor))}</p>
+      <div class="row">${foldButton(actor)}</div>
       <p class="muted">${esc(leveeLine(actor))}</p>
       <div class="row">${leveeButton(actor)}</div>
       <p class="muted">${esc(sealLine(actor))}</p>
@@ -708,6 +712,7 @@ function ledgerLine(actor) {
     ["seals", book.seal],
     ["levees", book.levee],
     ["roads", book.road],
+    ["folds", book.fold],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -754,6 +759,16 @@ function bountyLine(selected) {
   if (!row) return "";
   const who = byId(world, row.poster);
   return `A bounty of ${row.gold} gold sits through hour ${row.until - 1}, posted by ${who ? who.name : "someone"}. A winning seize or sack by anyone else collects it.`;
+}
+
+function foldLine(actor) {
+  if (foldLive(actor, world.hour)) return `The flock of ${actor.fold} stays penned through hour ${actor.foldUntil - 1}. Each hour adds 22 gold and 48 grain. A sack takes 90 grain more and drives them off.`;
+  return "Pen 28 sheep for 110 gold. For six hours the fold yields wool and milk. A sack scatters them. Key F calls the fold.";
+}
+
+function foldButton(actor) {
+  if (foldLive(actor, world.hour)) return `<button class="btn" type="button" disabled>Flock through hour ${actor.foldUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-fold="1">Pen the flock · 110g · +${formatUtopia(EARN.fold)}</button>`;
 }
 
 function leveeLine(actor) {
@@ -1022,6 +1037,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "s" && world) order({ type: "smith" }, "build");
       if (event.key.toLowerCase() === "y" && world) order({ type: "seal" }, "build");
       if (event.key.toLowerCase() === "l" && world) order({ type: "levee" }, "build");
+      if (event.key.toLowerCase() === "f" && world) order({ type: "fold" }, "build");
       if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
@@ -1137,6 +1153,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.levee) {
     order({ type: "levee" }, "build");
+    return;
+  }
+  if (node.dataset.fold) {
+    order({ type: "fold" }, "build");
     return;
   }
   if (node.dataset.road) {

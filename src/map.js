@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, bountyOn, captiveCount, feastLive, intelFresh, leveeUp, roadLive, seasonName } from "./sim.js";
+import { beaconLit, bountyOn, captiveCount, feastLive, foldLive, intelFresh, leveeUp, roadLive, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1123,6 +1123,33 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if ((p.smithUntil || 0) > (hour || 0)) drawSmith(ctx, g, time);
   if ((p.sealUntil || 0) > (hour || 0)) drawSeal(ctx, g);
   if (leveeUp(p, hour)) drawLevee(ctx, g, time);
+  if (foldLive(p, hour)) drawFold(ctx, g, time);
+}
+
+function drawFold(ctx, g, time) {
+  const x = g.x - g.r * 0.7;
+  const y = g.y + g.r * 0.38;
+  ctx.save();
+  ctx.strokeStyle = "#6a4a32";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x - 18, y - 12, 36, 24);
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y - 12);
+  ctx.lineTo(x - 12, y - 18);
+  ctx.lineTo(x + 18, y - 18);
+  ctx.lineTo(x + 18, y - 12);
+  ctx.stroke();
+  const spots = [[-8, 0], [0, -3], [8, 2], [-2, 6], [6, -7]];
+  spots.forEach((spot, i) => {
+    const bob = Math.sin(time * 2.2 + i) * 1.3;
+    ctx.fillStyle = i % 2 ? "#f7f1e4" : "#e7dcc4";
+    ctx.beginPath();
+    ctx.ellipse(x + spot[0], y + spot[1] + bob, 4.4, 2.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#2a241c";
+    ctx.fillRect(x + spot[0] + 3, y + spot[1] + bob - 1, 1.5, 1.5);
+  });
+  ctx.restore();
 }
 
 function drawLevee(ctx, g, time) {

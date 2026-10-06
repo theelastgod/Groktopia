@@ -32,6 +32,7 @@ export const EARN = {
   seal: 30,
   levee: 31,
   road: 36,
+  fold: 32,
 };
 
 export const FACTIONS = {
@@ -248,6 +249,8 @@ export function blankProvince(partial) {
     sealUntil: 0,
     leveeUntil: 0,
     roads: {},
+    fold: 0,
+    foldUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -535,6 +538,7 @@ export const AMBITIONS = [
   { id: "seal", name: "Seal the bins", purse: 35, blurb: "Seal the grain.", match: (action) => action.type === "seal" },
   { id: "levee", name: "Raise the bank", purse: 35, blurb: "Throw up a levee.", match: (action) => action.type === "levee" },
   { id: "road", name: "Lay a causeway", purse: 40, blurb: "Pave a road to a camp.", match: (action) => action.type === "road" },
+  { id: "fold", name: "Pen the flock", purse: 35, blurb: "Fold sheep on the acres.", match: (action) => action.type === "fold" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -582,6 +586,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "seal") result = doSeal(world, actor);
   else if (action.type === "levee") result = doLevee(world, actor);
   else if (action.type === "road") result = doRoad(world, actor, action.target);
+  else if (action.type === "fold") result = doFold(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1075,6 +1080,38 @@ function doLevee(world, actor) {
   return { ok: true, message: `Levee raised through hour ${actor.leveeUntil - 1}.${purse}` };
 }
 
+export function foldLive(p, hour) {
+  return Boolean(p && (p.foldUntil || 0) > (hour || 0) && (p.fold || 0) > 0);
+}
+
+function settleFold(p, hour) {
+  if (!p || !(p.foldUntil > 0)) return;
+  if (p.foldUntil > (hour || 0)) return;
+  p.foldUntil = 0;
+  p.fold = 0;
+}
+
+function doFold(world, actor) {
+  if (foldLive(actor, world.hour)) return fail(`The flock is already penned through hour ${actor.foldUntil - 1}.`);
+  settleFold(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 110) return fail("A fold wants 110 gold.");
+  if ((actor.peasants || 0) < 40) return fail("Need 40 peasants to mind the flock.");
+  actor.gold -= 110;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.fold = 28;
+  actor.foldUntil = (world.hour || 0) + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.fold;
+    notePurse(actor, "fold", EARN.fold);
+    purse = ` Purse +${formatUtopia(EARN.fold)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} pens 28 sheep through hour ${actor.foldUntil - 1}. The fold yields wool and milk. A sack scatters them.${purse}`);
+  return { ok: true, message: `Flock penned through hour ${actor.foldUntil - 1}.${purse}` };
+}
+
 function soakedHits(target, hour, hits) {
   if (!leveeUp(target, hour) || hits < 1) return hits;
   return Math.max(0, hits - 1);
@@ -1319,9 +1356,18 @@ function doAttack(world, actor, action) {
     if ((target.sealUntil || 0) > (world.hour || 0)) f = Math.floor(f / 2);
     target.gold -= g;
     target.grain -= f;
+    let scattered = "";
+    if (foldLive(target, world.hour)) {
+      const fleece = Math.min(target.grain, 90);
+      target.grain -= fleece;
+      f += fleece;
+      target.fold = 0;
+      target.foldUntil = 0;
+      scattered = " and scattered the flock";
+    }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -1503,6 +1549,10 @@ function economy(p, hour) {
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
+  if (foldLive(p, hour)) {
+    p.gold += 22;
+    p.grain += 48;
+  }
   if (p.grain < 0) {
     const die = Math.min(p.peasants, Math.max(1, Math.ceil(-p.grain / 4)));
     p.peasants -= die;
@@ -1551,6 +1601,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleSeal(p, world.hour);
   for (const p of world.provinces) settleLevee(p, world.hour);
   for (const p of world.provinces) settleRoads(p, world.hour);
+  for (const p of world.provinces) settleFold(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -1692,6 +1743,9 @@ export function chooseAction(world, agent) {
     }
     if (!leveeUp(agent, world.hour) && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "levee" };
+    }
+    if (!foldLive(agent, world.hour) && agent.peasants >= 80 && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) {
+      return { type: "fold" };
     }
     const hungry = world.provinces.find((p) => p.id !== agent.id && p.grain < foodNeed(p) && !(agent.reliefs && agent.reliefs[p.id] > (world.hour || 0)));
     if (hungry && agent.grain >= 1200 && agent.orders >= 1 && rng.next() < 0.22) return { type: "relief", target: hungry.id };

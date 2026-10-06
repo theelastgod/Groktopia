@@ -30,6 +30,7 @@ import {
   bountyOn,
   leveeUp,
   roadLive,
+  foldLive,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -863,6 +864,79 @@ test("a causeway needs a scout and makes the caravan haul heavier", () => {
   advanceHour(aged);
   assert.equal(aged.hour, 8);
   assert.equal(left.roads.harrow, undefined);
+});
+
+test("a fold yields wool and milk until a sack scatters it", () => {
+  const w = newWorld({ seed: 57 });
+  const you = byId(w, "you");
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "fold" }).ok, true);
+  assert.equal(you.gold, gold - 110);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.fold, 28);
+  assert.equal(you.foldUntil, 6);
+  assert.equal(foldLive(you, w.hour), true);
+  assert.equal(you.ledger.fold, EARN.fold);
+  assert.equal(you.utopia, purse + EARN.fold);
+  assert.equal(applyAction(w, "you", { type: "fold" }).ok, false);
+  const poor = newWorld({ seed: 58 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "fold" }).ok, false);
+  const thin = newWorld({ seed: 59 });
+  byId(thin, "you").peasants = 12;
+  assert.equal(applyAction(thin, "you", { type: "fold" }).ok, false);
+
+  function tick(withFold) {
+    const realm = newWorld({ seed: 60 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    seat.grain = 50000;
+    seat.gold = 8000;
+    if (withFold) {
+      seat.fold = 28;
+      seat.foldUntil = 6;
+    }
+    const grain = seat.grain;
+    const purseGold = seat.gold;
+    advanceHour(realm);
+    return { grain: seat.grain - grain, gold: seat.gold - purseGold };
+  }
+  const open = tick(false);
+  const penned = tick(true);
+  assert.equal(penned.grain, open.grain + 48);
+  assert.equal(penned.gold, open.gold + 22);
+
+  const bare = newWorld({ seed: 61 });
+  const folded = newWorld({ seed: 61 });
+  for (const realm of [bare, folded]) {
+    const camp = byId(realm, "harrow");
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+    camp.grain = 10000;
+  }
+  byId(folded, "harrow").fold = 28;
+  byId(folded, "harrow").foldUntil = 6;
+  const bareBefore = byId(bare, "harrow").grain;
+  const foldedBefore = byId(folded, "harrow").grain;
+  assert.equal(applyAction(bare, "you", { type: "attack", target: "harrow", mode: "sack" }).win, true);
+  assert.equal(applyAction(folded, "you", { type: "attack", target: "harrow", mode: "sack" }).win, true);
+  const bareLost = bareBefore - byId(bare, "harrow").grain;
+  const foldedLost = foldedBefore - byId(folded, "harrow").grain;
+  assert.equal(foldedLost, bareLost + 90);
+  assert.equal(foldLive(byId(folded, "harrow"), folded.hour), false);
+
+  const aged = newWorld({ seed: 62 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 5;
+  seat.fold = 28;
+  seat.foldUntil = 6;
+  advanceHour(aged);
+  assert.equal(aged.hour, 6);
+  assert.equal(seat.fold, 0);
+  assert.equal(seat.foldUntil, 0);
 });
 
 test("save and load keep the hour and the random stream", () => {
