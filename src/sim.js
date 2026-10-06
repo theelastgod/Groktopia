@@ -31,6 +31,7 @@ export const EARN = {
   smith: 33,
   seal: 30,
   levee: 31,
+  road: 36,
 };
 
 export const FACTIONS = {
@@ -246,6 +247,7 @@ export function blankProvince(partial) {
     smithUntil: 0,
     sealUntil: 0,
     leveeUntil: 0,
+    roads: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -258,6 +260,7 @@ export function blankProvince(partial) {
   p.demands = { ...(partial && partial.demands ? partial.demands : {}) };
   p.pens = { ...(partial && partial.pens ? partial.pens : {}) };
   p.reliefs = { ...(partial && partial.reliefs ? partial.reliefs : {}) };
+  p.roads = { ...(partial && partial.roads ? partial.roads : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -531,6 +534,7 @@ export const AMBITIONS = [
   { id: "smith", name: "Bank the forge", purse: 35, blurb: "Arm the host at the smith.", match: (action) => action.type === "smith" },
   { id: "seal", name: "Seal the bins", purse: 35, blurb: "Seal the grain.", match: (action) => action.type === "seal" },
   { id: "levee", name: "Raise the bank", purse: 35, blurb: "Throw up a levee.", match: (action) => action.type === "levee" },
+  { id: "road", name: "Lay a causeway", purse: 40, blurb: "Pave a road to a camp.", match: (action) => action.type === "road" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -577,6 +581,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "smith") result = doSmith(world, actor);
   else if (action.type === "seal") result = doSeal(world, actor);
   else if (action.type === "levee") result = doLevee(world, actor);
+  else if (action.type === "road") result = doRoad(world, actor, action.target);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -744,6 +749,7 @@ function doTrade(world, actor, targetId) {
   actor.acted = true;
   let haul = 90 + Math.floor(Math.min(actor.land, target.land) * 0.35);
   if (pactLive(actor, target.id, world.hour)) haul = Math.floor(haul * 1.3);
+  if (roadLive(actor, target.id, world.hour)) haul = Math.floor(haul * 1.25);
   actor.gold += haul;
   const earned = grantEarn(actor, EARN.trade, scale, "trade");
   const purse = earned ? ` Purse +${formatUtopia(earned)} $UTOPIA.` : " Outside the fair band, so the purse stays shut.";
@@ -754,6 +760,11 @@ function doTrade(world, actor, targetId) {
 function pactLive(actor, id, hour) {
   const until = actor && actor.pacts && actor.pacts[id];
   return typeof until === "number" && hour <= until;
+}
+
+export function roadLive(actor, id, hour) {
+  const until = actor && actor.roads && actor.roads[id];
+  return typeof until === "number" && until > (hour || 0);
 }
 
 function doEnvoy(world, actor, targetId) {
@@ -779,6 +790,36 @@ function doEnvoy(world, actor, targetId) {
   }
   log(world, `${actor.name} binds a pact with ${target.name} through hour ${until}.${purse}`);
   return { ok: true, message: `Pact holds through hour ${until}.${purse}` };
+}
+
+function doRoad(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  if (actor.kind !== "agent" && !intelFresh(actor, target.id, world.hour)) return fail("Scout the ground before you lay stone.");
+  if (roadLive(actor, target.id, world.hour)) return fail(`That causeway already holds through hour ${actor.roads[target.id] - 1}.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 220) return fail("A causeway wants 220 gold.");
+  actor.gold -= 220;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.roads = actor.roads || {};
+  actor.roads[target.id] = (world.hour || 0) + 8;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.road;
+    notePurse(actor, "road", EARN.road);
+    purse = ` Purse +${formatUtopia(EARN.road)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} lays a causeway to ${target.name} through hour ${actor.roads[target.id] - 1}. Caravans on that road haul more.${purse}`);
+  return { ok: true, message: `Causeway laid through hour ${actor.roads[target.id] - 1}.${purse}` };
+}
+
+function settleRoads(p, hour) {
+  if (!p || !p.roads) return;
+  for (const id of Object.keys(p.roads)) {
+    if (p.roads[id] > (hour || 0)) continue;
+    delete p.roads[id];
+  }
 }
 
 function doClear(world, actor, siteId) {
@@ -1256,6 +1297,10 @@ function doAttack(world, actor, action) {
   actor.acted = true;
   actor.cooldown[target.id] = world.hour;
   target.grudge = actor.id;
+  if (roadLive(actor, target.id, world.hour)) {
+    delete actor.roads[target.id];
+    log(world, `${actor.name} tears up the causeway toward ${target.name}.`);
+  }
 
   let detail = "";
   if (win && mode === "seize") {
@@ -1505,6 +1550,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleSmith(p, world.hour);
   for (const p of world.provinces) settleSeal(p, world.hour);
   for (const p of world.provinces) settleLevee(p, world.hour);
+  for (const p of world.provinces) settleRoads(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -1620,6 +1666,12 @@ export function chooseAction(world, agent) {
   if (agent.persona === "brine") {
     if (!agent.vein && agent.gold >= 800 && agent.orders >= 1 && rng.next() < 0.14) return { type: "prospect" };
     if (!(agent.sealUntil > world.hour) && agent.grain >= 4000 && agent.gold >= 200 && agent.orders >= 1 && rng.next() < 0.12) return { type: "seal" };
+    if (agent.gold >= 1400 && agent.orders >= 1 && rng.next() < 0.1) {
+      const paved = world.provinces
+        .filter((p) => p.id !== agent.id && !roadLive(agent, p.id, world.hour))
+        .sort((a, b) => b.land - a.land)[0];
+      if (paved) return { type: "road", target: paved.id };
+    }
     const quote = stallQuote(world.hour);
     if (agent.grain >= quote.grain + quote.keep + 800 && agent.orders >= 1 && rng.next() < 0.28) {
       return { type: "stall", mode: "sell" };

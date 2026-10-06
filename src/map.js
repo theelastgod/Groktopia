@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, bountyOn, captiveCount, feastLive, intelFresh, leveeUp, seasonName } from "./sim.js";
+import { beaconLit, bountyOn, captiveCount, feastLive, intelFresh, leveeUp, roadLive, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1540,12 +1540,46 @@ function drawPacts(ctx, world, seatId, time) {
   ctx.restore();
 }
 
+function drawCauseways(ctx, world) {
+  const hour = world.hour || 0;
+  ctx.save();
+  for (const from of world.provinces) {
+    for (const [id, until] of Object.entries(from.roads || {})) {
+      if (!roadLive({ roads: { [id]: until } }, id, hour)) continue;
+      const other = world.provinces.find((row) => row.id === id);
+      if (!other) continue;
+      const a = provinceGeom(from);
+      const b = provinceGeom(other);
+      ctx.strokeStyle = "#8d734c";
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.strokeStyle = "#e6d3ae";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      for (let i = 1; i <= 3; i++) {
+        const t = i / 4;
+        const x = a.x + (b.x - a.x) * t;
+        const y = a.y + (b.y - a.y) * t;
+        ctx.fillStyle = "#5c4632";
+        ctx.fillRect(x - 2, y - 7, 4, 14);
+        ctx.fillStyle = "#f3e6c8";
+        ctx.fillRect(x - 1, y - 9, 2, 3);
+      }
+    }
+  }
+  ctx.restore();
+}
+
 const MARCH_INK = {
   envoy: "#f3e6c8",
   clear: "#d7c4a3",
   tribute: "#f0d7a4",
   bounty: "#e2c078",
   relief: "#d7c4a3",
+  road: "#c4b08a",
   ransom: "#e2c078",
   release: "#f3e6c8",
   trade: "#e2c078",
@@ -1570,8 +1604,8 @@ function drawMarch(ctx, march, time) {
   const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
   const nx = Math.cos(ang + Math.PI / 2);
   const ny = Math.sin(ang + Math.PI / 2);
-  const count = kind === "thief" || kind === "envoy" || kind === "bounty" ? 2 : kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "release" || kind === "relief" ? 4 : 7;
-  const role = kind === "thief" ? "thief" : kind === "bounty" || kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "relief" ? "hauler" : kind === "release" ? "farmer" : kind === "meteor" ? "mystic" : "soldier";
+  const count = kind === "thief" || kind === "envoy" || kind === "bounty" ? 2 : kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "release" || kind === "relief" || kind === "road" ? 4 : 7;
+  const role = kind === "thief" ? "thief" : kind === "bounty" || kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "relief" || kind === "road" ? "hauler" : kind === "release" ? "farmer" : kind === "meteor" ? "mystic" : "soldier";
   for (let i = count - 1; i >= 0; i--) {
     const t = march.t - i * 0.035;
     if (t <= 0.01) continue;
@@ -1624,7 +1658,7 @@ function drawMarch(ctx, march, time) {
   ctx.font = "700 11px Palatino, Georgia, serif";
   ctx.fillStyle = color;
   ctx.textAlign = "center";
-  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE", bounty: "BOUNTY", relief: "RELIEF" }[kind] || "MARCH";
+  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE", bounty: "BOUNTY", relief: "RELIEF", road: "CAUSEWAY" }[kind] || "MARCH";
   ctx.fillText(title, lead.x, lead.y - 18);
 }
 
@@ -1643,6 +1677,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   drawRoads(ctx, geoms);
   drawSites(ctx, world);
   drawPacts(ctx, world, seatId, time);
+  drawCauseways(ctx, world);
   for (const g of geoms) {
     const p = world.provinces.find((row) => row.id === g.id);
     ctx.fillStyle = "rgba(0,0,0,0.22)";

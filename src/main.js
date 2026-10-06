@@ -15,6 +15,7 @@ import {
   bountyOn,
   feastLive,
   leveeUp,
+  roadLive,
   seasonName,
   seasonMod,
   stallQuote,
@@ -149,7 +150,7 @@ function act(action, sound) {
 }
 
 function needsMarch(action) {
-  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.type === "bounty" || action.type === "relief" || action.spell === "meteor");
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.type === "bounty" || action.type === "relief" || action.type === "road" || action.spell === "meteor");
 }
 
 function marchKind(action) {
@@ -159,6 +160,7 @@ function marchKind(action) {
   if (action.type === "release") return "release";
   if (action.type === "bounty") return "bounty";
   if (action.type === "relief") return "relief";
+  if (action.type === "road") return "road";
   if (action.type === "envoy") return "envoy";
   if (action.type === "thief") return "thief";
   if (action.spell === "meteor") return "meteor";
@@ -565,6 +567,7 @@ function cardFor(actor, selected) {
     ${(selected.smithUntil || 0) > world.hour ? `<p class="muted">The forge is banked through hour ${selected.smithUntil - 1}. Soldiers hit harder while the smoke rises.</p>` : ""}
     ${(selected.sealUntil || 0) > world.hour ? `<p class="muted">The grain bins are sealed through hour ${selected.sealUntil - 1}. A sack takes half the grain.</p>` : ""}
     ${leveeUp(selected, world.hour) ? `<p class="muted">A levee rings the holding through hour ${selected.leveeUntil - 1}. It takes one building blow, and the ditch waters the near fields.</p>` : ""}
+    ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
     const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
@@ -635,6 +638,8 @@ function cardFor(actor, selected) {
       ${fresh ? `<button class="btn" type="button" data-tribute="1">Demand tribute</button>` : ""}
       ${fresh && !bountyOn(world, selected.id, world.hour) ? `<button class="btn" type="button" data-bounty="1">Post bounty · 200g</button>` : ""}
       ${fresh ? `<button class="btn" type="button" data-relief="1">Relief · 360 grain</button>` : ""}
+      ${fresh && roadLive(actor, selected.id, world.hour) ? `<button class="btn" type="button" disabled>Causeway through hour ${actor.roads[selected.id] - 1}</button>` : ""}
+      ${fresh && !roadLive(actor, selected.id, world.hour) ? `<button class="btn primary" type="button" data-road="1">Causeway · 220g · +${formatUtopia(EARN.road)}</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn primary" type="button" data-ransom="1">Ransom ${actor.pens[selected.id]}</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn" type="button" data-release="1">Release ${actor.pens[selected.id]}</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
@@ -643,7 +648,7 @@ function cardFor(actor, selected) {
       <button class="btn" type="button" data-spell="meteor">Meteor</button>
     </div>
     ${bountyOn(world, selected.id, world.hour) ? `<p class="muted">${esc(bountyLine(selected))}</p>` : ""}
-    <p class="muted">Watch the party cross the map. The order resolves as they step off. ${fresh ? "A caravan needs this scout and pays inside the fair band, up to the hour's combat cap." : "Scout the camp before a caravan can roll."} ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
+    <p class="muted">Watch the party cross the map. The order resolves as they step off. ${fresh ? "A caravan needs this scout and pays inside the fair band, up to the hour's combat cap. A causeway makes that haul a quarter heavier for eight hours." : "Scout the camp before a caravan can roll."} ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
 }
 
 function wonderButtons(actor) {
@@ -702,6 +707,7 @@ function ledgerLine(actor) {
     ["smith", book.smith],
     ["seals", book.seal],
     ["levees", book.levee],
+    ["roads", book.road],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1016,6 +1022,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "s" && world) order({ type: "smith" }, "build");
       if (event.key.toLowerCase() === "y" && world) order({ type: "seal" }, "build");
       if (event.key.toLowerCase() === "l" && world) order({ type: "levee" }, "build");
+      if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
       if (event.key === "4" && world) {
@@ -1130,6 +1137,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.levee) {
     order({ type: "levee" }, "build");
+    return;
+  }
+  if (node.dataset.road) {
+    order({ type: "road", target: selectedId }, "build");
     return;
   }
   if (node.dataset.doctrine) {

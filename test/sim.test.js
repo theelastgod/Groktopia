@@ -29,6 +29,7 @@ import {
   feastLive,
   bountyOn,
   leveeUp,
+  roadLive,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -808,6 +809,60 @@ test("a levee soaks one raze and waters the fields", () => {
   assert.equal(aged.hour, 6);
   assert.equal(seat.leveeUntil, 0);
   assert.equal(leveeUp(seat, aged.hour), false);
+});
+
+test("a causeway needs a scout and makes the caravan haul heavier", () => {
+  const w = newWorld({ seed: 52 });
+  const you = byId(w, "you");
+  assert.equal(applyAction(w, "you", { type: "road", target: "harrow" }).ok, false);
+  you.intel.harrow = { hour: w.hour, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "road", target: "harrow" }).ok, true);
+  assert.equal(you.gold, gold - 220);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.roads.harrow, 8);
+  assert.equal(roadLive(you, "harrow", w.hour), true);
+  assert.equal(you.ledger.road, EARN.road);
+  assert.equal(you.utopia, purse + EARN.road);
+  assert.equal(applyAction(w, "you", { type: "road", target: "harrow" }).ok, false);
+  const poor = newWorld({ seed: 53 });
+  const broke = byId(poor, "you");
+  broke.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  broke.gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "road", target: "harrow" }).ok, false);
+
+  function netHaul(withRoad) {
+    const realm = newWorld({ seed: 54 });
+    const seat = byId(realm, "you");
+    seat.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+    if (withRoad) seat.roads.harrow = 8;
+    const before = seat.gold;
+    assert.equal(applyAction(realm, "you", { type: "trade", target: "harrow" }).ok, true);
+    return seat.gold - before + 200;
+  }
+  const openHaul = netHaul(false);
+  const pavedHaul = netHaul(true);
+  assert.ok(openHaul > 0);
+  assert.equal(pavedHaul, Math.floor(openHaul * 1.25));
+
+  const march = newWorld({ seed: 55 });
+  const seat = byId(march, "you");
+  seat.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  seat.roads.harrow = 8;
+  seat.soldiers = 400;
+  assert.equal(applyAction(march, "you", { type: "attack", target: "harrow", mode: "seize" }).ok, true);
+  assert.equal(seat.roads.harrow, undefined);
+  assert.equal(roadLive(seat, "harrow", march.hour), false);
+
+  const aged = newWorld({ seed: 56 });
+  const left = byId(aged, "you");
+  aged.provinces = [left];
+  aged.hour = 7;
+  left.roads = { harrow: 8 };
+  advanceHour(aged);
+  assert.equal(aged.hour, 8);
+  assert.equal(left.roads.harrow, undefined);
 });
 
 test("save and load keep the hour and the random stream", () => {
