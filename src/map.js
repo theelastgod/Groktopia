@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, intelFresh, seasonName } from "./sim.js";
+import { beaconLit, captiveCount, intelFresh, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -857,6 +857,22 @@ function drawHoldings(ctx, p, g, time, known, hour) {
     ctx.globalAlpha = 1;
   }
   if (beaconLit(p, hour)) drawBeaconFire(ctx, g, time);
+  drawPen(ctx, g, time, captiveCount(p));
+}
+
+function drawPen(ctx, g, time, n) {
+  if (!n) return;
+  const count = Math.min(5, n);
+  const x0 = g.x - 6;
+  const y0 = g.y + g.r * 0.78;
+  ctx.fillStyle = "rgba(92, 70, 50, 0.35)";
+  ctx.fillRect(x0 - 10, y0 - 8, 34, 18);
+  ctx.strokeStyle = "#5c4632";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(x0 - 10, y0 - 8, 34, 18);
+  for (let i = 0; i < count; i++) {
+    drawFolk(ctx, x0 + (i % 3) * 8, y0 - 1 + Math.floor(i / 3) * 7, -Math.PI / 2, time * 0.2 + i, "farmer");
+  }
 }
 
 function drawBeaconFire(ctx, g, time) {
@@ -1086,6 +1102,8 @@ const MARCH_INK = {
   envoy: "#f3e6c8",
   clear: "#d7c4a3",
   tribute: "#f0d7a4",
+  ransom: "#e2c078",
+  release: "#f3e6c8",
   trade: "#e2c078",
   seize: "#e07a68",
   sack: "#e2c078",
@@ -1108,8 +1126,8 @@ function drawMarch(ctx, march, time) {
   const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
   const nx = Math.cos(ang + Math.PI / 2);
   const ny = Math.sin(ang + Math.PI / 2);
-  const count = kind === "thief" || kind === "envoy" ? 2 : kind === "trade" || kind === "tribute" ? 4 : 7;
-  const role = kind === "thief" ? "thief" : kind === "trade" || kind === "tribute" ? "hauler" : kind === "meteor" ? "mystic" : "soldier";
+  const count = kind === "thief" || kind === "envoy" ? 2 : kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "release" ? 4 : 7;
+  const role = kind === "thief" ? "thief" : kind === "trade" || kind === "tribute" || kind === "ransom" ? "hauler" : kind === "release" ? "farmer" : kind === "meteor" ? "mystic" : "soldier";
   for (let i = count - 1; i >= 0; i--) {
     const t = march.t - i * 0.035;
     if (t <= 0.01) continue;
@@ -1162,7 +1180,7 @@ function drawMarch(ctx, march, time) {
   ctx.font = "700 11px Palatino, Georgia, serif";
   ctx.fillStyle = color;
   ctx.textAlign = "center";
-  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE" }[kind] || "MARCH";
+  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE" }[kind] || "MARCH";
   ctx.fillText(title, lead.x, lead.y - 18);
 }
 

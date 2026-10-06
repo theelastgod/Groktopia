@@ -21,6 +21,7 @@ export const EARN = {
   ledger: 15,
   tribute: 45,
   beacon: 32,
+  ransom: 50,
 };
 
 export const FACTIONS = {
@@ -225,6 +226,7 @@ export function blankProvince(partial) {
     relics: {},
     demands: {},
     beaconUntil: 0,
+    pens: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -235,6 +237,7 @@ export function blankProvince(partial) {
   p.pacts = { ...(partial && partial.pacts ? partial.pacts : {}) };
   p.relics = { ...(partial && partial.relics ? partial.relics : {}) };
   p.demands = { ...(partial && partial.demands ? partial.demands : {}) };
+  p.pens = { ...(partial && partial.pens ? partial.pens : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -494,6 +497,7 @@ export const AMBITIONS = [
   { id: "host", name: "Drill the host", purse: 35, blurb: "Train soldiers.", match: (action) => action.type === "train" && action.unit === "soldier" },
   { id: "caravan", name: "Roll a caravan", purse: 45, blurb: "Send a caravan.", match: (action) => action.type === "trade" },
   { id: "beacon", name: "Light the watch", purse: 40, blurb: "Raise a watch fire.", match: (action) => action.type === "beacon" },
+  { id: "ransom", name: "Ransom the pen", purse: 45, blurb: "Send penned people home for gold.", match: (action) => action.type === "ransom" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -529,6 +533,8 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "clear") result = doClear(world, actor, action.site);
   else if (action.type === "tribute") result = doTribute(world, actor, action.target);
   else if (action.type === "beacon") result = doBeacon(world, actor);
+  else if (action.type === "ransom") result = doRansom(world, actor, action.target);
+  else if (action.type === "release") result = doRelease(world, actor, action.target);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -807,6 +813,83 @@ function doBeacon(world, actor) {
   return { ok: true, message: `Watch fire lit. ${sweep.seen} camps in the light.${purse}` };
 }
 
+export function captiveCount(p) {
+  if (!p) return 0;
+  const penned = Object.values(p.pens || {}).reduce((sum, n) => sum + (n || 0), 0);
+  if (penned > 0) return penned;
+  return p.held || 0;
+}
+
+function takeCaptives(actor, target) {
+  const spare = Math.max(0, (target.peasants || 0) - 12);
+  const n = Math.min(spare, Math.floor((target.peasants || 0) * 0.04));
+  if (n < 1) return 0;
+  target.peasants -= n;
+  actor.pens = actor.pens || {};
+  actor.pens[target.id] = (actor.pens[target.id] || 0) + n;
+  return n;
+}
+
+function shedCaptives(p, n) {
+  let left = n;
+  const pens = p.pens || {};
+  for (const id of Object.keys(pens)) {
+    if (left <= 0) break;
+    const take = Math.min(pens[id], left);
+    pens[id] -= take;
+    left -= take;
+    if (pens[id] <= 0) delete pens[id];
+  }
+}
+
+function feedCaptives(p) {
+  const held = Object.values(p.pens || {}).reduce((sum, n) => sum + (n || 0), 0);
+  if (held < 1) return;
+  const grain = Math.max(0, p.grain || 0);
+  if (grain >= held) {
+    p.grain = grain - held;
+    return;
+  }
+  shedCaptives(p, held - grain);
+  p.grain = 0;
+}
+
+function doRansom(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  const n = (actor.pens && actor.pens[target.id]) || 0;
+  if (n < 1) return fail("You hold none of their people.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const price = Math.min(target.gold, n * 28);
+  if (price < 20) return fail("They cannot pay. Release the pen, or wait for their gold.");
+  actor.orders -= 1;
+  actor.acted = true;
+  target.gold -= price;
+  actor.gold += price;
+  target.peasants += n;
+  delete actor.pens[target.id];
+  const scale = nwFactor(actor, target);
+  const earned = actor.kind === "human" ? grantEarn(actor, EARN.ransom, scale, "ransom") : 0;
+  const purse = earned ? ` Purse +${formatUtopia(earned)} $UTOPIA.` : " Outside the fair band, so the purse stays shut.";
+  log(world, `${actor.name} ransoms ${n} people back to ${target.name} for ${price} gold.${purse}`);
+  return { ok: true, message: `Ransom of ${price} gold for ${n}.${purse}` };
+}
+
+function doRelease(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  const n = (actor.pens && actor.pens[target.id]) || 0;
+  if (n < 1) return fail("You hold none of their people.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  actor.orders -= 1;
+  actor.acted = true;
+  target.peasants += n;
+  delete actor.pens[target.id];
+  if (target.grudge === actor.id) target.grudge = null;
+  log(world, `${actor.name} releases ${n} people back to ${target.name}.`);
+  return { ok: true, message: `Released ${n}.` };
+}
+
 function onCooldown(actor, target, hour) {
   const last = actor.cooldown[target.id];
   return last != null && hour - last < COOLDOWN;
@@ -855,6 +938,8 @@ function doAttack(world, actor, action) {
     target.peasants -= folk;
     actor.peasants += folk;
     detail = `seized ${moved} acres`;
+    const penned = takeCaptives(actor, target);
+    if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "sack") {
     const g = Math.floor(target.gold * 0.14 * Math.max(scale, 0.35));
     const f = Math.floor(target.grain * 0.14 * Math.max(scale, 0.35));
@@ -863,6 +948,8 @@ function doAttack(world, actor, action) {
     actor.gold += g;
     actor.grain += f;
     detail = `sacked ${g} gold and ${f} grain`;
+    const penned = takeCaptives(actor, target);
+    if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
     const hits = Math.max(1, Math.floor(buildingCount(target) * 0.06 * Math.max(scale, 0.35)));
     let n = 0;
@@ -1037,6 +1124,7 @@ function economy(p, hour) {
     p.peasants -= die;
     p.grain = 0;
   }
+  feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
   const cap = p.buildings.hearth * 16;
@@ -1124,6 +1212,12 @@ function nearestOpenSite(world, agent) {
 
 export function chooseAction(world, agent) {
   const rng = world.rng;
+  const penned = Object.entries(agent.pens || {}).find((row) => row[1] > 0);
+  if (penned && agent.orders >= 1) {
+    const held = byId(world, penned[0]);
+    if (held && held.gold >= 20) return { type: "ransom", target: held.id };
+    if (held) return { type: "release", target: held.id };
+  }
   if ((agent.persona === "sable" || agent.persona === "moss") && !beaconLit(agent, world.hour) && agent.orders >= 1 && agent.gold >= 160 && agent.grain >= 80 && rng.next() < 0.2) {
     return { type: "beacon" };
   }
@@ -1403,6 +1497,7 @@ export function redact(world, seatId) {
     province.intel = {};
     province.cooldown = {};
     province.ledger = {};
+    province.held = captiveCount(province);
     if (!known) {
       hiddenNames.push(province.name);
       province.soldiers = 0;
@@ -1420,6 +1515,7 @@ export function redact(world, seatId) {
       province.pacts = {};
       province.relics = {};
       province.demands = {};
+      province.pens = {};
       province.name = "Unscouted";
       province.ruler = "Unknown";
       province.line = "A camp in the wild. Send a thief to scout it.";

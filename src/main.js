@@ -144,12 +144,14 @@ function act(action, sound) {
 }
 
 function needsMarch(action) {
-  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.spell === "meteor");
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.spell === "meteor");
 }
 
 function marchKind(action) {
   if (action.type === "trade") return "trade";
   if (action.type === "tribute") return "tribute";
+  if (action.type === "ransom") return "ransom";
+  if (action.type === "release") return "release";
   if (action.type === "envoy") return "envoy";
   if (action.type === "thief") return "thief";
   if (action.spell === "meteor") return "meteor";
@@ -574,6 +576,7 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(penLine(actor))}</p>
       <p class="muted">${esc(beaconLine(actor))}</p>
       <div class="row">${beaconButton(actor)}</div>
       <p class="muted">${esc(relicLine(actor))}</p>
@@ -604,6 +607,8 @@ function cardFor(actor, selected) {
       ${fresh && !pactOpen(actor, selected.id) ? `<button class="btn primary" type="button" data-pact="1">Envoy · 120g</button>` : ""}
       ${fresh ? `<button class="btn primary" type="button" data-trade="1">Caravan · 200g</button>` : ""}
       ${fresh ? `<button class="btn" type="button" data-tribute="1">Demand tribute</button>` : ""}
+      ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn primary" type="button" data-ransom="1">Ransom ${actor.pens[selected.id]}</button>` : ""}
+      ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn" type="button" data-release="1">Release ${actor.pens[selected.id]}</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
       <button class="btn" type="button" data-thief="pilfer">Pilfer</button>
       <button class="btn" type="button" data-thief="arson">Arson</button>
@@ -658,6 +663,7 @@ function ledgerLine(actor) {
     ["relics", book.relic],
     ["tribute", book.tribute],
     ["watch", book.beacon],
+    ["ransoms", book.ransom],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -697,6 +703,14 @@ function marchMode(mode) {
 function worldPointFrom(event, canvas) {
   const rect = canvas.getBoundingClientRect();
   return screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+}
+
+function penLine(actor) {
+  const rows = Object.entries(actor.pens || {}).filter((row) => row[1] > 0);
+  if (!rows.length) return "A winning seize or sack pens some of their people. Ransom them for gold, or release them. Each one eats a grain an hour.";
+  const names = rows.map(([id, n]) => `${n} from ${byId(world, id)?.name || "a camp"}`).join(", ");
+  const eat = rows.reduce((sum, row) => sum + row[1], 0);
+  return `Pens: ${names}. They eat ${eat} grain an hour. Select their camp to ransom or release them.`;
 }
 
 function beaconLine(actor) {
@@ -871,6 +885,7 @@ function bindMap(canvas) {
       if (event.key === "2") marchMode("sack");
       if (event.key === "3") marchMode("raze");
       if (event.key === "5" && world) order({ type: "beacon" }, "spell");
+      if (event.key === "6" && world && selectedId && seat().pens && seat().pens[selectedId]) order({ type: "ransom", target: selectedId }, "coin");
       if (event.key === "4" && world) {
         const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
         if (next) order({ type: "study", study: next.id }, "build");
@@ -996,6 +1011,14 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.tribute) {
     order({ type: "tribute", target: selectedId }, "coin");
+    return;
+  }
+  if (node.dataset.ransom) {
+    order({ type: "ransom", target: selectedId }, "coin");
+    return;
+  }
+  if (node.dataset.release) {
+    order({ type: "release", target: selectedId }, "click");
     return;
   }
   if (node.dataset.thief) {

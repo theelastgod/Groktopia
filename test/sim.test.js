@@ -22,6 +22,7 @@ import {
   serialize,
   studyCount,
   beaconLit,
+  captiveCount,
   intelFresh,
 } from "../src/sim.js";
 
@@ -354,6 +355,63 @@ test("a watch fire scouts in range, chains one hop, and dulls a pilfer", () => {
   advanceHour(refresh);
   assert.equal(refresh.hour, 1);
   assert.ok(intelFresh(home, "harrow", refresh.hour));
+});
+
+test("a winning sack pens people and a ransom sends them home", () => {
+  const w = newWorld({ seed: 24 });
+  const you = byId(w, "you");
+  const harrow = byId(w, "harrow");
+  harrow.soldiers = 10;
+  harrow.elites = 0;
+  harrow.buildings.keep = 0;
+  const folk = harrow.peasants;
+  const sack = applyAction(w, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(sack.ok, true);
+  assert.equal(sack.win, true);
+  const n = you.pens.harrow;
+  assert.ok(n >= 1);
+  assert.equal(harrow.peasants, folk - n);
+  you.orders = ORDERS;
+  const purse = you.utopia;
+  const theirGold = harrow.gold;
+  const paid = applyAction(w, "you", { type: "ransom", target: "harrow" });
+  assert.equal(paid.ok, true);
+  assert.equal(you.pens.harrow, undefined);
+  assert.equal(harrow.peasants, folk);
+  assert.ok(you.gold > 0);
+  assert.ok(harrow.gold < theirGold);
+  assert.ok(you.ledger.ransom > 0);
+  assert.ok(you.ledger.ransom <= EARN.ransom);
+  assert.equal(you.utopia, purse + you.ledger.ransom);
+  assert.equal(applyAction(w, "you", { type: "ransom", target: "harrow" }).ok, false);
+
+  you.pens = { harrow: 4 };
+  harrow.grudge = "you";
+  harrow.peasants = 40;
+  you.orders = ORDERS;
+  assert.equal(applyAction(w, "you", { type: "release", target: "harrow" }).ok, true);
+  assert.equal(harrow.peasants, 44);
+  assert.equal(harrow.grudge, null);
+  assert.equal(captiveCount(you), 0);
+
+  you.pens = { harrow: 5 };
+  you.buildings.field = 0;
+  you.buildings.workshop = 0;
+  you.grain = 0;
+  you.acted = false;
+  advanceHour(w);
+  assert.equal(captiveCount(you), 0);
+  assert.ok(you.grain >= 0);
+
+  const again = newWorld({ seed: 25 });
+  const seat = byId(again, "you");
+  seat.pens = { harrow: 3 };
+  const view = redact(again, "harrow");
+  const hidden = view.provinces.find((p) => p.id === "you");
+  assert.equal(hidden.name, "Unscouted");
+  assert.equal(hidden.held, 3);
+  assert.deepEqual(hidden.pens, {});
+  assert.equal(captiveCount(hidden), 3);
 });
 
 test("save and load keep the hour and the random stream", () => {
