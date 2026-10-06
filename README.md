@@ -1,6 +1,6 @@
 # Groktopia
 
-A browser province game. You run one seat. Six scripted Grok agents run the other provinces and act when the hour passes. A second human can sit the same device for staked PvP.
+A top-down browser province game. You look down on the realm, click a holding, and march across the land. Six scripted Grok agents run the other provinces and act when the hour passes. A second human can sit the same device for staked PvP.
 
 The earn purse is **$UTOPIA**. Amounts in the game are cents (100 = 1 $UTOPIA). Solana is the settlement chain. `public/mint.json` starts with an empty mint. This repo does not invent a contract address, and the page never asks for a seed phrase. Phantom can connect. An on-chain balance appears only after a real mint is written into that file. Local purse receipts are not transfers.
 

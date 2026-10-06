@@ -5,7 +5,6 @@ import {
   ORDERS,
   advanceHour,
   applyAction,
-  buildingCount,
   byId,
   defense,
   foodNeed,
@@ -26,20 +25,26 @@ import {
   thiefCap,
   eliteCap,
 } from "./sim.js";
+import { drawRealm, fitCamera, hitProvince, provinceGeom, screenToWorld } from "./map.js";
 
 const SAVE = "groktopia.v1";
 const app = document.querySelector("#app");
 
 let world = null;
-let tab = "throne";
 let toast = "";
-let targetId = "harrow";
+let selectedId = "you";
 let stake = 100;
 let soundOn = true;
 let wallet = "";
 let chainBalance = null;
 let mint = { symbol: "UTOPIA", mint: "", decimals: 6, cluster: "mainnet-beta" };
 let audioReady = false;
+let mounted = false;
+let cam = { x: 0, y: 0, z: 1 };
+let march = null;
+let dragging = null;
+let raf = 0;
+let lastFrame = 0;
 const clips = {};
 
 function esc(s) {
@@ -52,18 +57,6 @@ function seat() {
 
 function save() {
   localStorage.setItem(SAVE, serialize(world));
-}
-
-function note(message) {
-  toast = message;
-  render();
-  window.setTimeout(() => {
-    if (toast === message) {
-      toast = "";
-      const node = document.querySelector(".toast");
-      if (node) node.remove();
-    }
-  }, 2400);
 }
 
 function bootAudio() {
@@ -95,6 +88,18 @@ function bed(name) {
   if (clip.paused) clip.play().catch(() => {});
 }
 
+function note(message) {
+  toast = message;
+  paint();
+  window.setTimeout(() => {
+    if (toast === message) {
+      toast = "";
+      const node = document.querySelector(".toast");
+      if (node) node.remove();
+    }
+  }, 2400);
+}
+
 function act(action, sound) {
   const actor = seat();
   const res = applyAction(world, actor.id, action);
@@ -105,46 +110,28 @@ function act(action, sound) {
     save();
   }
   note(res.message);
+  return res;
 }
 
-function drawSkyline() {
-  const canvas = document.querySelector("canvas.sky");
-  const p = world && seat();
-  if (!canvas || !p) return;
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth * dpr;
-  const h = 90 * dpr;
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#120e0b";
-  ctx.fillRect(0, 0, w, h);
-  const blocks = [
-    ["hearth", "#6a5340", 0.35],
-    ["field", "#6f8a52", 0.22],
-    ["workshop", "#8a6a3a", 0.48],
-    ["barracks", "#7d3f36", 0.55],
-    ["keep", "#c8b48a", 0.78],
-    ["chapel", "#d8d2c4", 0.62],
-    ["den", "#3e3a44", 0.4],
-    ["spire", "#e2c078", 0.92],
-  ];
-  const total = Math.max(1, buildingCount(p));
-  let x = 8 * dpr;
-  for (const [key, color, height] of blocks) {
-    const share = p.buildings[key] / total;
-    const bw = Math.max(2, (w - 16 * dpr) * share);
-    const bh = h * height;
-    ctx.fillStyle = color;
-    ctx.fillRect(x, h - bh - 8 * dpr, bw - dpr, bh);
-    x += bw;
+function needsMarch(action) {
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.spell === "meteor");
+}
+
+function order(action, sound) {
+  if (!needsMarch(action) || march) {
+    act(action, sound);
+    return;
   }
-}
-
-function render() {
-  app.innerHTML = world ? shell() : gate();
-  drawSkyline();
-  if (world && soundOn) bed(tab === "war" ? "battle" : "throne");
+  const from = provinceGeom(seat());
+  const target = byId(world, action.target);
+  if (!target) {
+    act(action, sound);
+    return;
+  }
+  const to = provinceGeom(target);
+  march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action, sound };
+  bed("battle");
+  play(sound || "march");
 }
 
 function gate() {
@@ -154,7 +141,7 @@ function gate() {
     <img src="/public/art/banner.jpg" alt="A walled riverside province at dusk">
     <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
     <h1>Groktopia</h1>
-    <p class="lede">You hold one province. Six Grok agents hold the rest of the realm and spend their hours against you. Victories inside a fair size band pay <b>$UTOPIA</b>. A second human on this device can stake the same purse. The mint is Solana. This page does not invent a contract address and does not spend your wallet.</p>
+    <p class="lede">Look down on the realm. Your province and six Grok agents sit on the same land. Click a holding, then march, build, or steal. Victories inside a fair size band pay <b>$UTOPIA</b>. Drag to pan. The wheel zooms.</p>
     <form class="card" id="found">
       <label>Ruler <input name="ruler" required maxlength="32" value="Ada"></label>
       <label>Province <input name="province" required maxlength="32" value="First Acre"></label>
@@ -168,210 +155,210 @@ function gate() {
 }
 
 function shell() {
-  const p = seat();
-  const tabs = [
-    ["throne", "Throne"],
-    ["build", "Build"],
-    ["host", "Host"],
-    ["war", "War"],
-    ["mystics", "Mystics"],
-    ["shadows", "Shadows"],
-    ["realm", "Realm"],
-    ["earn", "Earn"],
-  ];
-  return `<div class="app">
-    <img class="banner" src="/public/art/banner.jpg" alt="">
-    <header class="app">
-      <div class="brand-row"><img class="coin-mark" src="/public/art/coin.jpg" alt=""><div class="brand">Groktopia</div></div>
-      <div class="stat"><b>Hour ${world.hour}</b><span>${esc(p.name)}</span></div>
-      <div class="stat"><b>${p.orders}/${ORDERS}</b><span>orders</span></div>
-      <div class="stat"><b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)}</b><span>$UTOPIA</span></div>
-      <div class="stat"><button class="btn" id="sound" type="button">${soundOn ? "Sound on" : "Sound off"}</button></div>
+  return `<div class="play">
+    <canvas id="realm"></canvas>
+    <header class="hud-top">
+      <div class="brand-row hud-chip"><img class="coin-mark" src="/public/art/coin.jpg" alt=""><div class="brand">Groktopia</div></div>
+      <div class="hud-chip" id="hud-hour"></div>
+      <div class="hud-chip" id="hud-purse"></div>
+      <button class="btn primary" id="hour" type="button">Let the hour pass</button>
+      <button class="btn" id="sound" type="button">${soundOn ? "Sound on" : "Sound off"}</button>
+      <span id="hud-seats"></span>
     </header>
-    <nav>${tabs.map(([id, label]) => `<button class="btn" type="button" data-tab="${id}" ${tab === id ? 'aria-current="page"' : ""}>${label}</button>`).join("")}</nav>
-    <div class="layout">
-      <section class="panel">${page(p)}</section>
-      <aside class="side">
-        <canvas class="sky"></canvas>
-        <h3>Chronicle</h3>
-        <ol class="log">${world.log.slice(0, 14).map((row) => `<li><b>${row.hour}</b> ${esc(row.text)}</li>`).join("")}</ol>
-        <div class="row"><button class="btn primary" type="button" id="hour">Let the hour pass</button></div>
-      </aside>
-    </div>
+    <section class="hud-card" id="card"></section>
+    <ol class="hud-log log" id="log"></ol>
     ${toast ? `<div class="toast">${esc(toast)}</div>` : ""}
   </div>`;
 }
 
-function page(p) {
-  if (tab === "throne") return throne(p);
-  if (tab === "build") return build(p);
-  if (tab === "host") return host(p);
-  if (tab === "war") return war(p);
-  if (tab === "mystics") return mystics(p);
-  if (tab === "shadows") return shadows(p);
-  if (tab === "realm") return realm(p);
-  return earn(p);
+function render() {
+  if (!world) {
+    mounted = false;
+    document.body.classList.remove("playing");
+    cancelAnimationFrame(raf);
+    app.innerHTML = gate();
+    return;
+  }
+  document.body.classList.add("playing");
+  if (!mounted) {
+    app.innerHTML = shell();
+    mounted = true;
+    const canvas = document.querySelector("#realm");
+    resize();
+    cam = fitCamera(world.provinces, canvas.clientWidth, canvas.clientHeight);
+    bindMap(canvas);
+    lastFrame = performance.now();
+    const loop = (now) => {
+      const dt = Math.min(0.05, (now - lastFrame) / 1000);
+      lastFrame = now;
+      if (march) {
+        march.t += dt / 0.7;
+        if (march.t >= 1) {
+          const done = march;
+          march = null;
+          act(done.action, done.sound);
+        }
+      }
+      draw();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+  }
+  paint();
+  draw();
 }
 
-function throne(p) {
-  const f = FACTIONS[p.faction];
-  const humans = world.provinces.filter((row) => row.kind === "human");
-  return `<h2>${esc(p.name)}</h2>
-    <p class="muted">${esc(p.ruler)} · ${esc(f.name)} · elite ${esc(f.elite)}. ${esc(f.blurb)}</p>
-    <div class="grid">
-      ${metric("Land", p.land)}
-      ${metric("Empty acres", freeLand(p))}
-      ${metric("People", population(p))}
-      ${metric("Peasants", p.peasants)}
-      ${metric("Gold", p.gold)}
-      ${metric("Grain", p.grain)}
-      ${metric("Aether", p.aether)}
-      ${metric("Networth", networth(p))}
-      ${metric("Offense", offense(p))}
-      ${metric("Defense", defense(p))}
-      ${metric("Food need", foodNeed(p))}
-      ${metric("Wage", p.grain >= foodNeed(p) ? "fed" : "hungry")}
-    </div>
-    <h3>Seat</h3>
-    <div class="row">
-      ${humans.map((row) => `<button class="btn" type="button" data-seat="${row.id}" ${world.seat === row.id ? 'aria-current="page"' : ""}>${esc(row.ruler)} · ${esc(row.name)}</button>`).join("")}
-      ${byId(world, "rival") ? "" : `<button class="btn" type="button" id="rival">Seat a rival</button>`}
-    </div>
-    <p class="muted">Hotseat PvP uses the rival chair. Stakes come out of each purse in $UTOPIA. Agents never sit that chair. They act when the hour passes.</p>`;
+function resize() {
+  const canvas = document.querySelector("#realm");
+  if (!canvas) return;
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
 }
 
-function metric(label, value) {
-  return `<div class="tile"><span class="muted">${esc(label)}</span><br><b>${esc(value)}</b></div>`;
+function draw() {
+  const canvas = document.querySelector("#realm");
+  if (!canvas || !world) return;
+  if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) resize();
+  const ctx = canvas.getContext("2d");
+  drawRealm(ctx, canvas.width, canvas.height, world, seat().id, selectedId, cam, march);
 }
 
-function build(p) {
-  const rows = Object.entries(BUILDINGS).map(([key, spec]) => {
-    const cost = spec.cost(p.buildings[key]);
-    return `<tr>
-      <td>${esc(spec.name)}<div class="muted">${esc(spec.blurb)}</div></td>
-      <td>${p.buildings[key]}</td>
-      <td>${cost} gold</td>
-      <td><button class="btn" type="button" data-build="${key}">Raise</button></td>
-    </tr>`;
-  }).join("");
-  const explore = 300 + p.land * 3;
-  return `<h2>Acres</h2>
-    <p class="muted">${freeLand(p)} empty of ${p.land}. Raising a building spends gold and one empty acre. It does not spend an order.</p>
-    <table><thead><tr><th>Structure</th><th>Count</th><th>Next</th><th></th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="row"><button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore} gold · 1 order</button></div>`;
+function paint() {
+  if (!mounted || !world) return;
+  const p = seat();
+  const hour = document.querySelector("#hud-hour");
+  const purse = document.querySelector("#hud-purse");
+  const seats = document.querySelector("#hud-seats");
+  const card = document.querySelector("#card");
+  const log = document.querySelector("#log");
+  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS}</span>`;
+  if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)}</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
+  if (seats) {
+    const humans = world.provinces.filter((row) => row.kind === "human");
+    seats.innerHTML = humans.map((row) => `<button class="btn" type="button" data-seat="${row.id}" ${world.seat === row.id ? 'aria-current="page"' : ""}>${esc(row.name)}</button>`).join("")
+      + (byId(world, "rival") ? "" : `<button class="btn" type="button" id="rival">Seat a rival</button>`);
+  }
+  if (log) log.innerHTML = world.log.slice(0, 8).map((row) => `<li><b>${row.hour}</b> ${esc(row.text)}</li>`).join("");
+  if (card) card.innerHTML = cardFor(p, byId(world, selectedId) || p);
+  let toastNode = document.querySelector(".toast");
+  if (toast) {
+    if (!toastNode) {
+      toastNode = document.createElement("div");
+      toastNode.className = "toast";
+      document.querySelector(".play").appendChild(toastNode);
+    }
+    toastNode.textContent = toast;
+  }
 }
 
-function host(p) {
-  const f = FACTIONS[p.faction];
-  return `<h2>Host</h2>
-    <p class="muted">Soldiers ${p.soldiers}/${soldierCap(p)} · ${esc(f.elite)}s ${p.elites}/${eliteCap(p)} · thieves ${p.thieves}/${thiefCap(p)} · mystics ${p.mystics}/${mysticCap(p)}</p>
-    <div class="row">
-      <button class="btn" type="button" data-train="soldier">Draft 10 soldiers · 45 gold</button>
-      <button class="btn" type="button" data-train="elite">Train 2 ${esc(f.elite)}s · 160 gold</button>
-      <button class="btn" type="button" data-train="thief">Train 2 thieves · 130 gold</button>
-      <button class="btn" type="button" data-train="disband">Release 10 soldiers</button>
-    </div>
-    <p class="muted">Mystics arrive from chapels when the hour passes. Offense is soldiers and ${esc(f.elite)}s. Keeps stand on defense even with an empty yard.</p>`;
-}
-
-function targetOptions(p) {
-  return world.provinces.filter((row) => row.id !== p.id).map((row) => {
-    const band = nwFactor(p, row);
-    const fresh = intelFresh(p, row.id, world.hour);
-    const known = fresh ? `def ${fresh.defense}` : band > 0 ? "in band" : "out of band";
-    return `<option value="${row.id}" ${row.id === targetId ? "selected" : ""}>${esc(row.name)} · ${esc(row.ruler)} · ${known}</option>`;
-  }).join("");
-}
-
-function war(p) {
-  const target = byId(world, targetId);
-  const band = target ? nwFactor(p, target) : 0;
-  const stakes = target && target.kind === "human"
-    ? `<label>Stake each side
+function cardFor(actor, selected) {
+  const self = selected.id === actor.id;
+  const fresh = intelFresh(actor, selected.id, world.hour);
+  const knownDef = self || fresh ? defense(selected) : "hidden";
+  const band = self ? "" : nwFactor(actor, selected) > 0 ? "Inside the fair band." : "Outside the fair band. A march pays nothing.";
+  const f = FACTIONS[selected.faction];
+  const head = `<h2>${esc(selected.name)}</h2>
+    <p class="muted">${esc(selected.ruler)} · ${esc(f.name)} · ${selected.kind === "agent" ? "Grok agent" : "human"}</p>
+    <p>${selected.line ? esc(selected.line) : ""}</p>
+    <p class="muted">Land ${selected.land} · empty ${freeLand(selected)} · people ${population(selected)} · networth ${self || fresh ? networth(selected) : "—"}</p>
+    <p>Offense ${self ? offense(actor) : fresh ? fresh.offense : "—"} · defense ${knownDef}. ${esc(band)}</p>`;
+  if (self) {
+    const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
+      const cost = spec.cost(actor.buildings[key]);
+      return `<button class="btn" type="button" data-build="${key}">${esc(spec.name)} ${actor.buildings[key]} · ${cost}g</button>`;
+    }).join("");
+    const explore = 300 + actor.land * 3;
+    const spells = Object.entries(spellbook()).filter(([key]) => key !== "meteor").map(([key, spec]) => {
+      const left = actor.spells[key] ? ` · ${actor.spells[key]}h` : "";
+      return `<button class="btn" type="button" data-spell="${key}">${esc(spec.name)} · ${spec.cost} ae${left}</button>`;
+    }).join("");
+    return `${head}
+      <p class="muted">Click a structure to raise it on your acres. Soldiers ${actor.soldiers}/${soldierCap(actor)} · ${esc(f.elite)} ${actor.elites}/${eliteCap(actor)} · thieves ${actor.thieves}/${thiefCap(actor)} · mystics ${actor.mystics}/${mysticCap(actor)}. Food need ${foodNeed(actor)}. Aether ${actor.aether}.</p>
+      <div class="row">${builds}</div>
+      <div class="row">
+        <button class="btn" type="button" data-train="soldier">Draft 10</button>
+        <button class="btn" type="button" data-train="elite">Train 2 ${esc(f.elite)}</button>
+        <button class="btn" type="button" data-train="thief">Train 2 thieves</button>
+        <button class="btn" type="button" data-train="disband">Release 10</button>
+        <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
+      </div>
+      <div class="row">${spells}</div>
+      <p class="muted">Active hour pays ${formatUtopia(EARN.hourActive)} $UTOPIA after you act. Combat pay this hour can still reach ${formatUtopia(actor.earnLeft)}.</p>
+      ${earnStrip(actor)}`;
+  }
+  const stakeRow = selected.kind === "human"
+    ? `<label class="muted">Stake each side
         <select id="stake">
           <option value="100" ${stake === 100 ? "selected" : ""}>1.00 $UTOPIA</option>
           <option value="500" ${stake === 500 ? "selected" : ""}>5.00 $UTOPIA</option>
           <option value="1000" ${stake === 1000 ? "selected" : ""}>10.00 $UTOPIA</option>
         </select>
       </label>`
-    : `<p class="muted">Agent marches pay the earn table, up to ${formatUtopia(p.earnLeft)} $UTOPIA left this hour. No stake.</p>`;
-  return `<h2>War room</h2>
-    <p>Your offense <b>${offense(p)}</b>. ${target ? `${esc(target.name)} is ${band > 0 ? "inside" : "outside"} the fair band.` : ""} A march spends one order. The same target rests for two hours.</p>
-    <label>Target <select id="target">${targetOptions(p)}</select></label>
-    ${stakes}
+    : "";
+  return `${head}
+    ${stakeRow}
     <div class="row">
-      <button class="btn danger" type="button" data-march="seize">Seize land</button>
-      <button class="btn danger" type="button" data-march="sack">Sack stores</button>
-      <button class="btn danger" type="button" data-march="raze">Raze buildings</button>
-    </div>`;
-}
-
-function mystics(p) {
-  const book = spellbook();
-  const buttons = Object.entries(book).map(([key, spec]) => {
-    const left = p.spells[key] ? ` · ${p.spells[key]}h left` : "";
-    return `<button class="btn" type="button" data-spell="${key}">${esc(spec.name)} · ${spec.cost} aether${left}<div class="muted">${esc(spec.blurb)}</div></button>`;
-  }).join("");
-  return `<h2>Mystics</h2>
-    <p class="muted">${p.mystics} mystics · ${p.aether} aether. Meteor uses the target chosen in the war room.</p>
-    <label>Target <select id="target">${targetOptions(p)}</select></label>
-    <div class="grid">${buttons}</div>`;
-}
-
-function shadows(p) {
-  return `<h2>Shadows</h2>
-    <p class="muted">${p.thieves} thieves. Scout, pilfer, and arson each spend one order. Gold stolen from an agent can also pay $UTOPIA inside the band.</p>
-    <label>Target <select id="target">${targetOptions(p)}</select></label>
-    <div class="row">
+      <button class="btn danger" type="button" data-march="seize">Seize</button>
+      <button class="btn danger" type="button" data-march="sack">Sack</button>
+      <button class="btn danger" type="button" data-march="raze">Raze</button>
       <button class="btn" type="button" data-thief="scout">Scout</button>
-      <button class="btn" type="button" data-thief="pilfer">Pilfer gold</button>
+      <button class="btn" type="button" data-thief="pilfer">Pilfer</button>
       <button class="btn" type="button" data-thief="arson">Arson</button>
+      <button class="btn" type="button" data-spell="meteor">Meteor</button>
+    </div>
+    <p class="muted">The party crosses the map, then the hour's order resolves. ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
+}
+
+function earnStrip(actor) {
+  const minted = Boolean(mint.mint);
+  return `<p class="muted">Solana ${esc(mint.cluster)}. Mint ${minted ? esc(mint.mint) : "not set"}. Wallet ${wallet ? esc(wallet) : "not connected"}. On-chain ${chainBalance == null ? "—" : esc(chainBalance)}.</p>
+    <div class="row">
+      <button class="btn" type="button" id="phantom">${wallet ? "Refresh Phantom" : "Connect Phantom"}</button>
+      <button class="btn" type="button" id="receipt">Purse receipt</button>
     </div>`;
 }
 
-function realm(p) {
-  const rows = world.provinces.map((row) => {
-    const fresh = intelFresh(p, row.id, world.hour);
-    const kind = row.kind === "agent" ? "agent" : "human";
-    return `<tr>
-      <td>${esc(row.name)}<div class="muted">${esc(row.ruler)} · ${kind}${row.line ? ` · ${esc(row.line)}` : ""}</div></td>
-      <td>${esc(FACTIONS[row.faction].name)}</td>
-      <td>${row.land}</td>
-      <td>${row.id === p.id || fresh ? networth(row) : "—"}</td>
-      <td>${fresh ? fresh.defense : row.id === p.id ? defense(row) : "—"}</td>
-    </tr>`;
-  }).join("");
-  return `<h2>Realm</h2>
-    <img class="map" src="/public/art/map.jpg" alt="A painted map of the seven provinces">
-    <img class="map" src="/public/art/council.jpg" alt="The six lattice agents at council">
-    <table><thead><tr><th>Province</th><th>Faction</th><th>Land</th><th>Networth</th><th>Defense</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="muted">Defense and networth of another province show after a scout, and for a few hours after you march them. Agents: Harrow seizes, Sable answers a grudge, Vellum casts, Quill steals, Brine sacks fat treasuries, Moss plants acres.</p>`;
-}
-
-function earn(p) {
-  const minted = Boolean(mint.mint);
-  return `<h2>$UTOPIA</h2>
-    <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
-    <p>Purse on this seat: <b>${formatUtopia(p.utopia)} $UTOPIA</b>. Burned in PvP fees across the realm: ${formatUtopia(world.burned)}.</p>
-    <div class="grid">
-      ${metric("Active hour", formatUtopia(EARN.hourActive))}
-      ${metric("Combat cap / hour", formatUtopia(EARN.combatCap))}
-      ${metric("Seize", formatUtopia(EARN.seize))}
-      ${metric("Sack", formatUtopia(EARN.sack))}
-      ${metric("Raze", formatUtopia(EARN.raze))}
-      ${metric("Meteor", formatUtopia(EARN.meteor))}
-      ${metric("Pilfer", formatUtopia(EARN.pilfer))}
-      ${metric("PvP fee", "5%")}
-    </div>
-    <p class="muted">Pay needs a real action inside the fair networth band. Marching a tiny province or a whale pays nothing. The active-hour coin requires you to have built, trained, explored, marched, cast, or stolen before the hour turns.</p>
-    <h3>Solana</h3>
-    <p>Cluster ${esc(mint.cluster)}. Symbol ${esc(mint.symbol)}. Mint ${minted ? `<b>${esc(mint.mint)}</b>` : `<span class="warn">not set</span>`}.</p>
-    <p class="muted">Wallet ${wallet ? esc(wallet) : "not connected"}. On-chain balance ${chainBalance == null ? "—" : esc(chainBalance)}.</p>
-    <div class="row">
-      <button class="btn primary" type="button" id="phantom">${wallet ? "Refresh Phantom" : "Connect Phantom"}</button>
-      <button class="btn" type="button" id="receipt">Download purse receipt</button>
-    </div>
-    <p class="muted">A receipt is a local record. It is not a transfer. On-chain claim stays closed until <code>public/mint.json</code> names a real $UTOPIA mint and a treasury pays it. This page never asks for a seed phrase.</p>`;
+function bindMap(canvas) {
+  canvas.addEventListener("pointerdown", (event) => {
+    dragging = { id: event.pointerId, x: event.clientX, y: event.clientY, cx: cam.x, cy: cam.y, moved: false };
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    if (!dragging || dragging.id !== event.pointerId) return;
+    const dx = event.clientX - dragging.x;
+    const dy = event.clientY - dragging.y;
+    if (Math.hypot(dx, dy) > 5) dragging.moved = true;
+    cam.x = dragging.cx - dx / cam.z;
+    cam.y = dragging.cy - dy / cam.z;
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (!dragging || dragging.id !== event.pointerId) return;
+    const moved = dragging.moved;
+    dragging = null;
+    if (moved) return;
+    const rect = canvas.getBoundingClientRect();
+    const worldPoint = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+    const id = hitProvince(world.provinces, worldPoint.x, worldPoint.y);
+    if (!id) return;
+    selectedId = id;
+    play("click");
+    bed(id === seat().id ? "throne" : "battle");
+    paint();
+  });
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const before = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+    const next = Math.max(0.35, Math.min(2.8, cam.z * (event.deltaY > 0 ? 0.92 : 1.08)));
+    cam.z = next;
+    const after = screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+    cam.x += before.x - after.x;
+    cam.y += before.y - after.y;
+  }, { passive: false });
+  window.addEventListener("resize", () => {
+    resize();
+    draw();
+  });
 }
 
 app.addEventListener("click", async (event) => {
@@ -379,27 +366,23 @@ app.addEventListener("click", async (event) => {
   if (!node) return;
   if (node.id === "resume") {
     world = hydrate(localStorage.getItem(SAVE));
+    selectedId = world.seat || "you";
     play("hour");
     render();
     return;
   }
   if (!world) return;
-  if (node.dataset.tab) {
-    tab = node.dataset.tab;
-    play("click");
-    render();
-    return;
-  }
   if (node.id === "sound") {
     soundOn = !soundOn;
+    node.textContent = soundOn ? "Sound on" : "Sound off";
     if (!soundOn && audioReady) {
       clips.throne.pause();
       clips.battle.pause();
-    }
-    render();
+    } else bed(selectedId === seat().id ? "throne" : "battle");
     return;
   }
   if (node.id === "hour") {
+    if (march) return;
     advanceHour(world);
     play("hour");
     save();
@@ -409,47 +392,49 @@ app.addEventListener("click", async (event) => {
   if (node.id === "rival") {
     const res = seatRival(world, "Second Acre", seat().faction === "marcher" ? "warden" : "marcher");
     note(res.message);
-    if (res.ok) save();
+    if (res.ok) {
+      save();
+      cam = fitCamera(world.provinces, document.querySelector("#realm").clientWidth, document.querySelector("#realm").clientHeight);
+    }
     return;
   }
   if (node.dataset.seat) {
     world.seat = node.dataset.seat;
+    selectedId = world.seat;
     save();
-    render();
+    paint();
     return;
   }
   if (node.dataset.build) {
-    act({ type: "build", building: node.dataset.build }, "build");
+    order({ type: "build", building: node.dataset.build }, "build");
     return;
   }
   if (node.id === "explore") {
-    act({ type: "explore" }, "march");
+    order({ type: "explore" }, "march");
     return;
   }
   if (node.dataset.train) {
     const count = node.dataset.train === "soldier" || node.dataset.train === "disband" ? 10 : 2;
-    act({ type: "train", unit: node.dataset.train, count }, "build");
+    order({ type: "train", unit: node.dataset.train, count }, "build");
     return;
   }
   if (node.dataset.march) {
-    readTarget();
-    const target = byId(world, targetId);
-    act({
+    readStake();
+    const target = byId(world, selectedId);
+    order({
       type: "attack",
-      target: targetId,
+      target: selectedId,
       mode: node.dataset.march,
       stake: target && target.kind === "human" ? stake : 0,
     }, "march");
     return;
   }
   if (node.dataset.spell) {
-    readTarget();
-    act({ type: "spell", spell: node.dataset.spell, target: targetId }, "spell");
+    order({ type: "spell", spell: node.dataset.spell, target: selectedId }, "spell");
     return;
   }
   if (node.dataset.thief) {
-    readTarget();
-    act({ type: "thief", op: node.dataset.thief, target: targetId }, "spell");
+    order({ type: "thief", op: node.dataset.thief, target: selectedId }, "spell");
     return;
   }
   if (node.id === "phantom") {
@@ -463,7 +448,6 @@ app.addEventListener("click", async (event) => {
 });
 
 app.addEventListener("change", (event) => {
-  if (event.target.id === "target") targetId = event.target.value;
   if (event.target.id === "stake") stake = Number(event.target.value);
 });
 
@@ -477,16 +461,15 @@ app.addEventListener("submit", (event) => {
     province: String(data.get("province") || "First Acre").slice(0, 32),
     faction: String(data.get("faction") || "marcher"),
   });
-  tab = "throne";
+  selectedId = "you";
   save();
   bootAudio();
   play("hour");
   render();
+  bed("throne");
 });
 
-function readTarget() {
-  const select = document.querySelector("#target");
-  if (select) targetId = select.value;
+function readStake() {
   const stakeNode = document.querySelector("#stake");
   if (stakeNode) stake = Number(stakeNode.value);
 }

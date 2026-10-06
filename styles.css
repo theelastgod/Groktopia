@@ -16,7 +16,54 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #3a3126, var(--ink) 55%); }
+html, body { height: 100%; }
+body { margin: 0; min-height: 100vh; background: #141910; }
+body.playing { overflow: hidden; height: 100%; }
+.play { position: fixed; inset: 0; }
+#realm { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.hud-top {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+.hud-top > * { pointer-events: auto; }
+.hud-chip, .hud-card, .hud-log {
+  background: rgba(20, 16, 12, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.hud-chip { padding: 6px 10px; }
+.hud-chip b, .hud-chip span { display: block; }
+.hud-chip span { color: var(--muted); font-size: 12px; }
+.hud-card {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  width: min(460px, calc(100vw - 20px));
+  max-height: 46vh;
+  overflow: auto;
+  padding: 12px;
+}
+.hud-log {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: min(320px, calc(100vw - 500px));
+  max-height: 32vh;
+  overflow: auto;
+  padding: 8px 10px;
+}
+.hud-card h2 { margin: 0 0 6px; color: var(--gold); font-size: 22px; }
+@media (max-width: 860px) {
+  .hud-log { display: none; }
+  .hud-card { max-height: 42vh; }
+}
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 img { max-width: 100%; display: block; }
