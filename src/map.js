@@ -236,6 +236,179 @@ function drawWilds(ctx, cam, viewW, viewH) {
   }
 }
 
+let terrainSheet;
+
+function paintTuft(g) {
+  g.lineCap = "round";
+  const blades = [[6, 20, 4, 6], [12, 20, 11, 3], [16, 20, 20, 7], [10, 20, 8, 8], [14, 20, 18, 4]];
+  g.strokeStyle = "#3d6a3a";
+  g.lineWidth = 1.5;
+  for (const [x, y, cx, cy] of blades) {
+    g.beginPath();
+    g.moveTo(x, y);
+    g.quadraticCurveTo((x + cx) / 2, y - 6, cx, cy);
+    g.stroke();
+  }
+  g.strokeStyle = "#8ea84a";
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(12, 20);
+  g.quadraticCurveTo(13, 10, 15, 4);
+  g.stroke();
+}
+
+function paintStone(g) {
+  g.fillStyle = "rgba(0,0,0,0.28)";
+  g.beginPath();
+  g.ellipse(12, 13, 8, 3, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#6d6458";
+  g.beginPath();
+  g.ellipse(9, 9, 6, 4, -0.4, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#8d8478";
+  g.beginPath();
+  g.ellipse(15, 10, 5, 3.2, 0.3, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "rgba(243,230,200,0.45)";
+  g.beginPath();
+  g.ellipse(8, 8, 2, 1, 0, 0, Math.PI * 2);
+  g.fill();
+}
+
+function paintReed(g) {
+  g.strokeStyle = "#6a7a48";
+  g.lineWidth = 1.3;
+  g.lineCap = "round";
+  for (const x of [6, 10, 14]) {
+    g.beginPath();
+    g.moveTo(x, 30);
+    g.quadraticCurveTo(x + 2, 16, x - 1, 4);
+    g.stroke();
+    g.fillStyle = "#c6a15a";
+    g.beginPath();
+    g.ellipse(x - 1, 4, 1.6, 3.2, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+function paintBloom(g) {
+  g.fillStyle = "#3d5630";
+  g.beginPath();
+  g.ellipse(11, 14, 8, 3, 0, 0, Math.PI * 2);
+  g.fill();
+  for (const [x, y, color] of [[6, 10, "#e07a68"], [12, 7, "#e2c078"], [16, 12, "#f3e6c8"], [9, 14, "#c6a15a"]]) {
+    g.fillStyle = color;
+    g.beginPath();
+    g.arc(x, y, 2.1, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+function paintBrush(g) {
+  g.fillStyle = "#1d3a22";
+  g.beginPath();
+  g.ellipse(16, 16, 14, 6, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#244628";
+  g.beginPath();
+  g.arc(10, 12, 7, 0, Math.PI * 2);
+  g.arc(20, 11, 8, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#4e7d44";
+  g.beginPath();
+  g.arc(14, 9, 5, 0, Math.PI * 2);
+  g.fill();
+}
+
+function terrainSprites() {
+  if (terrainSheet !== undefined) return terrainSheet;
+  try {
+    if (typeof OffscreenCanvas === "undefined") {
+      terrainSheet = null;
+      return null;
+    }
+    const paint = (w, h, fn) => {
+      const canvas = new OffscreenCanvas(w, h);
+      fn(canvas.getContext("2d"));
+      return canvas;
+    };
+    terrainSheet = {
+      tuft: paint(24, 22, paintTuft),
+      stone: paint(24, 16, paintStone),
+      reed: paint(20, 32, paintReed),
+      bloom: paint(22, 18, paintBloom),
+      brush: paint(36, 24, paintBrush),
+    };
+  } catch {
+    terrainSheet = null;
+  }
+  return terrainSheet;
+}
+
+function stampSprite(ctx, sprite, x, y, n, time, sway) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (sway) ctx.rotate(Math.sin(time * 1.4 + (n % 7)) * 0.1);
+  ctx.drawImage(sprite, -sprite.width / 2, -sprite.height);
+  ctx.restore();
+}
+
+function drawLitter(ctx, cam, viewW, viewH, time) {
+  const sheet = terrainSprites();
+  if (!sheet) return;
+  const b = viewBounds(cam, viewW, viewH);
+  const step = 84;
+  const x0 = Math.max(-2300, Math.floor(b.left / step) * step);
+  const y0 = Math.max(-2300, Math.floor(b.top / step) * step);
+  const x1 = Math.min(2300, b.right);
+  const y1 = Math.min(2300, b.bottom);
+  const names = ["tuft", "tuft", "stone", "bloom", "brush", "tuft"];
+  for (let x = x0; x < x1; x += step) {
+    for (let y = y0; y < y1; y += step) {
+      const n = hash(`litter:${x},${y}`);
+      if (n % 3 !== 0) continue;
+      const t = (x + 2200) / 4400;
+      const ry = riverPoint(Math.max(0, Math.min(1, t))).y;
+      if (Math.abs(y - ry) < 40) continue;
+      const kind = names[n % names.length];
+      const jx = (n % 30) - 15;
+      const jy = ((n >>> 6) % 30) - 15;
+      stampSprite(ctx, sheet[kind], x + jx, y + jy, n, time, kind === "tuft");
+    }
+  }
+}
+
+function drawBanks(ctx, time) {
+  const sheet = terrainSprites();
+  if (!sheet) return;
+  for (let i = 0; i <= 96; i++) {
+    const p = riverPoint(i / 96);
+    const n = hash(`bank:${i}`);
+    const side = i % 2 ? 1 : -1;
+    const x = p.x + (n % 22) - 11;
+    const y = p.y + side * (22 + (n % 16));
+    stampSprite(ctx, sheet.reed, x, y, n, time, true);
+  }
+}
+
+function drawPalisade(ctx, g) {
+  const stakes = Math.max(16, Math.round(g.r / 6));
+  for (let i = 0; i < stakes; i++) {
+    const a = (i / stakes) * Math.PI * 2 + 0.2;
+    const x = g.x + Math.cos(a) * (g.r * 0.9);
+    const y = g.y + Math.sin(a) * (g.r * 0.9);
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(x - 1.3, y - 8, 2.6, 11);
+    ctx.fillStyle = "#cbb892";
+    ctx.beginPath();
+    ctx.moveTo(x - 2.2, y - 8);
+    ctx.lineTo(x, y - 12);
+    ctx.lineTo(x + 2.2, y - 8);
+    ctx.fill();
+  }
+}
+
 function blob(ctx, g) {
   ctx.beginPath();
   const steps = 32;
@@ -287,6 +460,13 @@ function drawHoldings(ctx, p, g, time, known) {
   meadow.addColorStop(1, "#3d5630");
   ctx.fillStyle = meadow;
   ctx.fillRect(g.x - g.r, g.y - g.r, g.r * 2, g.r * 2);
+  const sheet = terrainSprites();
+  if (sheet) {
+    for (const [dx, dy] of scatter(p.id + "sod", known ? 6 : 3, g.r * 0.62)) {
+      ctx.drawImage(sheet.tuft, g.x + dx - 8, g.y + dy - 12, 16, 14);
+      if ((hash(p.id + dx) % 3) === 0) ctx.drawImage(sheet.bloom, g.x + dx + 6, g.y + dy - 4, 12, 10);
+    }
+  }
   const fields = known ? Math.min(7, Math.max(2, Math.round((p.buildings.field || 0) / 7))) : 2;
   for (let i = 0; i < fields; i++) {
     const y = g.y - g.r * 0.42 + i * 7;
@@ -358,6 +538,28 @@ function drawHoldings(ctx, p, g, time, known) {
       ctx.lineWidth = 2;
       ctx.strokeRect(g.x - 10, g.y - 30, 18, 10);
     }
+    if (p.studies && p.studies.furrow) {
+      for (let i = 0; i < 5; i++) {
+        const lean = Math.sin(time * 1.6 + i) * 2.2;
+        const x = g.x - g.r * 0.32 + i * (g.r * 0.14);
+        const y = g.y + g.r * 0.05;
+        ctx.strokeStyle = i % 2 ? "#e2c078" : "#c6a15a";
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 6);
+        ctx.quadraticCurveTo(x + lean, y, x + lean * 0.35, y - 8);
+        ctx.stroke();
+      }
+    }
+    if (p.studies && p.studies.kiln) {
+      const flicker = 0.5 + Math.sin(time * 7) * 0.28;
+      ctx.fillStyle = "#6a3030";
+      ctx.fillRect(g.x + g.r * 0.22, g.y + 4, 11, 8);
+      ctx.fillStyle = `rgba(224, 122, 104, ${flicker})`;
+      ctx.fillRect(g.x + g.r * 0.22 + 3, g.y + 6, 4, 3);
+      ctx.fillStyle = "#5c4a34";
+      ctx.fillRect(g.x + g.r * 0.22 + 4, g.y - 6, 3, 10);
+    }
   } else {
     for (const [dx, dy] of scatter(p.id + "camp", 3, g.r * 0.4)) specs.hearth[0](g.x + dx, g.y + dy);
   }
@@ -380,6 +582,7 @@ function drawHoldings(ctx, p, g, time, known) {
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.restore();
+  if (known && p.studies && p.studies.palisade) drawPalisade(ctx, g);
   const banner = { marcher: "#a14a3c", warden: "#7d9a72", veil: "#9a86c8", cutpurse: "#c6a15a", hearth: "#f3e6c8" }[p.faction] || "#e2c078";
   ctx.fillStyle = "#5c4632";
   ctx.fillRect(g.x - 1, g.y - g.r * 0.55, 2, 16);
@@ -480,7 +683,9 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   worldTransform(ctx, cam, viewW, viewH, dpr);
   drawGround(ctx, cam, viewW, viewH);
   drawHills(ctx);
+  drawLitter(ctx, cam, viewW, viewH, time);
   drawRiver(ctx, time);
+  drawBanks(ctx, time);
   drawWilds(ctx, cam, viewW, viewH);
   drawClouds(ctx, time);
   drawBirds(ctx, time);
