@@ -600,6 +600,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-arm="rider">Riders · 240g</button>
         <button class="btn" type="button" data-arm="engine">Catapults · 380g</button>
         <button class="btn" type="button" data-arm="sapper">Sappers · 280g</button>
+        <button class="btn" type="button" data-hamlet="1">Raise a hamlet · 260g</button>
       </div>
       <div class="row">${spells}</div>
       <p class="muted">${esc(hospiceLine(actor))}</p>
@@ -729,6 +730,7 @@ function ledgerLine(actor) {
     ["folds", book.fold],
     ["curfews", book.curfew],
     ["hospices", book.hospice],
+    ["hamlets", book.hamlet],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -906,7 +908,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} worked tiles. Hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber.`;
+  return `${plots.length} worked tiles. Hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile.`;
 }
 
 function relicLine(actor) {
@@ -1082,6 +1084,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "f" && world) order({ type: "fold" }, "build");
       if (event.key.toLowerCase() === "n" && world) order({ type: "curfew" }, "build");
       if (event.key.toLowerCase() === "h" && world) order({ type: "hospice" }, "build");
+      if (event.key.toLowerCase() === "j" && world) order({ type: "hamlet" }, "build");
       if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
@@ -1209,6 +1212,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.hospice) {
     order({ type: "hospice" }, "build");
+    return;
+  }
+  if (node.dataset.hamlet) {
+    order({ type: "hamlet" }, "build");
     return;
   }
   if (node.dataset.road) {

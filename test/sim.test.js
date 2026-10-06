@@ -1085,6 +1085,33 @@ test("a hospice halves march losses and adds people", () => {
   assert.equal(hospiceUp(seat, aged.hour), false);
 });
 
+test("a hamlet keeps a grass or wheat tile and feeds the holding", () => {
+  const raised = newWorld({ seed: 26 });
+  const you = byId(raised, "you");
+  const res = applyAction(raised, "you", { type: "hamlet" });
+  assert.equal(res.ok, true);
+  const tile = you.plots.find((row) => row.crew === "hamlet");
+  assert.ok(tile);
+  assert.ok(["grass", "plain"].includes(terrainKind(tile.q, tile.r)));
+  assert.equal(you.ledger.hamlet, EARN.hamlet);
+  const bare = newWorld({ seed: 26 });
+  raised.provinces = [you];
+  bare.provinces = [byId(bare, "you")];
+  const gold = you.gold;
+  const grain = you.grain;
+  const otherGold = bare.provinces[0].gold;
+  const otherGrain = bare.provinces[0].grain;
+  advanceHour(raised);
+  advanceHour(bare);
+  assert.ok(you.gold - gold > bare.provinces[0].gold - otherGold);
+  assert.ok(you.grain - grain > bare.provinces[0].grain - otherGrain);
+  you.orders = 3;
+  you.gold = 2000;
+  assert.equal(applyAction(raised, "you", { type: "hamlet" }).ok, true);
+  assert.equal(applyAction(raised, "you", { type: "hamlet" }).ok, true);
+  assert.equal(applyAction(raised, "you", { type: "hamlet" }).ok, false);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

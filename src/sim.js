@@ -36,6 +36,7 @@ export const EARN = {
   arm: 32,
   curfew: 29,
   hospice: 34,
+  hamlet: 36,
 };
 
 export const FACTIONS = {
@@ -808,6 +809,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "fold") result = doFold(world, actor);
   else if (action.type === "curfew") result = doCurfew(world, actor);
   else if (action.type === "hospice") result = doHospice(world, actor);
+  else if (action.type === "hamlet") result = doHamlet(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1421,6 +1423,29 @@ function doHospice(world, actor) {
   return { ok: true, message: `Hospice through hour ${actor.hospiceUntil - 1}.${purse}` };
 }
 
+function doHamlet(world, actor) {
+  ensurePlots(world);
+  const held = (actor.plots || []).filter((tile) => tile.crew === "hamlet").length;
+  if (held >= 3) return fail("Three hamlets already sit on your tiles.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 260) return fail("A hamlet wants 260 gold.");
+  const plot = (actor.plots || []).find((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
+  if (!plot) return fail("A hamlet needs a grass or wheat tile still worked by hands.");
+  actor.gold -= 260;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "hamlet";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.hamlet;
+    notePurse(actor, "hamlet", EARN.hamlet);
+    purse = ` Purse +${formatUtopia(EARN.hamlet)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} raises a hamlet on a ${kind} tile.${purse}`);
+  return { ok: true, message: `Hamlet on the ${kind} tile.${purse}` };
+}
+
 function soakedHits(target, hour, hits) {
   if (!leveeUp(target, hour) || hits < 1) return hits;
   return Math.max(0, hits - 1);
@@ -1865,6 +1890,10 @@ function economy(p, hour) {
     else if (tile.crew === "rider" && (kind === "plain" || kind === "grass" || kind === "coast")) goldIn += 6;
     else if (tile.crew === "engine" && (kind === "hill" || kind === "plain" || kind === "grass")) goldIn += 8;
     else if (tile.crew === "sapper" && (kind === "hill" || kind === "mount" || kind === "wood")) goldIn += 5;
+    else if (tile.crew === "hamlet") {
+      foodIn += 14;
+      goldIn += 10;
+    }
   }
   const foodOut = foodNeed(p);
   p.gold += goldIn;
@@ -2078,6 +2107,8 @@ export function chooseAction(world, agent) {
     if (!hospiceUp(agent, world.hour) && agent.gold >= 500 && agent.grain >= 800 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "hospice" };
     }
+    const hamlets = (agent.plots || []).filter((tile) => tile.crew === "hamlet").length;
+    if (hamlets < 2 && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.18) return { type: "hamlet" };
     const hungry = world.provinces.find((p) => p.id !== agent.id && p.grain < foodNeed(p) && !(agent.reliefs && agent.reliefs[p.id] > (world.hour || 0)));
     if (hungry && agent.grain >= 1200 && agent.orders >= 1 && rng.next() < 0.22) return { type: "relief", target: hungry.id };
     const cost = 300 + agent.land * 3;

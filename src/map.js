@@ -302,6 +302,25 @@ function drawHexFeature(ctx, kind, x, y, n) {
   }
 }
 
+function drawHamlet(ctx, x, y) {
+  ctx.fillStyle = "#8a5a32";
+  ctx.fillRect(x - 12, y - 2, 9, 7);
+  ctx.fillRect(x + 1, y - 5, 10, 8);
+  ctx.fillStyle = "#6a3030";
+  ctx.beginPath();
+  ctx.moveTo(x - 14, y - 2);
+  ctx.lineTo(x - 7, y - 9);
+  ctx.lineTo(x - 1, y - 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x - 1, y - 5);
+  ctx.lineTo(x + 6, y - 12);
+  ctx.lineTo(x + 13, y - 5);
+  ctx.fill();
+  ctx.fillStyle = "#e6c7a2";
+  ctx.fillRect(x + 4, y - 1, 3, 4);
+}
+
 function drawYields(ctx, x, y, kind) {
   const [food, prod, gold] = YIELD[kind] || [0, 0, 0];
   const bits = [];
@@ -380,7 +399,8 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     drawHexFeature(ctx, cell.kind, cell.pos.x, cell.pos.y, hash(cell.key));
     if (cam.z >= 1 && cell.owner) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
     const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
-    if (plot && plot.crew) {
+    if (plot && plot.crew === "hamlet") drawHamlet(ctx, cell.pos.x, cell.pos.y);
+    else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       drawFolk(ctx, cell.pos.x, cell.pos.y - 4, 0.4, time || 0, role, cell.kind);
     }
