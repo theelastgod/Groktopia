@@ -440,7 +440,8 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
   for (const p of world.provinces) {
     const g = provinceGeom(p);
     const [sx, sy] = to(g.x, g.y);
-    ctx.fillStyle = p.id === seatId ? "#e2c078" : p.kind === "human" ? "#f3e6c8" : "#7d9a72";
+    const secret = p.name === "Unscouted";
+    ctx.fillStyle = p.id === seatId ? "#e2c078" : secret ? "#3e4a36" : p.kind === "human" ? "#f3e6c8" : "#7d9a72";
     ctx.beginPath();
     ctx.arc(sx, sy, p.id === seatId ? 4.5 : 3, 0, Math.PI * 2);
     ctx.fill();

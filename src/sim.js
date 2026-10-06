@@ -144,6 +144,20 @@ export function ageName(p) {
   return "Camp";
 }
 
+/** One civic at a time. Switching spends an order. The purse still comes from play. */
+export const DOCTRINES = {
+  granary: { name: "Granary Peace", blurb: "Fields feed a larger hour." },
+  levy: { name: "Spear Levy", blurb: "The host hits a little harder." },
+  mint: { name: "Open Mint", blurb: "An active hour pays 0.10 $UTOPIA more." },
+  college: { name: "Lantern College", blurb: "The next study costs 100 gold less." },
+};
+
+function notePurse(actor, bucket, cents) {
+  if (!actor || actor.kind !== "human" || !cents || cents <= 0) return;
+  if (!actor.ledger) actor.ledger = {};
+  actor.ledger[bucket] = (actor.ledger[bucket] || 0) + cents;
+}
+
 export function makeRng(seed) {
   let a = seed >>> 0;
   return {
@@ -193,11 +207,14 @@ export function blankProvince(partial) {
     grudge: null,
     line: "",
     studies: {},
+    doctrine: null,
+    ledger: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
   if (partial && partial.spells) p.spells = { ...base.spells, ...partial.spells };
   p.studies = { ...(partial && partial.studies ? partial.studies : {}) };
+  p.ledger = { ...(partial && partial.ledger ? partial.ledger : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -305,7 +322,8 @@ export function offense(p) {
   const f = FACTIONS[p.faction];
   const fury = p.spells.fury > 0 ? 1.15 : 1;
   const oath = p.studies && p.studies.oath ? 1.05 : 1;
-  return Math.floor((p.soldiers * 3 + p.elites * f.off) * wageFactor(p) * fury * oath);
+  const levy = p.doctrine === "levy" ? 1.05 : 1;
+  return Math.floor((p.soldiers * 3 + p.elites * f.off) * wageFactor(p) * fury * oath * levy);
 }
 
 export function defense(p) {
@@ -389,6 +407,7 @@ function grantEarn(actor, base, scale) {
   const got = Math.max(0, Math.min(actor.earnLeft, want));
   actor.utopia += got;
   actor.earnLeft -= got;
+  notePurse(actor, "combat", got);
   return got;
 }
 
@@ -413,6 +432,7 @@ export function applyAction(world, actorId, action) {
   if (action.type === "train") return doTrain(world, actor, action);
   if (action.type === "explore") return doExplore(world, actor);
   if (action.type === "study") return doStudy(world, actor, action.study);
+  if (action.type === "doctrine") return doDoctrine(world, actor, action.doctrine);
   if (action.type === "attack") return doAttack(world, actor, action);
   if (action.type === "spell") return doSpell(world, actor, action);
   if (action.type === "thief") return doThief(world, actor, action);
@@ -493,6 +513,7 @@ function doExplore(world, actor) {
   if (actor.kind === "human") {
     const cents = actor.studies && actor.studies.charter ? EARN.charter : EARN.settle;
     actor.utopia += cents;
+    notePurse(actor, "settle", cents);
     purse = ` Purse +${formatUtopia(cents)} $UTOPIA.`;
   }
   log(world, `${actor.name} settles 10 acres (${cost} gold).${purse}`);
@@ -506,9 +527,10 @@ function doStudy(world, actor, id) {
   if (actor.studies[id]) return fail(`${spec.name} is already seated.`);
   if (studyCount(actor) < spec.need) return fail(`${spec.name} waits on ${spec.need} earlier studies.`);
   if (actor.orders < 1) return fail("No orders left this hour.");
-  if (actor.gold < spec.cost) return fail(`${spec.name} wants ${spec.cost} gold.`);
+  const cost = actor.doctrine === "college" ? Math.max(80, spec.cost - 100) : spec.cost;
+  if (actor.gold < cost) return fail(`${spec.name} wants ${cost} gold.`);
   if (actor.aether < spec.aether) return fail(`${spec.name} wants ${spec.aether} aether.`);
-  actor.gold -= spec.cost;
+  actor.gold -= cost;
   actor.aether -= spec.aether;
   actor.orders -= 1;
   actor.acted = true;
@@ -516,10 +538,25 @@ function doStudy(world, actor, id) {
   let purse = "";
   if (actor.kind === "human") {
     actor.utopia += spec.purse;
+    notePurse(actor, "study", spec.purse);
     purse = ` Purse +${formatUtopia(spec.purse)} $UTOPIA.`;
   }
   log(world, `${actor.name} completes ${spec.name} and enters the ${ageName(actor)} age.${purse}`);
   return { ok: true, message: `${spec.name} seated.${purse}` };
+}
+
+function doDoctrine(world, actor, id) {
+  const spec = DOCTRINES[id];
+  if (!spec) return fail("Unknown civic.");
+  if (actor.doctrine === id) return fail(`${spec.name} is already the civic.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 180) return fail("A civic wants 180 gold.");
+  actor.gold -= 180;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.doctrine = id;
+  log(world, `${actor.name} adopts ${spec.name}. ${spec.blurb}`);
+  return { ok: true, message: `${spec.name} adopted.` };
 }
 
 function onCooldown(actor, target, hour) {
@@ -597,7 +634,9 @@ function doAttack(world, actor, action) {
     actor.utopia -= stake;
     target.utopia -= stake;
     const prize = pot - fee;
-    (win ? actor : target).utopia += prize;
+    const victor = win ? actor : target;
+    victor.utopia += prize;
+    notePurse(victor, "stake", prize - stake);
     world.burned += fee;
     detail += win
       ? `. Stake paid ${formatUtopia(prize)} $UTOPIA`
@@ -729,6 +768,7 @@ function economy(p) {
   let foodIn = Math.floor(p.buildings.field * 40 * f.food);
   if (p.studies && p.studies.kiln) goldIn = Math.floor(goldIn * 1.06);
   if (p.studies && p.studies.furrow) foodIn = Math.floor(foodIn * 1.08);
+  if (p.doctrine === "granary") foodIn = Math.floor(foodIn * 1.08);
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -748,7 +788,9 @@ function economy(p) {
     if (p.spells[k] > 0) p.spells[k] -= 1;
   }
   if (p.acted && p.kind === "human") {
-    p.utopia += EARN.hourActive + (p.studies && p.studies.ledger ? EARN.ledger : 0);
+    const pay = EARN.hourActive + (p.studies && p.studies.ledger ? EARN.ledger : 0) + (p.doctrine === "mint" ? 10 : 0);
+    p.utopia += pay;
+    notePurse(p, "hour", pay);
   }
   p.acted = false;
   p.orders = ORDERS;
@@ -1008,7 +1050,9 @@ export function closeAge(world) {
   const bonus = [2500, 1500, 800, 400, 200];
   humans.forEach((row, index) => {
     const province = byId(world, row.id);
-    province.utopia += bonus[index] ?? 100;
+    const pay = bonus[index] ?? 100;
+    province.utopia += pay;
+    notePurse(province, "place", pay);
   });
   world.closed = true;
   log(world, "The two-hour age is over. Placement is paid in $UTOPIA.");
@@ -1019,12 +1063,15 @@ export function redact(world, seatId) {
   const copy = JSON.parse(serialize(world));
   delete copy.rngState;
   const viewer = copy.provinces.find((p) => p.id === seatId);
+  const hiddenNames = [];
   for (const province of copy.provinces) {
     if (province.id === seatId) continue;
     const known = viewer && intelFresh(viewer, province.id, copy.hour);
     province.intel = {};
     province.cooldown = {};
+    province.ledger = {};
     if (!known) {
+      hiddenNames.push(province.name);
       province.soldiers = 0;
       province.elites = 0;
       province.thieves = 0;
@@ -1034,7 +1081,15 @@ export function redact(world, seatId) {
       province.aether = 0;
       province.orders = 0;
       province.utopia = 0;
+      province.studies = {};
+      province.doctrine = null;
+      province.name = "Unscouted";
+      province.ruler = "Unknown";
+      province.line = "A camp in the wild. Send a thief to scout it.";
     }
+  }
+  for (const row of copy.log || []) {
+    for (const name of hiddenNames) row.text = row.text.split(name).join("an unscouted camp");
   }
   return copy;
 }

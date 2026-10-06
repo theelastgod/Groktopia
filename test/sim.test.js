@@ -10,6 +10,7 @@ import {
   formatUtopia,
   ageName,
   hydrate,
+  redact,
   newWorld,
   nwFactor,
   seatRival,
@@ -142,6 +143,13 @@ test("studies pay the purse and climb from Camp to Borough", () => {
   assert.equal(applyAction(w, "you", { type: "study", study: "kiln" }).ok, true);
   assert.equal(studyCount(you), 2);
   assert.equal(ageName(you), "Borough");
+  assert.equal(you.ledger.study, 90);
+  assert.equal(applyAction(w, "you", { type: "doctrine", doctrine: "granary" }).ok, true);
+  assert.equal(you.doctrine, "granary");
+  const view = redact(w, "you");
+  const camp = view.provinces.find((p) => p.id === "harrow");
+  assert.equal(camp.name, "Unscouted");
+  assert.equal(camp.gold, 0);
   const purse = you.utopia;
   const settled = applyAction(w, "you", { type: "explore" });
   assert.equal(settled.ok, true);

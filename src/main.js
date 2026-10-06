@@ -1,5 +1,6 @@
 import {
   BUILDINGS,
+  DOCTRINES,
   EARN,
   FACTIONS,
   ORDERS,
@@ -375,8 +376,9 @@ function studyButtons(actor) {
     const open = studyCount(actor) >= row.need;
     if (owned) return `<button class="btn" type="button" disabled>${esc(row.name)} seated</button>`;
     if (!open) return "";
+    const cost = actor.doctrine === "college" ? Math.max(80, row.cost - 100) : row.cost;
     const ae = row.aether ? ` · ${row.aether} ae` : "";
-    return `<button class="btn primary" type="button" data-study="${row.id}">${esc(row.name)} · ${row.cost}g${ae} · +${formatUtopia(row.purse)}</button>`;
+    return `<button class="btn primary" type="button" data-study="${row.id}">${esc(row.name)} · ${cost}g${ae} · +${formatUtopia(row.purse)}</button>`;
   }).join("");
 }
 
@@ -407,7 +409,8 @@ function cardFor(actor, selected) {
       const cost = spec.cost(actor.buildings[key]);
       return `<button class="btn" type="button" data-build="${key}">${esc(spec.name)} ${actor.buildings[key]} · ${cost}g</button>`;
     }).join("");
-    const explore = 300 + actor.land * 3;
+    let explore = 300 + actor.land * 3;
+    if (actor.studies && actor.studies.charter) explore = Math.floor(explore * 0.85);
     const spells = Object.entries(spellbook()).filter(([key]) => key !== "meteor").map(([key, spec]) => {
       const left = actor.spells[key] ? ` · ${actor.spells[key]}h` : "";
       return `<button class="btn" type="button" data-spell="${key}">${esc(spec.name)} · ${spec.cost} ae${left}</button>`;
@@ -424,6 +427,7 @@ function cardFor(actor, selected) {
       </div>
       <div class="row">${spells}</div>
       <p class="advisor">${esc(advisor(actor))}</p>
+      <div class="row">${doctrineButtons(actor)}</div>
       <div class="row">${studyButtons(actor)}</div>
       <p class="muted">Play to earn: an active hour pays ${formatUtopia(EARN.hourActive + (actor.studies && actor.studies.ledger ? EARN.ledger : 0))} $UTOPIA, settling pays ${formatUtopia(actor.studies && actor.studies.charter ? EARN.charter : EARN.settle)}, and each study pays its own purse. Fair marches still pay inside the combat cap of ${formatUtopia(actor.earnLeft)} this hour. Placement at the bell is 25, 15, 8, 4, 2, then 1.00. Key 4 starts the next study. WASD pans. Q and E zoom.</p>
       ${earnStrip(actor)}`;
@@ -451,9 +455,31 @@ function cardFor(actor, selected) {
     <p class="muted">The party crosses the map, then the hour's order resolves. ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
 }
 
+function doctrineButtons(actor) {
+  return Object.entries(DOCTRINES).map(([id, spec]) => {
+    const on = actor.doctrine === id;
+    return `<button class="btn${on ? " primary" : ""}" type="button" data-doctrine="${id}" ${on ? "disabled" : ""}>${esc(spec.name)}${on ? " · civic" : " · 180g"}</button>`;
+  }).join("");
+}
+
+function ledgerLine(actor) {
+  const book = actor.ledger || {};
+  const bits = [
+    ["hours", book.hour],
+    ["acres", book.settle],
+    ["studies", book.study],
+    ["marches", book.combat],
+    ["stakes", book.stake],
+    ["placement", book.place],
+  ].filter((row) => row[1] > 0);
+  if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
+  return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
+}
+
 function earnStrip(actor) {
   const minted = Boolean(mint.mint);
-  return `<p class="muted">Solana ${esc(mint.cluster)}. Mint ${minted ? esc(mint.mint) : "not set"}. Wallet ${wallet ? esc(wallet) : "not connected"}. On-chain ${chainBalance == null ? "—" : esc(chainBalance)}.</p>
+  return `<p class="muted">${esc(ledgerLine(actor))}</p>
+    <p class="muted">Solana ${esc(mint.cluster)}. Mint ${minted ? esc(mint.mint) : "not set"}. Wallet ${wallet ? esc(wallet) : "not connected"}. On-chain ${chainBalance == null ? "—" : esc(chainBalance)}.</p>
     <div class="row">
       <button class="btn" type="button" id="phantom">${wallet ? "Refresh Phantom" : "Connect Phantom"}</button>
       <button class="btn" type="button" id="receipt">Purse receipt</button>
@@ -639,6 +665,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.study) {
     order({ type: "study", study: node.dataset.study }, "build");
+    return;
+  }
+  if (node.dataset.doctrine) {
+    order({ type: "doctrine", doctrine: node.dataset.doctrine }, "click");
     return;
   }
   if (node.dataset.train) {
