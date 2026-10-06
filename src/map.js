@@ -369,12 +369,18 @@ function drawHoldings(ctx, p, g, time) {
 
 function drawRoads(ctx, geoms) {
   ctx.lineCap = "round";
-  for (let i = 0; i < geoms.length; i++) {
-    for (let j = i + 1; j < geoms.length; j++) {
-      const a = geoms[i];
-      const b = geoms[j];
-      const d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (d > 980) continue;
+  const seen = new Set();
+  for (const a of geoms) {
+    const near = geoms
+      .filter((b) => b.id !== a.id)
+      .map((b) => ({ b, d: Math.hypot(a.x - b.x, a.y - b.y) }))
+      .sort((p, q) => p.d - q.d)
+      .slice(0, 2);
+    for (const { b, d } of near) {
+      if (d > 1400) continue;
+      const key = [a.id, b.id].sort().join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
       const mx = (a.x + b.x) / 2 + (hash(a.id + b.id) % 40) - 20;
       const my = (a.y + b.y) / 2 + 24;
       ctx.strokeStyle = "rgba(92, 70, 42, 0.55)";
