@@ -48,6 +48,7 @@ let mounted = false;
 let cam = { x: 0, y: 0, z: 1 };
 let goal = { x: 0, y: 0, z: 1 };
 let march = null;
+let strikes = [];
 let dragging = null;
 let hoverId = null;
 let pointer = null;
@@ -138,6 +139,14 @@ function needsMarch(action) {
   return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.spell === "meteor");
 }
 
+function marchKind(action) {
+  if (action.type === "trade") return "trade";
+  if (action.type === "thief") return "thief";
+  if (action.spell === "meteor") return "meteor";
+  if (action.type === "attack") return action.mode || "seize";
+  return "host";
+}
+
 function order(action, sound) {
   if (needsMarch(action) && !march) {
     const fromP = seat();
@@ -145,7 +154,7 @@ function order(action, sound) {
     if (fromP && target) {
       const from = provinceGeom(fromP);
       const to = provinceGeom(target);
-      march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action: null, sound, kind: action.type === "trade" ? "trade" : "host" };
+      march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action: null, sound, kind: marchKind(action) };
       bed("battle");
     }
   }
@@ -247,10 +256,14 @@ function render() {
       lastFrame = now;
       if (march) {
         march.t += dt / 1.15;
-        if (march.t >= 1) march = null;
+        if (march.t >= 1) {
+          impact(march.bx, march.by, march.kind);
+          march = null;
+        }
       }
       stepCamera(dt);
       stepMotes(dt);
+      stepStrikes(dt);
       watchLog();
       const clock = document.querySelector("#clock");
       const noteEl = document.querySelector("#clock-note");
@@ -294,7 +307,7 @@ function draw() {
   const h = Math.max(1, canvas.clientHeight);
   if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) resize();
   const ctx = canvas.getContext("2d");
-  drawRealm(ctx, w, h, world, seat().id, selectedId, cam, march, performance.now() / 1000, hoverId, dpr, motes);
+  drawRealm(ctx, w, h, world, seat().id, selectedId, cam, march, performance.now() / 1000, hoverId, dpr, motes, strikes);
   const mini = document.querySelector("#mini");
   if (mini) drawMini(mini.getContext("2d"), mini.width, mini.height, world, seat().id, cam);
 }
@@ -338,12 +351,36 @@ function stepMotes(dt) {
   });
 }
 
+const STRIKE = {
+  trade: "#e2c078",
+  seize: "#e07a68",
+  sack: "#e2c078",
+  raze: "#ffb15a",
+  thief: "#9a86c8",
+  meteor: "#e07a68",
+  host: "#f0d7a4",
+};
+
 function burst(x, y, color) {
   for (let i = 0; i < 16; i++) {
     const ang = (i / 16) * Math.PI * 2;
     const speed = 28 + (i % 5) * 10;
     motes.push({ x, y, vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, life: 1, color });
   }
+}
+
+function impact(x, y, kind) {
+  const color = STRIKE[kind] || "#e2c078";
+  strikes.push({ x, y, r: 10, life: 1, color });
+  burst(x, y, color);
+}
+
+function stepStrikes(dt) {
+  strikes = strikes.filter((row) => {
+    row.life -= dt * 0.55;
+    row.r += dt * 52;
+    return row.life > 0;
+  });
 }
 
 function watchLog() {
@@ -354,7 +391,8 @@ function watchLog() {
   if (!previous || !/seized|sacked|razed|meteor|burn|pilfer/i.test(line)) return;
   const target = byId(world, selectedId) || seat();
   const g = provinceGeom(target);
-  burst(g.x, g.y, /meteor|burn|razed/i.test(line) ? "#e07a68" : "#e2c078");
+  const kind = /meteor|burn/i.test(line) ? "meteor" : /razed/i.test(line) ? "raze" : /sacked/i.test(line) ? "sack" : /pilfer/i.test(line) ? "thief" : "seize";
+  impact(g.x, g.y, kind);
 }
 
 function paint() {

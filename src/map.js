@@ -677,7 +677,156 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
   ctx.strokeRect(cx - 12, cy - 9, 24, 18);
 }
 
-export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, march, time = 0, hoverId = null, dpr = 1, motes = []) {
+const MARCH_INK = {
+  trade: "#e2c078",
+  seize: "#e07a68",
+  sack: "#e2c078",
+  raze: "#ffb15a",
+  thief: "#9a86c8",
+  meteor: "#e07a68",
+  host: "#f0d7a4",
+};
+
+function drawMarch(ctx, march, time) {
+  const kind = march.kind || "host";
+  const color = MARCH_INK[kind] || "#e2c078";
+  const x = march.ax + (march.bx - march.ax) * march.t;
+  const y = march.ay + (march.by - march.ay) * march.t;
+  const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
+  const nx = Math.cos(ang + Math.PI / 2);
+  const ny = Math.sin(ang + Math.PI / 2);
+  for (let i = 1; i <= 8; i++) {
+    const t = Math.max(0, march.t - i * 0.035);
+    const px = march.ax + (march.bx - march.ax) * t;
+    const py = march.ay + (march.by - march.ay) * t;
+    ctx.globalAlpha = Math.max(0, 0.22 - i * 0.022);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(px - nx * (i % 2 ? 4 : -4), py - ny * (i % 2 ? 4 : -4), 5 - i * 0.3, 2.4, ang, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  if (kind === "trade") {
+    ctx.fillStyle = "#8a5a32";
+    ctx.fillRect(-8, -4, 14, 8);
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(4, -7, 7, 7);
+    ctx.fillStyle = "#24180f";
+    ctx.beginPath();
+    ctx.arc(-4, 5, 2.2, 0, Math.PI * 2);
+    ctx.arc(6, 5, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === "meteor") {
+    const drop = (1 - march.t) * 86;
+    ctx.rotate(-ang);
+    ctx.fillStyle = "rgba(224,122,104,0.4)";
+    ctx.beginPath();
+    ctx.moveTo(0, -drop);
+    ctx.lineTo(-6, -drop - 40);
+    ctx.lineTo(6, -drop - 30);
+    ctx.fill();
+    ctx.fillStyle = "#4a3428";
+    ctx.beginPath();
+    ctx.arc(0, -drop, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#e07a68";
+    ctx.beginPath();
+    ctx.arc(-2, -drop - 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === "thief") {
+    ctx.fillStyle = "#1a1420";
+    ctx.beginPath();
+    ctx.ellipse(0, 2, 8, 4.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#9a86c8";
+    ctx.fillRect(-1, -9, 2, 8);
+    ctx.beginPath();
+    ctx.arc(6, -1, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === "raze") {
+    for (let i = 0; i < 4; i++) {
+      const ox = -i * 7;
+      const oy = (i - 1.5) * 5;
+      ctx.fillStyle = "#6a3030";
+      ctx.beginPath();
+      ctx.arc(ox, oy, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      const flick = Math.sin(time * 14 + i) * 2;
+      ctx.fillStyle = "#ffb15a";
+      ctx.beginPath();
+      ctx.moveTo(ox + 2, oy - 3);
+      ctx.lineTo(ox + 6, oy - 10 - flick);
+      ctx.lineTo(ox - 1, oy - 4);
+      ctx.fill();
+    }
+  } else {
+    for (let i = 0; i < 6; i++) {
+      const ox = -i * 6;
+      const oy = (i - 2.5) * 3.5;
+      ctx.fillStyle = i === 0 ? "#f0d7a4" : "#6a3030";
+      ctx.beginPath();
+      ctx.arc(ox, oy, i === 0 ? 3 : 2.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#e8d6b0";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(ox + 2, oy);
+      ctx.lineTo(ox + 11, oy - 2);
+      ctx.stroke();
+    }
+    if (kind === "sack") {
+      ctx.fillStyle = "#e2c078";
+      ctx.fillRect(-28, -4, 8, 6);
+      ctx.fillStyle = "#8a5a32";
+      ctx.fillRect(-29, -6, 10, 3);
+    }
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(8, -14);
+    ctx.lineTo(18, -8);
+    ctx.lineTo(8, -4);
+    ctx.fill();
+    ctx.strokeStyle = "#5c4632";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(8, -14);
+    ctx.lineTo(8, 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (kind === "seize" || kind === "host") {
+    ctx.strokeStyle = "rgba(240, 215, 164, 0.8)";
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 3; i++) {
+      const ahead = Math.min(1, march.t + 0.08 + i * 0.05);
+      const ax = march.ax + (march.bx - march.ax) * ahead;
+      const ay = march.ay + (march.by - march.ay) * ahead;
+      ctx.beginPath();
+      ctx.moveTo(ax - Math.cos(ang) * 8, ay - Math.sin(ang) * 8);
+      ctx.lineTo(ax + Math.cos(ang) * 6, ay + Math.sin(ang) * 6);
+      ctx.stroke();
+    }
+  }
+  const pulse = 16 + Math.sin(time * 6) * 4;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 5]);
+  ctx.lineDashOffset = -time * 18;
+  ctx.beginPath();
+  ctx.arc(march.bx, march.by, pulse, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH" }[kind] || "MARCH";
+  ctx.fillText(title, x, y - 18);
+}
+
+export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, march, time = 0, hoverId = null, dpr = 1, motes = [], strikes = []) {
   screenTransform(ctx, dpr);
   ctx.clearRect(0, 0, viewW, viewH);
   worldTransform(ctx, cam, viewW, viewH, dpr);
@@ -738,67 +887,25 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
       ctx.stroke();
     }
   }
-  if (march) {
-    const x = march.ax + (march.bx - march.ax) * march.t;
-    const y = march.ay + (march.by - march.ay) * march.t;
-    for (let i = 1; i <= 6; i++) {
-      const t = Math.max(0, march.t - i * 0.04);
-      const px = march.ax + (march.bx - march.ax) * t;
-      const py = march.ay + (march.by - march.ay) * t;
-      ctx.fillStyle = `rgba(226, 196, 140, ${0.18 - i * 0.02})`;
-      ctx.beginPath();
-      ctx.arc(px, py, 6 - i * 0.4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
-    if (march.kind === "trade") {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(ang);
-      ctx.fillStyle = "#8a5a32";
-      ctx.fillRect(-8, -4, 14, 8);
-      ctx.fillStyle = "#e2c078";
-      ctx.fillRect(4, -7, 7, 7);
-      ctx.fillStyle = "#24180f";
-      ctx.beginPath();
-      ctx.arc(-4, 5, 2.2, 0, Math.PI * 2);
-      ctx.arc(6, 5, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-    const nx = Math.cos(ang + Math.PI / 2);
-    const ny = Math.sin(ang + Math.PI / 2);
-    if (march.kind !== "trade") for (let i = 0; i < 5; i++) {
-      const ox = nx * ((i - 2) * 4);
-      const oy = ny * ((i - 2) * 4);
-      ctx.fillStyle = i === 2 ? "#f0d7a4" : "#6a3030";
-      ctx.beginPath();
-      ctx.arc(x - Math.cos(ang) * i * 5 + ox, y - Math.sin(ang) * i * 5 + oy, i === 2 ? 3.2 : 2.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (march.kind !== "trade") {
-      ctx.fillStyle = "#e2c078";
-      ctx.beginPath();
-      ctx.moveTo(x + Math.cos(ang) * 2, y + Math.sin(ang) * 2 - 12);
-      ctx.lineTo(x + 9, y - 8);
-      ctx.lineTo(x, y - 5);
-      ctx.fill();
-    }
-    ctx.strokeStyle = "rgba(246, 231, 193, 0.7)";
-    ctx.setLineDash([4, 5]);
-    ctx.lineDashOffset = -time * 12;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(march.bx, march.by, 16, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
+  if (march) drawMarch(ctx, march, time);
   for (const mote of motes) {
     ctx.globalAlpha = Math.max(0, mote.life);
     ctx.fillStyle = mote.color;
     ctx.beginPath();
     ctx.arc(mote.x, mote.y, 2.4, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  for (const hit of strikes) {
+    ctx.globalAlpha = Math.max(0, hit.life);
+    ctx.strokeStyle = hit.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(hit.x, hit.y, hit.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(hit.x, hit.y, Math.max(4, hit.r * 0.45), 0, Math.PI * 2);
+    ctx.stroke();
     ctx.globalAlpha = 1;
   }
   screenTransform(ctx, dpr);
