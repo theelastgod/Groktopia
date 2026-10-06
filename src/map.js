@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, captiveCount, intelFresh, seasonName } from "./sim.js";
+import { beaconLit, captiveCount, feastLive, intelFresh, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1118,6 +1118,30 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   drawPen(ctx, g, time, captiveCount(p));
   drawMuster(ctx, g, time, p.muster || 0);
   if (p.stallHour === hour) drawStall(ctx, g, time);
+  if (feastLive(p, hour)) drawFeast(ctx, g, time);
+}
+
+function drawFeast(ctx, g, time) {
+  const x = g.x - g.r * 0.02;
+  const y = g.y - g.r * 0.82;
+  ctx.fillStyle = "#5c4632";
+  ctx.fillRect(x - 18, y, 36, 4);
+  ctx.fillStyle = "#f3e6c8";
+  ctx.fillRect(x - 20, y - 3, 40, 5);
+  for (let i = 0; i < 3; i++) {
+    const fx = x - 14 + i * 14;
+    const wave = Math.sin(time * 3 + i) * 1.6;
+    ctx.fillStyle = i === 1 ? "#a14a3c" : "#e2c078";
+    ctx.beginPath();
+    ctx.moveTo(fx, y - 3);
+    ctx.lineTo(fx, y - 16);
+    ctx.lineTo(fx + 7 + wave, y - 11);
+    ctx.lineTo(fx, y - 8);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#c6a15a";
+  ctx.fillRect(x - 8, y - 1, 5, 2);
+  ctx.fillRect(x + 3, y - 1, 5, 2);
 }
 
 function drawStall(ctx, g, time) {

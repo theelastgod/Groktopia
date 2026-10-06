@@ -11,6 +11,7 @@ import {
   JOIN_GRACE_MS,
   ageName,
   beaconLit,
+  feastLive,
   seasonName,
   seasonMod,
   stallQuote,
@@ -554,6 +555,7 @@ function cardFor(actor, selected) {
     <p class="muted">${esc(ageName(selected))} age · ${studyCount(selected)} studies${Number.isFinite(selected.seatedHour) ? ` · seated at hour ${selected.seatedHour}` : ""} · land ${selected.land} · empty ${freeLand(selected)} · people ${self || fresh ? population(selected) : "—"} · networth ${self || fresh ? networth(selected) : "—"}</p>
     <p>Offense ${self ? offense(actor) : fresh ? fresh.offense : "—"} · defense ${knownDef}. ${esc(band)}</p>
     ${beaconLit(selected, world.hour) ? `<p class="muted">A watch fire burns through hour ${selected.beaconUntil - 1}. Camps in its light are read, and a second fire chains one hop.</p>` : ""}
+    ${feastLive(selected, world.hour) ? `<p class="muted">A long table is set through hour ${selected.feastUntil - 1}. The hearth grows faster while the flags fly.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
     const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
@@ -577,6 +579,8 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(feastLine(actor))}</p>
+      <div class="row">${feastButton(actor)}</div>
       <p class="muted">${esc(stallLine(actor))}</p>
       <div class="row">${stallButtons(actor)}</div>
       <p class="muted">${esc(musterLine(actor))}</p>
@@ -671,6 +675,7 @@ function ledgerLine(actor) {
     ["ransoms", book.ransom],
     ["musters", book.muster],
     ["stalls", book.stall],
+    ["feasts", book.feast],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -710,6 +715,16 @@ function marchMode(mode) {
 function worldPointFrom(event, canvas) {
   const rect = canvas.getBoundingClientRect();
   return screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+}
+
+function feastLine(actor) {
+  if (feastLive(actor, world.hour)) return `The long table holds through hour ${actor.feastUntil - 1}. Workshops run a little hotter, and the hearth takes in more people.`;
+  return "Set a long table for 160 gold and 450 grain. For five hours the hearth grows faster. Key 9 sets it.";
+}
+
+function feastButton(actor) {
+  if (feastLive(actor, world.hour)) return `<button class="btn" type="button" disabled>Feast through hour ${actor.feastUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-feast="1">Set the table · 160g · +${formatUtopia(EARN.feast)}</button>`;
 }
 
 function stallLine(actor) {
@@ -921,6 +936,7 @@ function bindMap(canvas) {
       if (event.key === "6" && world && selectedId && seat().pens && seat().pens[selectedId]) order({ type: "ransom", target: selectedId }, "coin");
       if (event.key === "7" && world) order({ type: "muster" }, "build");
       if (event.key === "8" && world) order({ type: "stall", mode: "sell" }, "coin");
+      if (event.key === "9" && world) order({ type: "feast" }, "coin");
       if (event.key === "4" && world) {
         const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
         if (next) order({ type: "study", study: next.id }, "build");
@@ -1005,6 +1021,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.stall) {
     order({ type: "stall", mode: node.dataset.stall }, "coin");
+    return;
+  }
+  if (node.dataset.feast) {
+    order({ type: "feast" }, "coin");
     return;
   }
   if (node.dataset.doctrine) {

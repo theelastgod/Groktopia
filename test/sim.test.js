@@ -26,6 +26,7 @@ import {
   captiveCount,
   intelFresh,
   stallQuote,
+  feastLive,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -503,6 +504,40 @@ test("the grain stall pays once an hour and follows the season", () => {
   assert.equal(you.utopia, beforePurse);
   assert.equal(you.stallHour, 90);
   assert.equal(applyAction(w, "you", { type: "stall", mode: "barter" }).ok, false);
+});
+
+test("a feast spends the table and grows the hearth", () => {
+  const fed = newWorld({ seed: 29 });
+  const plain = newWorld({ seed: 29 });
+  for (const realm of [fed, plain]) {
+    const seat = byId(realm, "you");
+    seat.peasants = 100;
+    seat.grain = 20000;
+    seat.gold = 5000;
+    realm.provinces = [seat];
+  }
+  const you = byId(fed, "you");
+  const purse = you.utopia;
+  const grain = you.grain;
+  const gold = you.gold;
+  assert.equal(applyAction(fed, "you", { type: "feast" }).ok, true);
+  assert.equal(you.grain, grain - 450);
+  assert.equal(you.gold, gold - 160);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.feast, EARN.feast);
+  assert.equal(you.utopia, purse + EARN.feast);
+  assert.equal(feastLive(you, fed.hour), true);
+  assert.equal(applyAction(fed, "you", { type: "feast" }).ok, false);
+  you.grain = 40;
+  you.gold = 5000;
+  you.orders = ORDERS;
+  you.feastUntil = 0;
+  assert.equal(applyAction(fed, "you", { type: "feast" }).ok, false);
+  you.grain = 20000;
+  you.feastUntil = 5;
+  advanceHour(fed);
+  advanceHour(plain);
+  assert.equal(byId(fed, "you").peasants, byId(plain, "you").peasants + 6);
 });
 
 test("save and load keep the hour and the random stream", () => {

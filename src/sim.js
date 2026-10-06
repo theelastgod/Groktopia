@@ -24,6 +24,7 @@ export const EARN = {
   ransom: 50,
   muster: 36,
   stall: 28,
+  feast: 30,
 };
 
 export const FACTIONS = {
@@ -232,6 +233,7 @@ export function blankProvince(partial) {
     muster: 0,
     musterUntil: 0,
     stallHour: -1,
+    feastUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -506,6 +508,7 @@ export const AMBITIONS = [
   { id: "ransom", name: "Ransom the pen", purse: 45, blurb: "Send penned people home for gold.", match: (action) => action.type === "ransom" },
   { id: "muster", name: "Ring the bell", purse: 40, blurb: "Call a field host.", match: (action) => action.type === "muster" },
   { id: "stall", name: "Open the stall", purse: 35, blurb: "Sell grain at the stall.", match: (action) => action.type === "stall" && action.mode !== "buy" },
+  { id: "feast", name: "Set the table", purse: 35, blurb: "Call a feast.", match: (action) => action.type === "feast" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -545,6 +548,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "release") result = doRelease(world, actor, action.target);
   else if (action.type === "muster") result = doMuster(world, actor);
   else if (action.type === "stall") result = doStall(world, actor, action.mode);
+  else if (action.type === "feast") result = doFeast(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -900,6 +904,30 @@ function doRelease(world, actor, targetId) {
   return { ok: true, message: `Released ${n}.` };
 }
 
+export function feastLive(p, hour) {
+  return Boolean(p && typeof p.feastUntil === "number" && p.feastUntil > (hour || 0));
+}
+
+function doFeast(world, actor) {
+  if (feastLive(actor, world.hour)) return fail(`The tables are already set through hour ${actor.feastUntil - 1}.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 160) return fail("A feast wants 160 gold.");
+  if ((actor.grain || 0) < 450) return fail("A feast wants 450 grain.");
+  actor.gold -= 160;
+  actor.grain -= 450;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.feastUntil = (world.hour || 0) + 5;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.feast;
+    notePurse(actor, "feast", EARN.feast);
+    purse = ` Purse +${formatUtopia(EARN.feast)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} sets a long table through hour ${actor.feastUntil - 1}. The hearth grows faster.${purse}`);
+  return { ok: true, message: `Feast set through hour ${actor.feastUntil - 1}.${purse}` };
+}
+
 function doStall(world, actor, mode) {
   const quote = stallQuote(world.hour);
   if (mode !== "sell" && mode !== "buy") return fail("The stall buys or sells grain.");
@@ -1188,6 +1216,7 @@ function economy(p, hour) {
   if (p.relics && p.relics.well) foodIn = Math.floor(foodIn * 1.06);
   goldIn = Math.floor(goldIn * season.gold);
   foodIn = Math.floor(foodIn * season.food);
+  if (feastLive(p, hour)) goldIn = Math.floor(goldIn * 1.05);
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -1203,7 +1232,10 @@ function economy(p, hour) {
   if (p.peasants < cap && p.grain > foodOut * 2) {
     let grow = Math.max(1, Math.floor(p.peasants * 0.035));
     if (p.relics && p.relics.orchard) grow += 2;
+    if (feastLive(p, hour)) grow += 6;
     p.peasants = Math.min(cap, p.peasants + grow);
+  } else if (feastLive(p, hour) && p.peasants < cap && p.grain > foodOut) {
+    p.peasants = Math.min(cap, p.peasants + 4);
   }
   if (p.mystics < mysticCap(p)) p.mystics += 1;
   for (const k of Object.keys(p.spells)) {
@@ -1346,6 +1378,9 @@ export function chooseAction(world, agent) {
     const quote = stallQuote(world.hour);
     if (agent.grain < foodNeed(agent) && agent.gold >= quote.buy && agent.orders >= 1 && rng.next() < 0.35) {
       return { type: "stall", mode: "buy" };
+    }
+    if (!feastLive(agent, world.hour) && agent.grain >= 3500 && agent.gold >= 300 && agent.orders >= 1 && rng.next() < 0.16) {
+      return { type: "feast" };
     }
     const cost = 300 + agent.land * 3;
     if (agent.gold > cost + 800 && agent.orders > 0 && rng.next() < 0.7) return { type: "explore" };
