@@ -1,9 +1,21 @@
 name = "groktopia"
 account_id = "b4d2c0859ed027cdf7f17626d660949e"
+main = "src/worker.js"
 compatibility_date = "2026-10-06"
 workers_dev = true
 
 [assets]
 directory = "."
+binding = "ASSETS"
 not_found_handling = "404-page"
 html_handling = "auto-trailing-slash"
+
+[durable_objects]
+bindings = [
+  { name = "REALMS", class_name = "RealmRoom" },
+  { name = "MATCH", class_name = "Matchmaker" }
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RealmRoom", "Matchmaker"]

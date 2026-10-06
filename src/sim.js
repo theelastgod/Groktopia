@@ -810,3 +810,163 @@ export function intelFresh(actor, targetId, hour) {
   if (hour - row.hour > 3) return null;
   return row;
 }
+
+export const MATCH_MS = 2 * 60 * 60 * 1000;
+export const FILL_MS = 90 * 1000;
+export const JOIN_GRACE_MS = 10 * 60 * 1000;
+export const TICK_MS = 60 * 1000;
+export const MAX_HUMANS = 8;
+
+export const SPAWNS = [
+  [-1500, -1100],
+  [-700, -1700],
+  [350, -1750],
+  [1450, -1200],
+  [1750, -150],
+  [1500, 900],
+  [400, 1650],
+  [-800, 1550],
+];
+
+const WILD = [
+  { id: "harrow", persona: "harrow", name: "Red Mile", ruler: "Marshal Harrow", faction: "marcher", x: -200, y: -400, line: "Harrow counts spears, then spends them." },
+  { id: "vellum", persona: "vellum", name: "Quiet Stacks", ruler: "Archivist Vellum", faction: "veil", x: 200, y: -500, line: "Vellum reads the hour before she spends it." },
+  { id: "brine", persona: "brine", name: "Salt Ledger", ruler: "Quartermaster Brine", faction: "hearth", x: 0, y: 450, line: "Brine buys the road, then the grain on it." },
+  { id: "quill", persona: "quill", name: "Ink Market", ruler: "Informant Quill", faction: "cutpurse", x: -450, y: 200, line: "Quill prefers a purse to a gate." },
+  { id: "sable", persona: "sable", name: "Grey Vigil", ruler: "Warden Sable", faction: "warden", x: 500, y: 250, line: "Sable answers the last blow, not the first rumor." },
+  { id: "moss", persona: "moss", name: "Low Orchard", ruler: "Hearthkeeper Moss", faction: "hearth", x: -150, y: 900, line: "Moss plants another row and waits." },
+  { id: "cinder", persona: "harrow", name: "Cinder Reach", ruler: "Captain Cinder", faction: "marcher", x: 900, y: -700, line: "Cinder marches the far road." },
+  { id: "loom", persona: "vellum", name: "Loom Hill", ruler: "Sister Loom", faction: "veil", x: -1100, y: -200, line: "Loom keeps a light on the west ridge." },
+  { id: "peat", persona: "brine", name: "Peat Market", ruler: "Factor Peat", faction: "hearth", x: 1100, y: 500, line: "Peat buys what the road drops." },
+  { id: "nyx", persona: "quill", name: "Nyx Fold", ruler: "Nyx", faction: "cutpurse", x: -900, y: 1100, line: "Nyx is already inside the tent." },
+];
+
+export function createOpenRealm(seed = 1) {
+  const provinces = WILD.map((r, i) => {
+    const lean = 0.86 + (i % 4) * 0.05;
+    return blankProvince({
+      id: r.id,
+      kind: "agent",
+      persona: r.persona,
+      name: r.name,
+      ruler: r.ruler,
+      faction: r.faction,
+      line: r.line,
+      x: r.x,
+      y: r.y,
+      land: Math.round(170 * lean),
+      buildings: emptyBuildings({
+        hearth: Math.round(36 * lean),
+        field: Math.round(30 * lean),
+        workshop: Math.round(16 * lean),
+        barracks: Math.round(12 * lean),
+        keep: r.persona === "sable" ? 16 : Math.round(7 * lean),
+        chapel: r.persona === "vellum" ? 10 : 4,
+        den: r.persona === "quill" ? 9 : 3,
+        spire: r.persona === "vellum" ? 8 : 3,
+      }),
+      peasants: Math.round(480 * lean),
+      soldiers: r.persona === "harrow" ? 64 : Math.round(70 * lean),
+      elites: r.persona === "sable" ? 28 : Math.round(14 * lean),
+      thieves: r.persona === "quill" ? 16 : 5,
+      mystics: r.persona === "vellum" ? 12 : 4,
+      gold: Math.round(6400 * lean),
+      grain: Math.round(7200 * lean),
+      aether: r.persona === "vellum" ? 320 : 140,
+    });
+  });
+  return {
+    seed,
+    hour: 0,
+    seat: null,
+    burned: 0,
+    closed: false,
+    provinces,
+    log: [{ hour: 0, text: "The wilds are open. Eight human seats. The age clock runs for two hours." }],
+    rng: makeRng(seed),
+  };
+}
+
+export function humanCount(world) {
+  return world.provinces.filter((p) => p.kind === "human").length;
+}
+
+export function claimSeat(world, opts) {
+  if (world.closed) return { ok: false, message: "This age is over." };
+  if (humanCount(world) >= MAX_HUMANS) return { ok: false, message: "This realm is full." };
+  if (byId(world, opts.id)) return { ok: false, message: "That seat is already taken." };
+  const faction = FACTIONS[opts.faction] ? opts.faction : "marcher";
+  const used = new Set(world.provinces.map((p) => `${p.x},${p.y}`));
+  const spot = SPAWNS.find(([x, y]) => !used.has(`${x},${y}`));
+  if (!spot) return { ok: false, message: "No open ground." };
+  const province = blankProvince({
+    id: opts.id,
+    kind: "human",
+    name: opts.province || "New Acre",
+    ruler: opts.ruler || "Ruler",
+    faction,
+    x: spot[0],
+    y: spot[1],
+  });
+  world.provinces.push(province);
+  if (!world.seat) world.seat = province.id;
+  log(world, `${province.ruler} claims ${province.name} on the open map. ${humanCount(world)} of ${MAX_HUMANS} human seats filled.`);
+  return { ok: true, message: "Seat claimed.", province };
+}
+
+export function realmJoinable(meta, now) {
+  if (!meta || meta.ended || meta.status === "ended") return false;
+  if ((meta.humans || 0) >= MAX_HUMANS) return false;
+  if (meta.startedAt && now > meta.startedAt + JOIN_GRACE_MS) return false;
+  return true;
+}
+
+export function standings(world) {
+  return world.provinces
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      ruler: p.ruler,
+      kind: p.kind,
+      networth: networth(p),
+      utopia: p.utopia,
+    }))
+    .sort((a, b) => b.networth - a.networth || b.utopia - a.utopia);
+}
+
+export function closeAge(world) {
+  if (world.closed) return standings(world);
+  const humans = standings(world).filter((row) => row.kind === "human");
+  const bonus = [2500, 1500, 800, 400, 200];
+  humans.forEach((row, index) => {
+    const province = byId(world, row.id);
+    province.utopia += bonus[index] ?? 100;
+  });
+  world.closed = true;
+  log(world, "The two-hour age is over. Placement is paid in $UTOPIA.");
+  return standings(world);
+}
+
+export function redact(world, seatId) {
+  const copy = JSON.parse(serialize(world));
+  delete copy.rngState;
+  const viewer = copy.provinces.find((p) => p.id === seatId);
+  for (const province of copy.provinces) {
+    if (province.id === seatId) continue;
+    const known = viewer && intelFresh(viewer, province.id, copy.hour);
+    province.intel = {};
+    province.cooldown = {};
+    if (!known) {
+      province.soldiers = 0;
+      province.elites = 0;
+      province.thieves = 0;
+      province.mystics = 0;
+      province.gold = 0;
+      province.grain = 0;
+      province.aether = 0;
+      province.orders = 0;
+      province.utopia = 0;
+    }
+  }
+  return copy;
+}

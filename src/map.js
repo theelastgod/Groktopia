@@ -23,7 +23,9 @@ const INK = {
 };
 
 export function provinceGeom(p) {
-  const home = HOME[p.id] || [((hash(p.id) % 400) - 200), ((hash(p.id + "y") % 400) - 200)];
+  const home = Number.isFinite(p.x) && Number.isFinite(p.y)
+    ? [p.x, p.y]
+    : (HOME[p.id] || [((hash(p.id) % 400) - 200), ((hash(p.id + "y") % 400) - 200)]);
   const r = Math.max(58, Math.min(138, 34 + p.land * 0.2));
   return { id: p.id, x: home[0], y: home[1], r };
 }
@@ -174,7 +176,7 @@ function drawHoldings(ctx, p, g) {
       else blot(ctx, x - 4, y - 4, 8, 7, i % 2 ? "#6e4630" : INK.hearth);
     });
   }
-  const men = Math.min(10, Math.round(p.soldiers / 12));
+  const men = Math.min(10, Math.round((p.soldiers || 0) / 12));
   for (let i = 0; i < men; i++) {
     const x = g.x - 16 + (i % 5) * 7;
     const y = g.y + g.r * 0.35 + Math.floor(i / 5) * 6;
@@ -184,11 +186,46 @@ function drawHoldings(ctx, p, g) {
   ctx.restore();
 }
 
+function drawWilds(ctx) {
+  for (let x = -2100; x <= 2100; x += 120) {
+    for (let y = -2100; y <= 2100; y += 120) {
+      const n = hash(`${x},${y}`);
+      if (n % 5 !== 0) continue;
+      ctx.fillStyle = n % 2 === 0 ? "#24361e" : "#1c3020";
+      ctx.beginPath();
+      ctx.arc(x + (n % 30) - 15, y + ((n >> 4) % 30) - 15, 5 + (n % 4), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+export function drawMini(ctx, width, height, world, seatId, cam) {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(20,16,12,0.88)";
+  ctx.fillRect(0, 0, width, height);
+  const scale = width / 4600;
+  const to = (x, y) => [width / 2 + x * scale, height / 2 + y * scale];
+  ctx.fillStyle = "#16343c";
+  ctx.fillRect(0, height / 2 - 4, width, 8);
+  for (const p of world.provinces) {
+    const g = provinceGeom(p);
+    const [sx, sy] = to(g.x, g.y);
+    ctx.fillStyle = p.id === seatId ? "#e2c078" : p.kind === "human" ? "#f3e6c8" : "#7d9a72";
+    ctx.beginPath();
+    ctx.arc(sx, sy, p.id === seatId ? 4 : 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const [cx, cy] = to(cam.x, cam.y);
+  ctx.strokeStyle = "#e2c078";
+  ctx.strokeRect(cx - 10, cy - 8, 20, 16);
+}
+
 export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, march) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, viewW, viewH);
   ctx.setTransform(cam.z, 0, 0, cam.z, viewW / 2 - cam.x * cam.z, viewH / 2 - cam.y * cam.z);
   drawGround(ctx, cam, viewW, viewH);
+  drawWilds(ctx);
   const geoms = world.provinces.map(provinceGeom).sort((a, b) => a.y - b.y);
   for (const g of geoms) {
     const p = world.provinces.find((row) => row.id === g.id);

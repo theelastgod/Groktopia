@@ -3,36 +3,36 @@ import {
   EARN,
   FACTIONS,
   ORDERS,
-  advanceHour,
-  applyAction,
   byId,
   defense,
   foodNeed,
   formatUtopia,
   freeLand,
-  hydrate,
   intelFresh,
   mysticCap,
   networth,
-  newWorld,
   nwFactor,
   offense,
   population,
-  seatRival,
-  serialize,
   soldierCap,
   spellbook,
   thiefCap,
   eliteCap,
 } from "./sim.js";
-import { drawRealm, fitCamera, hitProvince, provinceGeom, screenToWorld } from "./map.js";
+import { drawMini, drawRealm, fitCamera, hitProvince, provinceGeom, screenToWorld } from "./map.js";
 
-const SAVE = "groktopia.v1";
+const SESSION = "groktopia.session";
 const app = document.querySelector("#app");
 
 let world = null;
+let session = null;
+let meta = { status: "filling", startedAt: null, endsAt: null, fillUntil: null, nextTickAt: null, humans: 0, maxHumans: 8, serverNow: Date.now() };
+let standings = [];
+let socket = null;
+let socketGen = 0;
+let skew = 0;
 let toast = "";
-let selectedId = "you";
+let selectedId = "";
 let stake = 100;
 let soundOn = true;
 let wallet = "";
@@ -55,8 +55,12 @@ function seat() {
   return byId(world, world.seat) || byId(world, "you");
 }
 
-function save() {
-  localStorage.setItem(SAVE, serialize(world));
+function saveSession() {
+  if (session) localStorage.setItem(SESSION, JSON.stringify(session));
+}
+
+function nowServer() {
+  return Date.now() + skew;
 }
 
 function bootAudio() {
@@ -101,16 +105,16 @@ function note(message) {
 }
 
 function act(action, sound) {
-  const actor = seat();
-  const res = applyAction(world, actor.id, action);
-  if (res.ok) {
-    play(sound || "click");
-    if (res.win === true) play("win");
-    if (res.win === false) play("lose");
-    save();
+  if (!socket || socket.readyState !== 1) {
+    note("The realm connection is down.");
+    return;
   }
-  note(res.message);
-  return res;
+  if (meta.status !== "live") {
+    note(meta.status === "ended" ? "The age is over." : "The age clock has not started.");
+    return;
+  }
+  play(sound || "click");
+  socket.send(JSON.stringify({ type: "action", action }));
 }
 
 function needsMarch(action) {
@@ -118,37 +122,34 @@ function needsMarch(action) {
 }
 
 function order(action, sound) {
-  if (!needsMarch(action) || march) {
-    act(action, sound);
-    return;
+  if (needsMarch(action) && !march) {
+    const fromP = seat();
+    const target = byId(world, action.target);
+    if (fromP && target) {
+      const from = provinceGeom(fromP);
+      const to = provinceGeom(target);
+      march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action: null, sound };
+      bed("battle");
+    }
   }
-  const from = provinceGeom(seat());
-  const target = byId(world, action.target);
-  if (!target) {
-    act(action, sound);
-    return;
-  }
-  const to = provinceGeom(target);
-  march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action, sound };
-  bed("battle");
-  play(sound || "march");
+  act(action, sound);
 }
 
 function gate() {
-  const saved = localStorage.getItem(SAVE);
+  const saved = localStorage.getItem(SESSION);
   const options = Object.values(FACTIONS).map((f) => `<option value="${f.id}">${esc(f.name)} — ${esc(f.blurb)}</option>`).join("");
   return `<main class="gate">
     <img src="/public/art/banner.jpg" alt="A walled riverside province at dusk">
     <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
     <h1>Groktopia</h1>
-    <p class="lede">Look down on the realm. Your province and six Grok agents sit on the same land. Click a holding, then march, build, or steal. Victories inside a fair size band pay <b>$UTOPIA</b>. Drag to pan. The wheel zooms.</p>
+    <p class="lede">An open realm, seen from above. Matchmaking seats you with other players, up to eight humans, and the Grok agents hold the wilds between you. The age clock runs for two hours, then the realm closes and placement is paid in <b>$UTOPIA</b>.</p>
     <form class="card" id="found">
       <label>Ruler <input name="ruler" required maxlength="32" value="Ada"></label>
       <label>Province <input name="province" required maxlength="32" value="First Acre"></label>
       <label>Faction <select name="faction">${options}</select></label>
       <div class="row">
-        <button class="btn primary" type="submit">Found the province</button>
-        ${saved ? `<button class="btn" type="button" id="resume">Resume</button>` : ""}
+        <button class="btn primary" type="submit">Find a realm</button>
+        ${saved ? `<button class="btn" type="button" id="resume">Rejoin</button>` : ""}
       </div>
     </form>
   </main>`;
@@ -160,13 +161,15 @@ function shell() {
     <header class="hud-top">
       <div class="brand-row hud-chip"><img class="coin-mark" src="/public/art/coin.jpg" alt=""><div class="brand">Groktopia</div></div>
       <div class="hud-chip" id="hud-hour"></div>
+      <div class="hud-chip"><b id="clock">2:00:00</b><span id="clock-note">age clock</span></div>
       <div class="hud-chip" id="hud-purse"></div>
-      <button class="btn primary" id="hour" type="button">Let the hour pass</button>
+      <button class="btn" id="fit" type="button">Whole realm</button>
       <button class="btn" id="sound" type="button">${soundOn ? "Sound on" : "Sound off"}</button>
-      <span id="hud-seats"></span>
     </header>
+    <canvas id="mini" width="168" height="168"></canvas>
     <section class="hud-card" id="card"></section>
     <ol class="hud-log log" id="log"></ol>
+    <div id="veil" class="veil" hidden></div>
     ${toast ? `<div class="toast">${esc(toast)}</div>` : ""}
   </div>`;
 }
@@ -185,7 +188,8 @@ function render() {
     mounted = true;
     const canvas = document.querySelector("#realm");
     resize();
-    cam = fitCamera(world.provinces, canvas.clientWidth, canvas.clientHeight);
+    const home = provinceGeom(seat());
+    cam = { x: home.x, y: home.y, z: 1.05 };
     bindMap(canvas);
     lastFrame = performance.now();
     const loop = (now) => {
@@ -193,11 +197,14 @@ function render() {
       lastFrame = now;
       if (march) {
         march.t += dt / 0.7;
-        if (march.t >= 1) {
-          const done = march;
-          march = null;
-          act(done.action, done.sound);
-        }
+        if (march.t >= 1) march = null;
+      }
+      const clock = document.querySelector("#clock");
+      const noteEl = document.querySelector("#clock-note");
+      if (clock) {
+        const label = clockLabel();
+        clock.textContent = label.time;
+        if (noteEl) noteEl.textContent = label.note;
       }
       draw();
       raf = requestAnimationFrame(loop);
@@ -221,6 +228,8 @@ function draw() {
   if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) resize();
   const ctx = canvas.getContext("2d");
   drawRealm(ctx, canvas.width, canvas.height, world, seat().id, selectedId, cam, march);
+  const mini = document.querySelector("#mini");
+  if (mini) drawMini(mini.getContext("2d"), mini.width, mini.height, world, seat().id, cam);
 }
 
 function paint() {
@@ -228,17 +237,25 @@ function paint() {
   const p = seat();
   const hour = document.querySelector("#hud-hour");
   const purse = document.querySelector("#hud-purse");
-  const seats = document.querySelector("#hud-seats");
   const card = document.querySelector("#card");
   const log = document.querySelector("#log");
-  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS}</span>`;
+  const veil = document.querySelector("#veil");
+  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} · ${meta.humans || 1}/${meta.maxHumans || 8} players</span>`;
   if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)}</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
-  if (seats) {
-    const humans = world.provinces.filter((row) => row.kind === "human");
-    seats.innerHTML = humans.map((row) => `<button class="btn" type="button" data-seat="${row.id}" ${world.seat === row.id ? 'aria-current="page"' : ""}>${esc(row.name)}</button>`).join("")
-      + (byId(world, "rival") ? "" : `<button class="btn" type="button" id="rival">Seat a rival</button>`);
+  if (log) {
+    const board = standings.slice(0, 6).map((row, index) => `${index + 1}. ${row.name}`).join(" · ");
+    log.innerHTML = `<li><b>Board</b> ${esc(board)}</li>` + world.log.slice(0, 7).map((row) => `<li><b>${row.hour}</b> ${esc(row.text)}</li>`).join("");
   }
-  if (log) log.innerHTML = world.log.slice(0, 8).map((row) => `<li><b>${row.hour}</b> ${esc(row.text)}</li>`).join("");
+  if (veil) {
+    if (meta.status === "ended") {
+      veil.hidden = false;
+      veil.innerHTML = `<div class="veil-card"><h2>The age is over</h2><p>Two hours on the clock. Placement is already in the $UTOPIA purses.</p><ol>${standings.filter((row) => row.kind === "human").map((row, index) => `<li>${index + 1}. ${esc(row.ruler)} of ${esc(row.name)} · networth ${row.networth}</li>`).join("")}</ol><button class="btn primary" type="button" id="again">Find another realm</button></div>`;
+    } else if (meta.status !== "live") {
+      veil.hidden = false;
+      const wait = Math.max(0, (meta.fillUntil || nowServer()) - nowServer());
+      veil.innerHTML = `<div class="veil-card"><h2>Matchmaking</h2><p>${meta.humans || 1} of ${meta.maxHumans || 8} players on the open map. The two-hour age starts when a second ruler arrives, or in ${fmt(wait)}.</p></div>`;
+    } else veil.hidden = true;
+  }
   if (card) card.innerHTML = cardFor(p, byId(world, selectedId) || p);
   let toastNode = document.querySelector(".toast");
   if (toast) {
@@ -365,13 +382,25 @@ app.addEventListener("click", async (event) => {
   const node = event.target.closest("button");
   if (!node) return;
   if (node.id === "resume") {
-    world = hydrate(localStorage.getItem(SAVE));
-    selectedId = world.seat || "you";
-    play("hour");
+    const saved = JSON.parse(localStorage.getItem(SESSION) || "null");
+    if (saved?.realmId && saved.token) connectSocket(saved);
+    return;
+  }
+  if (node.id === "again") {
+    session = null;
+    socketGen += 1;
+    localStorage.removeItem(SESSION);
+    world = null;
+    if (socket) socket.close();
     render();
     return;
   }
   if (!world) return;
+  if (node.id === "fit") {
+    const canvas = document.querySelector("#realm");
+    cam = fitCamera(world.provinces, canvas.clientWidth, canvas.clientHeight);
+    return;
+  }
   if (node.id === "sound") {
     soundOn = !soundOn;
     node.textContent = soundOn ? "Sound on" : "Sound off";
@@ -379,30 +408,6 @@ app.addEventListener("click", async (event) => {
       clips.throne.pause();
       clips.battle.pause();
     } else bed(selectedId === seat().id ? "throne" : "battle");
-    return;
-  }
-  if (node.id === "hour") {
-    if (march) return;
-    advanceHour(world);
-    play("hour");
-    save();
-    note(`Hour ${world.hour}.`);
-    return;
-  }
-  if (node.id === "rival") {
-    const res = seatRival(world, "Second Acre", seat().faction === "marcher" ? "warden" : "marcher");
-    note(res.message);
-    if (res.ok) {
-      save();
-      cam = fitCamera(world.provinces, document.querySelector("#realm").clientWidth, document.querySelector("#realm").clientHeight);
-    }
-    return;
-  }
-  if (node.dataset.seat) {
-    world.seat = node.dataset.seat;
-    selectedId = world.seat;
-    save();
-    paint();
     return;
   }
   if (node.dataset.build) {
@@ -451,23 +456,106 @@ app.addEventListener("change", (event) => {
   if (event.target.id === "stake") stake = Number(event.target.value);
 });
 
-app.addEventListener("submit", (event) => {
+app.addEventListener("submit", async (event) => {
   if (event.target.id !== "found") return;
   event.preventDefault();
   const data = new FormData(event.target);
-  world = newWorld({
-    seed: Date.now() % 100000,
-    ruler: String(data.get("ruler") || "Ruler").slice(0, 32),
-    province: String(data.get("province") || "First Acre").slice(0, 32),
-    faction: String(data.get("faction") || "marcher"),
-  });
-  selectedId = "you";
-  save();
-  bootAudio();
-  play("hour");
-  render();
-  bed("throne");
+  const button = event.target.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    const res = await fetch("/api/join", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ruler: String(data.get("ruler") || "Ruler"),
+        province: String(data.get("province") || "First Acre"),
+        faction: String(data.get("faction") || "marcher"),
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.message || "Matchmaking failed");
+    session = { realmId: json.realmId, token: json.token, seatId: json.seatId };
+    saveSession();
+    takeState(json);
+    connectSocket(session);
+    bootAudio();
+    play("hour");
+    bed("throne");
+  } catch (error) {
+    button.disabled = false;
+    const node = document.createElement("p");
+    node.className = "warn";
+    node.textContent = error.message || "Matchmaking failed";
+    event.target.appendChild(node);
+  }
 });
+
+function fmt(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function clockLabel() {
+  const now = nowServer();
+  if (meta.status === "ended") return { time: "0:00:00", note: "age closed" };
+  if (meta.status !== "live") return { time: fmt((meta.fillUntil || now) - now), note: "until the age starts" };
+  const left = (meta.endsAt || now) - now;
+  const tick = (meta.nextTickAt || now) - now;
+  return { time: fmt(left), note: `left · hour in ${fmt(tick)}` };
+}
+
+function takeState(msg) {
+  world = msg.world;
+  world.seat = msg.seatId || session?.seatId;
+  if (msg.meta) {
+    meta = msg.meta;
+    skew = msg.meta.serverNow - Date.now();
+  }
+  if (msg.standings) standings = msg.standings;
+  if (!selectedId || !byId(world, selectedId)) selectedId = world.seat;
+  render();
+}
+
+function connectSocket(next) {
+  const gen = ++socketGen;
+  session = next;
+  saveSession();
+  if (socket) socket.close();
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  socket = new WebSocket(`${proto}//${location.host}/api/ws?realm=${encodeURIComponent(next.realmId)}&token=${encodeURIComponent(next.token)}`);
+  socket.addEventListener("message", (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === "error") {
+      note(msg.message);
+      return;
+    }
+    if (msg.type === "march" && world && msg.from !== session.seatId) {
+      const from = byId(world, msg.from);
+      const to = byId(world, msg.to);
+      if (from && to) {
+        const a = provinceGeom(from);
+        const b = provinceGeom(to);
+        march = { ax: a.x, ay: a.y, bx: b.x, by: b.y, t: 0, action: null };
+        play("march");
+      }
+      return;
+    }
+    if (msg.type === "state") {
+      const won = msg.world && world && msg.world.log[0] && world.log[0] && msg.world.log[0].text !== world.log[0].text && /breaks|seized|sacked|Earned/.test(msg.world.log[0].text);
+      takeState(msg);
+      if (won) play("win");
+    }
+  });
+  socket.addEventListener("close", () => {
+    if (gen !== socketGen || !session) return;
+    window.setTimeout(() => {
+      if (gen === socketGen && session) connectSocket(session);
+    }, 1200);
+  });
+}
 
 function readStake() {
   const stakeNode = document.querySelector("#stake");

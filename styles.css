@@ -60,6 +60,32 @@ body.playing { overflow: hidden; height: 100%; }
   padding: 8px 10px;
 }
 .hud-card h2 { margin: 0 0 6px; color: var(--gold); font-size: 22px; }
+#mini {
+  position: absolute;
+  top: 72px;
+  right: 10px;
+  width: 168px;
+  height: 168px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #141910;
+}
+.veil {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 12, 8, 0.55);
+}
+.veil[hidden] { display: none; }
+.veil-card {
+  width: min(460px, calc(100% - 24px));
+  background: rgba(20, 16, 12, 0.94);
+  border: 1px solid var(--gold-dim);
+  border-radius: 8px;
+  padding: 16px;
+}
+.veil-card h2 { color: var(--gold); margin: 0 0 8px; }
 @media (max-width: 860px) {
   .hud-log { display: none; }
   .hud-card { max-height: 42vh; }
