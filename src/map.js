@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, studyCount, weirLive, worldToAxial } from "./sim.js";
+import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -302,6 +302,39 @@ function drawHexFeature(ctx, kind, x, y, n) {
   }
 }
 
+function drawTimberCamp(ctx, x, y, time) {
+  const swing = Math.sin(time * 3) * 0.4;
+  ctx.fillStyle = "#6a4a32";
+  ctx.fillRect(x - 14, y + 2, 18, 5);
+  ctx.fillRect(x - 10, y - 3, 16, 5);
+  ctx.fillStyle = "#8a5a32";
+  ctx.fillRect(x - 6, y - 8, 14, 5);
+  ctx.strokeStyle = "#cbb892";
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(x - 12, y + 4 - i * 5);
+    ctx.lineTo(x + 4, y + 4 - i * 5);
+    ctx.stroke();
+  }
+  ctx.save();
+  ctx.translate(x + 10, y - 2);
+  ctx.rotate(swing);
+  ctx.strokeStyle = "#3a2a22";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-6, 6);
+  ctx.lineTo(4, -8);
+  ctx.stroke();
+  ctx.fillStyle = "#c6a15a";
+  ctx.fillRect(3, -10, 4, 3);
+  ctx.restore();
+  ctx.fillStyle = "#3d3224";
+  ctx.beginPath();
+  ctx.arc(x - 8, y + 8, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawHamlet(ctx, x, y) {
   ctx.fillStyle = "#8a5a32";
   ctx.fillRect(x - 12, y - 2, 9, 7);
@@ -400,6 +433,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     if (cam.z >= 1 && cell.owner) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
     const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
     if (plot && plot.crew === "hamlet") drawHamlet(ctx, cell.pos.x, cell.pos.y);
+    else if (plot && plot.crew === "timber") drawTimberCamp(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       drawFolk(ctx, cell.pos.x, cell.pos.y - 4, 0.4, time || 0, role, cell.kind);
@@ -1444,6 +1478,28 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (hospiceUp(p, hour)) drawHospice(ctx, g, time);
   if (innUp(p, hour)) drawInn(ctx, g, time);
   if (weirLive(p, hour)) drawWeirMark(ctx, g, time);
+  if (timberYards(p) > 0) drawLogPile(ctx, g, timberYards(p));
+}
+
+function drawLogPile(ctx, g, n) {
+  const x = g.x - g.r * 0.72;
+  const y = g.y + g.r * 0.28;
+  ctx.fillStyle = "#5c4632";
+  ctx.fillRect(x, y, 16, 5);
+  ctx.fillStyle = "#8a5a32";
+  ctx.fillRect(x + 2, y - 5, 14, 5);
+  if (n > 1) {
+    ctx.fillStyle = "#6a4a32";
+    ctx.fillRect(x + 4, y - 10, 12, 5);
+  }
+  ctx.strokeStyle = "#cbb892";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y + 2);
+  ctx.lineTo(x + 14, y + 2);
+  ctx.moveTo(x + 4, y - 3);
+  ctx.lineTo(x + 14, y - 3);
+  ctx.stroke();
 }
 
 function drawWeirMark(ctx, g, time) {

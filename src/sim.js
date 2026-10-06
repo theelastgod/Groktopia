@@ -1,6 +1,6 @@
 /** Groktopia realm rules. Original numbers. Earn unit is cents of $UTOPIA (100 = 1). */
 
-export const ORDERS = 10;
+export const ORDERS = 4;
 export const MIN_LAND = 40;
 export const COOLDOWN = 2;
 
@@ -39,6 +39,7 @@ export const EARN = {
   hamlet: 36,
   inn: 33,
   weir: 35,
+  timber: 34,
 };
 
 export const FACTIONS = {
@@ -525,7 +526,6 @@ export function newWorld(opts = {}) {
   const world = {
     seed,
     hour: 0,
-    orderCap: ORDERS,
     seat: "you",
     burned: 0,
     provinces: [you, ...agents],
@@ -766,6 +766,7 @@ export const AMBITIONS = [
   { id: "hospice", name: "Pitch the tent", purse: 35, blurb: "Open a field hospice.", match: (action) => action.type === "hospice" },
   { id: "inn", name: "Open the inn", purse: 35, blurb: "Raise a wayside inn.", match: (action) => action.type === "inn" },
   { id: "weir", name: "Set the nets", purse: 35, blurb: "Stake a weir on the water.", match: (action) => action.type === "weir" },
+  { id: "timber", name: "Cut a yard", purse: 35, blurb: "Raise a timber yard on a wood tile.", match: (action) => action.type === "timber" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -820,6 +821,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "hamlet") result = doHamlet(world, actor);
   else if (action.type === "inn") result = doInn(world, actor);
   else if (action.type === "weir") result = doWeir(world, actor);
+  else if (action.type === "timber") result = doTimber(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1073,8 +1075,9 @@ function doRoad(world, actor, targetId) {
   if (actor.kind !== "agent" && !intelFresh(actor, target.id, world.hour)) return fail("Scout the ground before you lay stone.");
   if (roadLive(actor, target.id, world.hour)) return fail(`That causeway already holds through hour ${actor.roads[target.id] - 1}.`);
   if (actor.orders < 1) return fail("No orders left this hour.");
-  if (actor.gold < 220) return fail("A causeway wants 220 gold.");
-  actor.gold -= 220;
+  const cost = timberYards(actor) > 0 ? 180 : 220;
+  if (actor.gold < cost) return fail(`A causeway wants ${cost} gold.`);
+  actor.gold -= cost;
   actor.orders -= 1;
   actor.acted = true;
   actor.roads = actor.roads || {};
@@ -1085,8 +1088,9 @@ function doRoad(world, actor, targetId) {
     notePurse(actor, "road", EARN.road);
     purse = ` Purse +${formatUtopia(EARN.road)} $UTOPIA.`;
   }
-  log(world, `${actor.name} lays a causeway to ${target.name} through hour ${actor.roads[target.id] - 1}. Caravans on that road haul more.${purse}`);
-  return { ok: true, message: `Causeway laid through hour ${actor.roads[target.id] - 1}.${purse}` };
+  const cut = cost < 220 ? " Cut timber cheapened the stones." : "";
+  log(world, `${actor.name} lays a causeway to ${target.name} through hour ${actor.roads[target.id] - 1}. Caravans on that road haul more.${cut}${purse}`);
+  return { ok: true, message: `Causeway laid through hour ${actor.roads[target.id] - 1}.${cut}${purse}` };
 }
 
 function settleRoads(p, hour) {
@@ -1515,6 +1519,31 @@ function doHamlet(world, actor) {
   return { ok: true, message: `Hamlet on the ${kind} tile.${purse}` };
 }
 
+export function timberYards(p) {
+  return (p && p.plots ? p.plots : []).filter((tile) => tile.crew === "timber").length;
+}
+
+function doTimber(world, actor) {
+  ensurePlots(world);
+  if (timberYards(actor) >= 2) return fail("Two timber yards already cut the woods.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 170) return fail("A timber yard wants 170 gold.");
+  const plot = (actor.plots || []).find((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) === "wood");
+  if (!plot) return fail("A timber yard needs a wood tile still worked by hands.");
+  actor.gold -= 170;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "timber";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.timber;
+    notePurse(actor, "timber", EARN.timber);
+    purse = ` Purse +${formatUtopia(EARN.timber)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} cuts a timber yard. The stacks pay 26 gold an hour, and a causeway costs 180 gold while a yard stands. A sack can burn one stack.${purse}`);
+  return { ok: true, message: `Timber yard cut.${purse}` };
+}
+
 export function waterTouch(tile) {
   if (!tile) return false;
   const kind = terrainKind(tile.q, tile.r);
@@ -1859,9 +1888,18 @@ function doAttack(world, actor, action) {
       clearNets(target);
       torn = " and tore up the nets";
     }
+    let logs = "";
+    const yard = (target.plots || []).find((tile) => tile.crew === "timber");
+    if (yard) {
+      const pile = Math.min(target.gold, 50);
+      target.gold -= pile;
+      g += pile;
+      yard.crew = "hand";
+      logs = " and burned a timber yard";
+    }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -2052,6 +2090,7 @@ function economy(p, hour) {
       foodIn += 14;
       goldIn += 10;
     }
+    else if (tile.crew === "timber") goldIn += 26;
   }
   const foodOut = foodNeed(p);
   p.gold += goldIn;
@@ -2281,6 +2320,9 @@ export function chooseAction(world, agent) {
     }
     const hamlets = (agent.plots || []).filter((tile) => tile.crew === "hamlet").length;
     if (hamlets < 2 && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.18) return { type: "hamlet" };
+    const yards = timberYards(agent);
+    const woods = (agent.plots || []).some((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) === "wood");
+    if (yards < 2 && woods && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.16) return { type: "timber" };
     const hungry = world.provinces.find((p) => p.id !== agent.id && p.grain < foodNeed(p) && !(agent.reliefs && agent.reliefs[p.id] > (world.hour || 0)));
     if (hungry && agent.grain >= 1200 && agent.orders >= 1 && rng.next() < 0.22) return { type: "relief", target: hungry.id };
     const cost = 300 + agent.land * 3;
@@ -2321,14 +2363,6 @@ export function hydrate(raw) {
   data.sites = data.sites && data.sites.length ? data.sites : freshSites();
   const world = { ...data, rng: makeRng(rngState) };
   ensurePlots(world);
-  const cap = world.orderCap || 4;
-  if (cap < ORDERS) {
-    const grant = ORDERS - cap;
-    for (const p of world.provinces || []) {
-      if (typeof p.orders === "number") p.orders += grant;
-    }
-    world.orderCap = ORDERS;
-  }
   return world;
 }
 
@@ -2446,7 +2480,6 @@ export function createOpenRealm(seed = 1) {
   const world = {
     seed,
     hour: 0,
-    orderCap: ORDERS,
     seat: null,
     burned: 0,
     closed: false,

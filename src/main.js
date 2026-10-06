@@ -21,6 +21,7 @@ import {
   innToll,
   weirLive,
   weirYield,
+  timberYards,
   leveeUp,
   roadLive,
   seasonName,
@@ -579,6 +580,7 @@ function cardFor(actor, selected) {
     ${hospiceUp(selected, world.hour) ? `<p class="muted">A hospice tent stands through hour ${selected.hospiceUntil - 1}. Battle losses are halved, and a few people arrive each hour.</p>` : ""}
     ${innUp(selected, world.hour) ? `<p class="muted">A wayside inn stands through hour ${selected.innUntil - 1}. The taproom pays ${innToll(selected, world.hour)} gold this hour. A sack burns it.</p>` : ""}
     ${weirLive(selected, world.hour) ? `<p class="muted">${selected.weir} nets hold through hour ${selected.weirUntil - 1}. This hour they yield ${weirYield(selected, world.hour).grain} grain and ${weirYield(selected, world.hour).gold} gold. A sack tears them up.</p>` : ""}
+    ${timberYards(selected) > 0 ? `<p class="muted">${timberYards(selected)} timber ${timberYards(selected) === 1 ? "yard stands" : "yards stand"} on the woods. Each pays 26 gold an hour, and a causeway costs 180 gold. A sack can burn one stack.</p>` : ""}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -607,6 +609,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-arm="engine">Catapults · 380g</button>
         <button class="btn" type="button" data-arm="sapper">Sappers · 280g</button>
         <button class="btn" type="button" data-hamlet="1">Raise a hamlet · 260g</button>
+        <button class="btn" type="button" data-timber="1">Cut a timber yard · 170g</button>
       </div>
       <div class="row">${spells}</div>
       <p class="muted">${esc(weirLine(actor))}</p>
@@ -667,7 +670,7 @@ function cardFor(actor, selected) {
       ${fresh && !bountyOn(world, selected.id, world.hour) ? `<button class="btn" type="button" data-bounty="1">Post bounty · 200g</button>` : ""}
       ${fresh ? `<button class="btn" type="button" data-relief="1">Relief · 360 grain</button>` : ""}
       ${fresh && roadLive(actor, selected.id, world.hour) ? `<button class="btn" type="button" disabled>Causeway through hour ${actor.roads[selected.id] - 1}</button>` : ""}
-      ${fresh && !roadLive(actor, selected.id, world.hour) ? `<button class="btn primary" type="button" data-road="1">Causeway · 220g · +${formatUtopia(EARN.road)}</button>` : ""}
+      ${fresh && !roadLive(actor, selected.id, world.hour) ? `<button class="btn primary" type="button" data-road="1">Causeway · ${timberYards(actor) > 0 ? 180 : 220}g · +${formatUtopia(EARN.road)}</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn primary" type="button" data-ransom="1">Ransom ${actor.pens[selected.id]}</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn" type="button" data-release="1">Release ${actor.pens[selected.id]}</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
@@ -743,6 +746,7 @@ function ledgerLine(actor) {
     ["hamlets", book.hamlet],
     ["inns", book.inn],
     ["weirs", book.weir],
+    ["yards", book.timber],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -943,7 +947,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} worked tiles. Hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile.`;
+  return `${plots.length} worked tiles. Hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile.`;
 }
 
 function relicLine(actor) {
@@ -1122,6 +1126,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "j" && world) order({ type: "hamlet" }, "build");
       if (event.key.toLowerCase() === "i" && world) order({ type: "inn" }, "build");
       if (event.key.toLowerCase() === "g" && world) order({ type: "weir" }, "build");
+      if (event.key.toLowerCase() === "t" && world) order({ type: "timber" }, "build");
       if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
@@ -1253,6 +1258,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.hamlet) {
     order({ type: "hamlet" }, "build");
+    return;
+  }
+  if (node.dataset.timber) {
+    order({ type: "timber" }, "build");
     return;
   }
   if (node.dataset.inn) {

@@ -39,6 +39,7 @@ import {
   waterTouch,
   weirLive,
   weirYield,
+  timberYards,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -248,7 +249,7 @@ test("opening a place pays once", () => {
   assert.equal(you.ledger.site, site.purse);
   assert.equal(applyAction(w, "you", { type: "clear", site: site.id }).ok, false);
   assert.equal(TICK_MS, 60 * 1000);
-  assert.equal(ORDERS, 10);
+  assert.equal(ORDERS, 4);
   assert.equal(you.relics[site.id], true);
   assert.equal(seasonName(0), "Thaw");
   assert.equal(seasonName(30), "High Sun");
@@ -1331,6 +1332,84 @@ test("a weir needs water, yields with the season, and a sack tears it up", () =>
   assert.equal(seat.weir, 0);
   assert.equal(weirLive(seat, aged.hour), false);
   assert.equal(seat.plots.some((tile) => tile.net), false);
+});
+
+test("a timber yard pays from a wood tile, cheapens a causeway, and a sack burns one stack", () => {
+  const w = newWorld({ seed: 110 });
+  const you = byId(w, "you");
+  const woods = you.plots.filter((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) === "wood");
+  assert.ok(woods.length >= 2);
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "timber" }).ok, true);
+  assert.equal(you.gold, gold - 170);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(timberYards(you), 1);
+  assert.equal(you.ledger.timber, EARN.timber);
+  assert.equal(you.utopia, purse + EARN.timber);
+  you.orders = 1;
+  assert.equal(applyAction(w, "you", { type: "timber" }).ok, true);
+  assert.equal(timberYards(you), 2);
+  assert.equal(you.ledger.timber, EARN.timber * 2);
+  you.orders = 1;
+  you.gold = 2000;
+  assert.equal(applyAction(w, "you", { type: "timber" }).ok, false);
+  const poor = newWorld({ seed: 111 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "timber" }).ok, false);
+  const bare = newWorld({ seed: 112 });
+  const inland = byId(bare, "you");
+  inland.plots = inland.plots.filter((tile) => terrainKind(tile.q, tile.r) !== "wood");
+  assert.equal(applyAction(bare, "you", { type: "timber" }).ok, false);
+
+  function coined(cut) {
+    const realm = newWorld({ seed: 113 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    const wood = seat.plots.find((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) === "wood");
+    if (cut) wood.crew = "timber";
+    const before = seat.gold;
+    advanceHour(realm);
+    return seat.gold - before;
+  }
+  assert.equal(coined(true) - coined(false), 23);
+
+  function spent(withYard) {
+    const realm = newWorld({ seed: 114 });
+    const seat = byId(realm, "you");
+    seat.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+    if (withYard) {
+      const wood = seat.plots.find((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) === "wood");
+      wood.crew = "timber";
+    }
+    const before = seat.gold;
+    assert.equal(applyAction(realm, "you", { type: "road", target: "harrow" }).ok, true);
+    return before - seat.gold;
+  }
+  assert.equal(spent(false), 220);
+  assert.equal(spent(true), 180);
+
+  function sacked(withYard) {
+    const realm = newWorld({ seed: 115 });
+    const seat = byId(realm, "you");
+    const camp = byId(realm, "harrow");
+    seat.soldiers = 200;
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+    camp.plots = [
+      { q: 2, r: 2, crew: withYard ? "timber" : "hand" },
+      { q: 3, r: 2, crew: withYard ? "timber" : "hand" },
+    ];
+    const before = seat.gold;
+    const res = applyAction(realm, "you", { type: "attack", target: "harrow", mode: "sack" });
+    assert.equal(res.win, true);
+    return { gold: seat.gold - before, yards: timberYards(camp) };
+  }
+  const open = sacked(false);
+  const shut = sacked(true);
+  assert.equal(shut.gold, open.gold + 50);
+  assert.equal(shut.yards, 1);
 });
 
 test("save and load keep the hour and the random stream", () => {
