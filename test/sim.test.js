@@ -641,6 +641,44 @@ test("prospecting strikes a vein and a spring feeds the fields", () => {
   assert.equal(seat.vein, "");
 });
 
+test("relief feeds a hungry camp, pays once, and waits out the road", () => {
+  const w = newWorld({ seed: 37 });
+  const you = byId(w, "you");
+  const harrow = byId(w, "harrow");
+  assert.equal(applyAction(w, "you", { type: "relief", target: "harrow" }).ok, false);
+  you.intel.harrow = { hour: w.hour, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  harrow.grain = 0;
+  harrow.grudge = "you";
+  const yours = you.grain;
+  const purse = you.utopia;
+  const sent = applyAction(w, "you", { type: "relief", target: "harrow" });
+  assert.equal(sent.ok, true);
+  assert.equal(you.grain, yours - 360);
+  assert.equal(harrow.grain, 360);
+  assert.equal(harrow.grudge, null);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.relief, EARN.relief);
+  assert.equal(you.utopia, purse + EARN.relief);
+  assert.equal(you.reliefs.harrow, 4);
+  you.orders = ORDERS;
+  assert.equal(applyAction(w, "you", { type: "relief", target: "harrow" }).ok, false);
+
+  const fat = newWorld({ seed: 38 });
+  const seat = byId(fat, "you");
+  const camp = byId(fat, "harrow");
+  seat.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  camp.grain = 80000;
+  const before = seat.utopia;
+  assert.equal(applyAction(fat, "you", { type: "relief", target: "harrow" }).ok, true);
+  assert.equal(camp.grain, 80360);
+  assert.equal(seat.utopia, before);
+  assert.equal(seat.ledger.relief, undefined);
+  seat.grain = 100;
+  seat.orders = ORDERS;
+  seat.reliefs = {};
+  assert.equal(applyAction(fat, "you", { type: "relief", target: "harrow" }).ok, false);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

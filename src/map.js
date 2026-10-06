@@ -1474,6 +1474,7 @@ const MARCH_INK = {
   clear: "#d7c4a3",
   tribute: "#f0d7a4",
   bounty: "#e2c078",
+  relief: "#d7c4a3",
   ransom: "#e2c078",
   release: "#f3e6c8",
   trade: "#e2c078",
@@ -1498,8 +1499,8 @@ function drawMarch(ctx, march, time) {
   const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
   const nx = Math.cos(ang + Math.PI / 2);
   const ny = Math.sin(ang + Math.PI / 2);
-  const count = kind === "thief" || kind === "envoy" || kind === "bounty" ? 2 : kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "release" ? 4 : 7;
-  const role = kind === "thief" ? "thief" : kind === "bounty" || kind === "trade" || kind === "tribute" || kind === "ransom" ? "hauler" : kind === "release" ? "farmer" : kind === "meteor" ? "mystic" : "soldier";
+  const count = kind === "thief" || kind === "envoy" || kind === "bounty" ? 2 : kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "release" || kind === "relief" ? 4 : 7;
+  const role = kind === "thief" ? "thief" : kind === "bounty" || kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "relief" ? "hauler" : kind === "release" ? "farmer" : kind === "meteor" ? "mystic" : "soldier";
   for (let i = count - 1; i >= 0; i--) {
     const t = march.t - i * 0.035;
     if (t <= 0.01) continue;
@@ -1552,7 +1553,7 @@ function drawMarch(ctx, march, time) {
   ctx.font = "700 11px Palatino, Georgia, serif";
   ctx.fillStyle = color;
   ctx.textAlign = "center";
-  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE", bounty: "BOUNTY" }[kind] || "MARCH";
+  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE", bounty: "BOUNTY", relief: "RELIEF" }[kind] || "MARCH";
   ctx.fillText(title, lead.x, lead.y - 18);
 }
 

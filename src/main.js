@@ -148,7 +148,7 @@ function act(action, sound) {
 }
 
 function needsMarch(action) {
-  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.type === "bounty" || action.spell === "meteor");
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.type === "bounty" || action.type === "relief" || action.spell === "meteor");
 }
 
 function marchKind(action) {
@@ -157,6 +157,7 @@ function marchKind(action) {
   if (action.type === "ransom") return "ransom";
   if (action.type === "release") return "release";
   if (action.type === "bounty") return "bounty";
+  if (action.type === "relief") return "relief";
   if (action.type === "envoy") return "envoy";
   if (action.type === "thief") return "thief";
   if (action.spell === "meteor") return "meteor";
@@ -623,6 +624,7 @@ function cardFor(actor, selected) {
       ${fresh ? `<button class="btn primary" type="button" data-trade="1">Caravan · 200g</button>` : ""}
       ${fresh ? `<button class="btn" type="button" data-tribute="1">Demand tribute</button>` : ""}
       ${fresh && !bountyOn(world, selected.id, world.hour) ? `<button class="btn" type="button" data-bounty="1">Post bounty · 200g</button>` : ""}
+      ${fresh ? `<button class="btn" type="button" data-relief="1">Relief · 360 grain</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn primary" type="button" data-ransom="1">Ransom ${actor.pens[selected.id]}</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn" type="button" data-release="1">Release ${actor.pens[selected.id]}</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
@@ -686,6 +688,7 @@ function ledgerLine(actor) {
     ["feasts", book.feast],
     ["bounties", book.bounty],
     ["veins", book.vein],
+    ["relief", book.relief],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -968,6 +971,7 @@ function bindMap(canvas) {
       if (event.key === "9" && world) order({ type: "feast" }, "coin");
       if (event.key === "0" && world) order({ type: "prospect" }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
+      if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
       if (event.key === "4" && world) {
         const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
         if (next) order({ type: "study", study: next.id }, "build");
@@ -1060,6 +1064,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.bounty) {
     order({ type: "bounty", target: selectedId }, "coin");
+    return;
+  }
+  if (node.dataset.relief) {
+    order({ type: "relief", target: selectedId }, "coin");
     return;
   }
   if (node.dataset.prospect) {

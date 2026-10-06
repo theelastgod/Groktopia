@@ -27,6 +27,7 @@ export const EARN = {
   feast: 30,
   bounty: 40,
   vein: 34,
+  relief: 38,
 };
 
 export const FACTIONS = {
@@ -238,6 +239,7 @@ export function blankProvince(partial) {
     feastUntil: 0,
     vein: "",
     veinUntil: 0,
+    reliefs: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -249,6 +251,7 @@ export function blankProvince(partial) {
   p.relics = { ...(partial && partial.relics ? partial.relics : {}) };
   p.demands = { ...(partial && partial.demands ? partial.demands : {}) };
   p.pens = { ...(partial && partial.pens ? partial.pens : {}) };
+  p.reliefs = { ...(partial && partial.reliefs ? partial.reliefs : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -517,6 +520,7 @@ export const AMBITIONS = [
   { id: "feast", name: "Set the table", purse: 35, blurb: "Call a feast.", match: (action) => action.type === "feast" },
   { id: "bounty", name: "Post a price", purse: 40, blurb: "Put a bounty on a camp.", match: (action) => action.type === "bounty" },
   { id: "vein", name: "Strike a vein", purse: 35, blurb: "Prospect the acres.", match: (action) => action.type === "prospect" },
+  { id: "relief", name: "Send relief", purse: 40, blurb: "Cart grain to a hungry camp.", match: (action) => action.type === "relief" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -559,6 +563,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "feast") result = doFeast(world, actor);
   else if (action.type === "bounty") result = doBounty(world, actor, action.target);
   else if (action.type === "prospect") result = doProspect(world, actor);
+  else if (action.type === "relief") result = doRelief(world, actor, action.target);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -979,6 +984,37 @@ function settleVein(p, hour) {
   if (typeof p.veinUntil === "number" && p.veinUntil > (hour || 0)) return;
   p.vein = "";
   p.veinUntil = 0;
+}
+
+function doRelief(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  if (actor.kind !== "agent" && !intelFresh(actor, target.id, world.hour)) return fail("Scout them before the cart rolls.");
+  if (actor.reliefs && actor.reliefs[target.id] > (world.hour || 0)) return fail(`That cart already ran. The road opens again at hour ${actor.reliefs[target.id]}.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if ((actor.grain || 0) < 560) return fail("Relief keeps 200 grain back and sends 360.");
+  const hungry = (target.grain || 0) < foodNeed(target);
+  actor.grain -= 360;
+  target.grain += 360;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.reliefs = actor.reliefs || {};
+  actor.reliefs[target.id] = (world.hour || 0) + 4;
+  let cleared = "";
+  if (target.grudge === actor.id) {
+    target.grudge = null;
+    cleared = " The grudge is set down.";
+  }
+  let purse = "";
+  if (hungry && actor.kind === "human") {
+    actor.utopia += EARN.relief;
+    notePurse(actor, "relief", EARN.relief);
+    purse = ` Purse +${formatUtopia(EARN.relief)} $UTOPIA.`;
+  } else if (!hungry) {
+    purse = " Their stores were already full, so the purse stays shut.";
+  }
+  log(world, `${actor.name} sends 360 grain to ${target.name}.${cleared}${purse}`);
+  return { ok: true, message: `Sent 360 grain.${cleared}${purse}` };
 }
 
 function doProspect(world, actor) {
@@ -1494,6 +1530,8 @@ export function chooseAction(world, agent) {
     if (!feastLive(agent, world.hour) && agent.grain >= 3500 && agent.gold >= 300 && agent.orders >= 1 && rng.next() < 0.16) {
       return { type: "feast" };
     }
+    const hungry = world.provinces.find((p) => p.id !== agent.id && p.grain < foodNeed(p) && !(agent.reliefs && agent.reliefs[p.id] > (world.hour || 0)));
+    if (hungry && agent.grain >= 1200 && agent.orders >= 1 && rng.next() < 0.22) return { type: "relief", target: hungry.id };
     const cost = 300 + agent.land * 3;
     if (agent.gold > cost + 800 && agent.orders > 0 && rng.next() < 0.7) return { type: "explore" };
     const prey = weakestWin(world, agent, (p) => defense(p) * 1.4 < offense(agent));
