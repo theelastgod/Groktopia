@@ -27,6 +27,7 @@ import {
   intelFresh,
   stallQuote,
   feastLive,
+  bountyOn,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -538,6 +539,55 @@ test("a feast spends the table and grows the hearth", () => {
   advanceHour(fed);
   advanceHour(plain);
   assert.equal(byId(fed, "you").peasants, byId(plain, "you").peasants + 6);
+});
+
+test("a bounty needs a scout, pays the taker, and returns if it expires", () => {
+  const w = newWorld({ seed: 30 });
+  const you = byId(w, "you");
+  const harrow = byId(w, "harrow");
+  assert.equal(applyAction(w, "you", { type: "bounty", target: "harrow" }).ok, false);
+  you.intel.harrow = { hour: w.hour, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  const gold = you.gold;
+  assert.equal(applyAction(w, "you", { type: "bounty", target: "harrow" }).ok, true);
+  assert.equal(you.gold, gold - 200);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(bountyOn(w, "harrow", w.hour).gold, 200);
+  assert.equal(applyAction(w, "you", { type: "bounty", target: "harrow" }).ok, false);
+  harrow.soldiers = 5;
+  harrow.elites = 0;
+  harrow.buildings.keep = 0;
+  you.orders = ORDERS;
+  const own = applyAction(w, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(own.win, true);
+  assert.equal(bountyOn(w, "harrow", w.hour).poster, "you");
+
+  const other = newWorld({ seed: 31 });
+  const taker = byId(other, "you");
+  const camp = byId(other, "harrow");
+  other.bounties = { harrow: { poster: "sable", gold: 200, until: 8 } };
+  camp.soldiers = 5;
+  camp.elites = 0;
+  camp.buildings.keep = 0;
+  const before = taker.gold;
+  const purse = taker.utopia;
+  const won = applyAction(other, "you", { type: "attack", target: "harrow", mode: "seize" });
+  assert.equal(won.win, true);
+  assert.equal(taker.gold, before + 200);
+  assert.equal(bountyOn(other, "harrow", other.hour), null);
+  assert.ok(taker.ledger.bounty > 0);
+  assert.ok(taker.ledger.bounty <= EARN.bounty);
+  assert.ok(taker.utopia > purse);
+
+  const aged = newWorld({ seed: 32 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 7;
+  aged.bounties = { harrow: { poster: "you", gold: 200, until: 8 } };
+  const held = seat.gold;
+  advanceHour(aged);
+  assert.equal(aged.hour, 8);
+  assert.equal(aged.bounties.harrow, undefined);
+  assert.ok(seat.gold >= held + 200);
 });
 
 test("save and load keep the hour and the random stream", () => {

@@ -25,6 +25,7 @@ export const EARN = {
   muster: 36,
   stall: 28,
   feast: 30,
+  bounty: 40,
 };
 
 export const FACTIONS = {
@@ -299,6 +300,7 @@ export function newWorld(opts = {}) {
     provinces: [you, ...agents],
     log: [{ hour: 0, text: `${you.ruler} takes the seat of ${you.name}. Six lattice agents already hold land.` }],
     wonders: {},
+    bounties: {},
     sites: freshSites(),
     rng: makeRng(seed),
   };
@@ -509,6 +511,7 @@ export const AMBITIONS = [
   { id: "muster", name: "Ring the bell", purse: 40, blurb: "Call a field host.", match: (action) => action.type === "muster" },
   { id: "stall", name: "Open the stall", purse: 35, blurb: "Sell grain at the stall.", match: (action) => action.type === "stall" && action.mode !== "buy" },
   { id: "feast", name: "Set the table", purse: 35, blurb: "Call a feast.", match: (action) => action.type === "feast" },
+  { id: "bounty", name: "Post a price", purse: 40, blurb: "Put a bounty on a camp.", match: (action) => action.type === "bounty" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -549,6 +552,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "muster") result = doMuster(world, actor);
   else if (action.type === "stall") result = doStall(world, actor, action.mode);
   else if (action.type === "feast") result = doFeast(world, actor);
+  else if (action.type === "bounty") result = doBounty(world, actor, action.target);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -908,6 +912,56 @@ export function feastLive(p, hour) {
   return Boolean(p && typeof p.feastUntil === "number" && p.feastUntil > (hour || 0));
 }
 
+export function bountyOn(world, id, hour) {
+  const row = world && world.bounties && world.bounties[id];
+  if (!row || !(row.until > (hour || 0))) return null;
+  return row;
+}
+
+function doBounty(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  if (actor.kind !== "agent" && !intelFresh(actor, target.id, world.hour)) return fail("Scout them before you post a price.");
+  if (bountyOn(world, target.id, world.hour)) return fail(`A bounty already sits through hour ${world.bounties[target.id].until - 1}.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 200) return fail("A bounty wants 200 gold.");
+  actor.gold -= 200;
+  actor.orders -= 1;
+  actor.acted = true;
+  world.bounties = world.bounties || {};
+  world.bounties[target.id] = { poster: actor.id, gold: 200, until: (world.hour || 0) + 8 };
+  log(world, `${actor.name} posts 200 gold on ${target.name} through hour ${world.bounties[target.id].until - 1}.`);
+  return { ok: true, message: `Bounty posted on ${target.name}.` };
+}
+
+function claimBounty(world, actor, target) {
+  const row = bountyOn(world, target.id, world.hour);
+  if (!row || row.poster === actor.id) return 0;
+  delete world.bounties[target.id];
+  actor.gold += row.gold;
+  let purse = "";
+  if (actor.kind === "human") {
+    const earned = grantEarn(actor, EARN.bounty, nwFactor(actor, target), "bounty");
+    if (earned) purse = ` Purse +${formatUtopia(earned)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} collects the bounty on ${target.name}: ${row.gold} gold.${purse}`);
+  return row.gold;
+}
+
+function expireBounties(world) {
+  const board = world.bounties || {};
+  for (const [id, row] of Object.entries(board)) {
+    if (row.until > world.hour) continue;
+    delete board[id];
+    const poster = byId(world, row.poster);
+    const named = byId(world, id);
+    if (poster) {
+      poster.gold += row.gold;
+      log(world, `The price on ${named ? named.name : "a camp"} goes unpaid. ${row.gold} gold returns to ${poster.name}.`);
+    }
+  }
+}
+
 function doFeast(world, actor) {
   if (feastLive(actor, world.hour)) return fail(`The tables are already set through hour ${actor.feastUntil - 1}.`);
   if (actor.orders < 1) return fail("No orders left this hour.");
@@ -1086,6 +1140,10 @@ function doAttack(world, actor, action) {
   }
 
   remember(actor, target, world.hour);
+  if (win && (mode === "seize" || mode === "sack")) {
+    const prize = claimBounty(world, actor, target);
+    if (prize) detail += `. Collected a bounty of ${prize} gold`;
+  }
   const verb = win ? "breaks" : "meets";
   log(world, `${actor.name} ${verb} ${target.name} and ${detail}. Offense ${off} against defense ${defn}.`);
   return { ok: true, message: detail, win };
@@ -1263,6 +1321,7 @@ export function advanceHour(world) {
   const prevSeason = seasonName(world.hour);
   world.hour += 1;
   for (const p of world.provinces) settleMuster(p, world.hour);
+  expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
   for (const agent of agents) {
@@ -1332,6 +1391,8 @@ export function chooseAction(world, agent) {
   const site = nearestOpenSite(world, agent);
   if (site && rng.next() < 0.18) return { type: "clear", site: site.id };
   if (agent.persona === "harrow") {
+    const marked = weakestWin(world, agent, (p) => bountyOn(world, p.id, world.hour) && defense(p) < offense(agent) * 1.05);
+    if (marked && rng.next() < 0.85) return { type: "attack", target: marked.id, mode: "seize" };
     const prey = weakestWin(world, agent, (p) => defense(p) < offense(agent) * 0.98);
     if (prey && rng.next() < 0.8) return { type: "attack", target: prey.id, mode: "seize" };
     return trainBias(agent) || buildIf(agent, "barracks") || buildIf(agent, "field");
@@ -1356,6 +1417,12 @@ export function chooseAction(world, agent) {
     return buildIf(agent, "spire") || buildIf(agent, "chapel") || buildIf(agent, "field");
   }
   if (agent.persona === "quill") {
+    if (agent.gold >= 900 && agent.orders >= 1 && rng.next() < 0.12) {
+      const mark = world.provinces
+        .filter((p) => p.id !== agent.id && !bountyOn(world, p.id, world.hour) && p.gold > 4000)
+        .sort((a, b) => b.gold - a.gold)[0];
+      if (mark) return { type: "bounty", target: mark.id };
+    }
     const rich = world.provinces
       .filter((p) => p.id !== agent.id && nwFactor(agent, p) > 0)
       .sort((a, b) => b.gold - a.gold)[0];
@@ -1541,6 +1608,7 @@ export function createOpenRealm(seed = 1) {
     provinces,
     log: [{ hour: 0, text: "The wilds are open. Eight human seats. The age clock runs for two hours." }],
     wonders: {},
+    bounties: {},
     sites: freshSites(),
     rng: makeRng(seed),
   };

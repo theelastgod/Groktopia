@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, captiveCount, feastLive, intelFresh, seasonName } from "./sim.js";
+import { beaconLit, bountyOn, captiveCount, feastLive, intelFresh, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1121,6 +1121,24 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (feastLive(p, hour)) drawFeast(ctx, g, time);
 }
 
+function drawBountyMark(ctx, g, time) {
+  const x = g.x + g.r * 0.7;
+  const y = g.y - g.r * 0.08;
+  const pulse = 8 + Math.sin(time * 4) * 0.7;
+  ctx.fillStyle = "#6d5424";
+  ctx.beginPath();
+  ctx.arc(x, y, pulse + 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.beginPath();
+  ctx.arc(x, y, pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6d5424";
+  ctx.font = "700 9px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("B", x, y + 3);
+}
+
 function drawFeast(ctx, g, time) {
   const x = g.x - g.r * 0.02;
   const y = g.y - g.r * 0.82;
@@ -1339,6 +1357,10 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
       ctx.arc(sx, sy, 6.5, 0, Math.PI * 2);
       ctx.stroke();
     }
+    if (bountyOn(world, p.id, world.hour)) {
+      ctx.fillStyle = "#e2c078";
+      ctx.fillRect(sx + 3, sy - 5, 3, 3);
+    }
   }
   for (const site of world.sites || []) {
     const [sx, sy] = to(site.x, site.y);
@@ -1416,6 +1438,7 @@ const MARCH_INK = {
   envoy: "#f3e6c8",
   clear: "#d7c4a3",
   tribute: "#f0d7a4",
+  bounty: "#e2c078",
   ransom: "#e2c078",
   release: "#f3e6c8",
   trade: "#e2c078",
@@ -1440,8 +1463,8 @@ function drawMarch(ctx, march, time) {
   const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
   const nx = Math.cos(ang + Math.PI / 2);
   const ny = Math.sin(ang + Math.PI / 2);
-  const count = kind === "thief" || kind === "envoy" ? 2 : kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "release" ? 4 : 7;
-  const role = kind === "thief" ? "thief" : kind === "trade" || kind === "tribute" || kind === "ransom" ? "hauler" : kind === "release" ? "farmer" : kind === "meteor" ? "mystic" : "soldier";
+  const count = kind === "thief" || kind === "envoy" || kind === "bounty" ? 2 : kind === "trade" || kind === "tribute" || kind === "ransom" || kind === "release" ? 4 : 7;
+  const role = kind === "thief" ? "thief" : kind === "bounty" || kind === "trade" || kind === "tribute" || kind === "ransom" ? "hauler" : kind === "release" ? "farmer" : kind === "meteor" ? "mystic" : "soldier";
   for (let i = count - 1; i >= 0; i--) {
     const t = march.t - i * 0.035;
     if (t <= 0.01) continue;
@@ -1494,7 +1517,7 @@ function drawMarch(ctx, march, time) {
   ctx.font = "700 11px Palatino, Georgia, serif";
   ctx.fillStyle = color;
   ctx.textAlign = "center";
-  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE" }[kind] || "MARCH";
+  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE", bounty: "BOUNTY" }[kind] || "MARCH";
   ctx.fillText(title, lead.x, lead.y - 18);
 }
 
@@ -1522,6 +1545,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
     const viewer = world.provinces.find((row) => row.id === seatId);
     const known = p.id === seatId || Boolean(viewer && intelFresh(viewer, p.id, world.hour));
     drawHoldings(ctx, p, g, time, known, world.hour);
+    if (bountyOn(world, p.id, world.hour)) drawBountyMark(ctx, g, time);
     const studied = p.studies ? Object.values(p.studies).filter(Boolean).length : 0;
     if (studied >= 2) {
       ctx.beginPath();
