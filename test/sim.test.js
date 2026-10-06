@@ -186,6 +186,24 @@ test("a caravan needs a scout and pays inside the fair band", () => {
   assert.ok(you.ledger.trade <= EARN.trade);
 });
 
+test("an envoy needs a scout, pays once, and a march breaks the pact", () => {
+  const w = newWorld({ seed: 15 });
+  const you = byId(w, "you");
+  const harrow = byId(w, "harrow");
+  assert.equal(applyAction(w, "you", { type: "envoy", target: "harrow" }).ok, false);
+  you.intel.harrow = { hour: w.hour, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  const bound = applyAction(w, "you", { type: "envoy", target: "harrow" });
+  assert.equal(bound.ok, true);
+  assert.equal(you.ledger.pact, 35);
+  assert.equal(you.pacts.harrow, 4);
+  assert.equal(harrow.pacts.you, 4);
+  assert.equal(applyAction(w, "you", { type: "envoy", target: "harrow" }).ok, false);
+  you.soldiers = 400;
+  const march = applyAction(w, "you", { type: "attack", target: "harrow", mode: "seize", stake: 0 });
+  assert.equal(march.ok, true);
+  assert.equal(you.pacts.harrow, undefined);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

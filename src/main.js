@@ -137,11 +137,12 @@ function act(action, sound) {
 }
 
 function needsMarch(action) {
-  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.spell === "meteor");
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.spell === "meteor");
 }
 
 function marchKind(action) {
   if (action.type === "trade") return "trade";
+  if (action.type === "envoy") return "envoy";
   if (action.type === "thief") return "thief";
   if (action.spell === "meteor") return "meteor";
   if (action.type === "attack") return action.mode || "seize";
@@ -522,6 +523,8 @@ function cardFor(actor, selected) {
       <button class="btn danger" type="button" data-march="seize">Seize</button>
       <button class="btn danger" type="button" data-march="sack">Sack</button>
       <button class="btn danger" type="button" data-march="raze">Raze</button>
+      ${fresh && pactOpen(actor, selected.id) ? `<button class="btn" type="button" disabled>Pact through hour ${actor.pacts[selected.id]}</button>` : ""}
+      ${fresh && !pactOpen(actor, selected.id) ? `<button class="btn primary" type="button" data-pact="1">Envoy · 120g</button>` : ""}
       ${fresh ? `<button class="btn primary" type="button" data-trade="1">Caravan · 200g</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
       <button class="btn" type="button" data-thief="pilfer">Pilfer</button>
@@ -548,6 +551,11 @@ function wonderButtons(actor) {
   }).join("");
 }
 
+function pactOpen(actor, id) {
+  const until = actor.pacts && actor.pacts[id];
+  return typeof until === "number" && world.hour <= until;
+}
+
 function doctrineButtons(actor) {
   return Object.entries(DOCTRINES).map(([id, spec]) => {
     const on = actor.doctrine === id;
@@ -566,6 +574,7 @@ function ledgerLine(actor) {
     ["placement", book.place],
     ["wonders", book.wonder],
     ["caravans", book.trade],
+    ["pacts", book.pact],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -833,6 +842,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.spell) {
     order({ type: "spell", spell: node.dataset.spell, target: selectedId }, "spell");
+    return;
+  }
+  if (node.dataset.pact) {
+    order({ type: "envoy", target: selectedId }, "click");
     return;
   }
   if (node.dataset.trade) {

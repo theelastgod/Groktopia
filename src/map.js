@@ -806,7 +806,31 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
   ctx.strokeRect(cx - 12, cy - 9, 24, 18);
 }
 
+function drawPacts(ctx, world, seatId, time) {
+  const seat = world.provinces.find((row) => row.id === seatId);
+  if (!seat || !seat.pacts) return;
+  const hour = world.hour || 0;
+  ctx.save();
+  ctx.strokeStyle = "rgba(226, 192, 120, 0.8)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([7, 9]);
+  ctx.lineDashOffset = -time * 12;
+  for (const [id, until] of Object.entries(seat.pacts)) {
+    if (typeof until !== "number" || hour > until) continue;
+    const other = world.provinces.find((row) => row.id === id);
+    if (!other) continue;
+    const a = provinceGeom(seat);
+    const b = provinceGeom(other);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 const MARCH_INK = {
+  envoy: "#f3e6c8",
   trade: "#e2c078",
   seize: "#e07a68",
   sack: "#e2c078",
@@ -969,6 +993,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   drawBirds(ctx, time);
   const geoms = world.provinces.map(provinceGeom).sort((a, b) => a.y - b.y);
   drawRoads(ctx, geoms);
+  drawPacts(ctx, world, seatId, time);
   for (const g of geoms) {
     const p = world.provinces.find((row) => row.id === g.id);
     ctx.fillStyle = "rgba(0,0,0,0.22)";

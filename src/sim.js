@@ -15,6 +15,7 @@ export const EARN = {
   pvpFee: 0.05,
   minStake: 100,
   trade: 60,
+  pact: 35,
   settle: 40,
   charter: 70,
   ledger: 15,
@@ -218,6 +219,7 @@ export function blankProvince(partial) {
     doctrine: null,
     ledger: {},
     marks: {},
+    pacts: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -225,6 +227,7 @@ export function blankProvince(partial) {
   p.studies = { ...(partial && partial.studies ? partial.studies : {}) };
   p.ledger = { ...(partial && partial.ledger ? partial.ledger : {}) };
   p.marks = { ...(partial && partial.marks ? partial.marks : {}) };
+  p.pacts = { ...(partial && partial.pacts ? partial.pacts : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -447,6 +450,7 @@ export function applyAction(world, actorId, action) {
   if (action.type === "doctrine") return doDoctrine(world, actor, action.doctrine);
   if (action.type === "wonder") return doWonder(world, actor, action.wonder);
   if (action.type === "trade") return doTrade(world, actor, action.target);
+  if (action.type === "envoy") return doEnvoy(world, actor, action.target);
   if (action.type === "attack") return doAttack(world, actor, action);
   if (action.type === "spell") return doSpell(world, actor, action);
   if (action.type === "thief") return doThief(world, actor, action);
@@ -611,12 +615,43 @@ function doTrade(world, actor, targetId) {
   actor.gold -= 200;
   actor.orders -= 1;
   actor.acted = true;
-  const haul = 90 + Math.floor(Math.min(actor.land, target.land) * 0.35);
+  let haul = 90 + Math.floor(Math.min(actor.land, target.land) * 0.35);
+  if (pactLive(actor, target.id, world.hour)) haul = Math.floor(haul * 1.3);
   actor.gold += haul;
   const earned = grantEarn(actor, EARN.trade, scale, "trade");
   const purse = earned ? ` Purse +${formatUtopia(earned)} $UTOPIA.` : " Outside the fair band, so the purse stays shut.";
   log(world, `${actor.name} rolls a caravan to ${target.name} and brings back ${haul} gold.${purse}`);
   return { ok: true, message: `Caravan returned ${haul} gold.${purse}` };
+}
+
+function pactLive(actor, id, hour) {
+  const until = actor && actor.pacts && actor.pacts[id];
+  return typeof until === "number" && hour <= until;
+}
+
+function doEnvoy(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  if (!intelFresh(actor, target.id, world.hour)) return fail("Scout them before an envoy rides.");
+  if (pactLive(actor, target.id, world.hour)) return fail("A pact already holds.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 120) return fail("An envoy wants 120 gold.");
+  actor.gold -= 120;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.pacts = actor.pacts || {};
+  target.pacts = target.pacts || {};
+  const until = (world.hour || 0) + 4;
+  actor.pacts[target.id] = until;
+  target.pacts[actor.id] = until;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.pact;
+    notePurse(actor, "pact", EARN.pact);
+    purse = ` Purse +${formatUtopia(EARN.pact)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} binds a pact with ${target.name} through hour ${until}.${purse}`);
+  return { ok: true, message: `Pact holds through hour ${until}.${purse}` };
 }
 
 function onCooldown(actor, target, hour) {
@@ -632,6 +667,11 @@ function doAttack(world, actor, action) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   if (actor.soldiers + actor.elites < 10) return fail("Need at least 10 troops at home.");
   if (onCooldown(actor, target, world.hour)) return fail("That province is still under the two-hour truce of your last march.");
+  if (pactLive(actor, target.id, world.hour)) {
+    delete actor.pacts[target.id];
+    if (target.pacts) delete target.pacts[actor.id];
+    log(world, `${actor.name} breaks the pact with ${target.name}.`);
+  }
   const scale = nwFactor(actor, target);
   if (scale <= 0) return fail("Networth sits outside the fair band. No march, no $UTOPIA.");
   const stake = Math.floor(action.stake || 0);
@@ -1149,6 +1189,7 @@ export function redact(world, seatId) {
       province.studies = {};
       province.doctrine = null;
       province.marks = {};
+      province.pacts = {};
       province.name = "Unscouted";
       province.ruler = "Unknown";
       province.line = "A camp in the wild. Send a thief to scout it.";
