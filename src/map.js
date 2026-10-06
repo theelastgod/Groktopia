@@ -117,9 +117,9 @@ function viewBounds(cam, viewW, viewH) {
 function drawGround(ctx, cam, viewW, viewH) {
   const b = viewBounds(cam, viewW, viewH);
   const grd = ctx.createLinearGradient(b.left, b.top, b.right, b.bottom);
-  grd.addColorStop(0, "#2a3a28");
-  grd.addColorStop(0.45, "#1d2a1c");
-  grd.addColorStop(1, "#243024");
+  grd.addColorStop(0, "#0e2c34");
+  grd.addColorStop(0.5, "#12343c");
+  grd.addColorStop(1, "#0c242c");
   ctx.fillStyle = grd;
   ctx.fillRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
   const step = 46;
@@ -142,6 +142,255 @@ function riverPoint(t) {
     x: -2200 + t * 4400,
     y: Math.sin(t * 5.2) * 150 + Math.sin(t * 13) * 36,
   };
+}
+
+const HEX = 62;
+const HEX_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+const FACTION_INK = {
+  marcher: "#c45a48",
+  warden: "#7d9a72",
+  veil: "#9a86c8",
+  cutpurse: "#d2b15a",
+  hearth: "#f0e2c4",
+};
+const TERRAIN_INK = {
+  grass: "#3f7a3c",
+  plain: "#c6a15a",
+  wood: "#1e4e30",
+  hill: "#a08a62",
+  mount: "#6e675f",
+  marsh: "#4d6844",
+  river: "#17616c",
+  coast: "#2f7c74",
+  sea: "#12343c",
+};
+const YIELD = {
+  grass: [2, 0, 0],
+  plain: [1, 0, 1],
+  wood: [1, 1, 0],
+  hill: [0, 2, 0],
+  mount: [0, 1, 0],
+  marsh: [1, 0, 0],
+  river: [2, 0, 1],
+  coast: [1, 0, 1],
+  sea: [1, 0, 0],
+};
+
+function axialToWorld(q, r) {
+  return {
+    x: HEX * 1.5 * q,
+    y: HEX * Math.sqrt(3) * (r + q / 2),
+  };
+}
+
+function worldToAxial(x, y) {
+  const q = (2 / 3 * x) / HEX;
+  const r = (-1 / 3 * x + (Math.sqrt(3) / 3) * y) / HEX;
+  let rq = Math.round(q);
+  let rr = Math.round(r);
+  const rs = Math.round(-q - r);
+  const dq = Math.abs(rq - q);
+  const dr = Math.abs(rr - r);
+  const ds = Math.abs(rs + q + r);
+  if (dq > dr && dq > ds) rq = -rr - rs;
+  else if (dr > ds) rr = -rq - rs;
+  return { q: rq, r: rr };
+}
+
+function hexPath(ctx, x, y) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const ang = Math.PI / 180 * (60 * i - 30);
+    const px = x + HEX * Math.cos(ang);
+    const py = y + HEX * Math.sin(ang);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function riverDist(x, y) {
+  const t = Math.max(0, Math.min(1, (x + 2200) / 4400));
+  let best = Infinity;
+  for (let i = -3; i <= 3; i++) {
+    const p = riverPoint(Math.max(0, Math.min(1, t + i * 0.012)));
+    best = Math.min(best, Math.hypot(x - p.x, y - p.y));
+  }
+  return best;
+}
+
+const HILL_OVALS = [[-900, -700, 520, 180], [400, 500, 640, 200], [-200, 900, 480, 150], [1100, -200, 400, 140]];
+
+function terrainAt(q, r) {
+  const { x, y } = axialToWorld(q, r);
+  const n = hash(`hex:${q},${r}`);
+  const edge = Math.hypot(x, y);
+  if (edge > 2480) return "sea";
+  if (edge > 2140) return "coast";
+  if (riverDist(x, y) < 34) return "river";
+  for (const [hx, hy, rx, ry] of HILL_OVALS) {
+    const nx = (x - hx) / rx;
+    const ny = (y - hy) / ry;
+    const inside = nx * nx + ny * ny;
+    if (inside < 0.28 && n % 3 === 0) return "mount";
+    if (inside < 1) return "hill";
+  }
+  if (n % 11 === 0) return "marsh";
+  if (n % 4 === 0) return "wood";
+  if (n % 5 === 0) return "plain";
+  return "grass";
+}
+
+function claimReach(p) {
+  return 92 + Math.min(280, (p.land || 40) * 0.55);
+}
+
+function claimOf(provinces, x, y) {
+  let best = null;
+  let bestD = Infinity;
+  for (const p of provinces) {
+    const g = provinceGeom(p);
+    const d = Math.hypot(x - g.x, y - g.y);
+    if (d <= claimReach(p) && d < bestD) {
+      best = p;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+function drawHexFeature(ctx, kind, x, y, n) {
+  if (kind === "wood") {
+    for (let i = 0; i < 3; i++) {
+      const ox = ((n >> i) % 7) - 3;
+      const oy = ((n >> (i + 3)) % 7) - 6;
+      drawTree(ctx, x + ox * 3, y + oy, 5 + (n % 3), n + i);
+    }
+  } else if (kind === "hill") {
+    ctx.fillStyle = "#cbb892";
+    ctx.beginPath();
+    ctx.moveTo(x - 10, y + 4);
+    ctx.lineTo(x, y - 8);
+    ctx.lineTo(x + 12, y + 4);
+    ctx.fill();
+  } else if (kind === "mount") {
+    ctx.fillStyle = "#8d8478";
+    ctx.beginPath();
+    ctx.moveTo(x - 14, y + 8);
+    ctx.lineTo(x - 2, y - 14);
+    ctx.lineTo(x + 6, y + 8);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y + 8);
+    ctx.lineTo(x + 8, y - 10);
+    ctx.lineTo(x + 16, y + 8);
+    ctx.fill();
+    ctx.fillStyle = "#f4efe2";
+    ctx.beginPath();
+    ctx.moveTo(x - 5, y - 6);
+    ctx.lineTo(x - 2, y - 14);
+    ctx.lineTo(x + 1, y - 5);
+    ctx.fill();
+  } else if (kind === "plain") {
+    ctx.strokeStyle = "#e6d39a";
+    ctx.lineWidth = 1.2;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + i * 6, y + 6);
+      ctx.quadraticCurveTo(x + i * 6 + 2, y, x + i * 6, y - 7);
+      ctx.stroke();
+    }
+  } else if (kind === "marsh") {
+    ctx.strokeStyle = "#d7e4c4";
+    ctx.lineWidth = 1.1;
+    for (let i = 0; i < 4; i++) {
+      const ox = -8 + i * 5;
+      ctx.beginPath();
+      ctx.moveTo(x + ox, y + 4);
+      ctx.lineTo(x + ox + 1, y - 6);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawYields(ctx, x, y, kind) {
+  const [food, prod, gold] = YIELD[kind] || [0, 0, 0];
+  const bits = [];
+  for (let i = 0; i < food; i++) bits.push("#8fd15a");
+  for (let i = 0; i < prod; i++) bits.push("#d4844e");
+  for (let i = 0; i < gold; i++) bits.push("#f0d78a");
+  if (!bits.length) return;
+  const start = x - (bits.length - 1) * 3.1;
+  for (let i = 0; i < bits.length; i++) {
+    ctx.fillStyle = bits[i];
+    ctx.beginPath();
+    ctx.arc(start + i * 6.2, y + HEX * 0.46, 2.15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawHexMap(ctx, cam, viewW, viewH, world) {
+  const b = viewBounds(cam, viewW, viewH);
+  const corners = [[b.left, b.top], [b.right, b.top], [b.left, b.bottom], [b.right, b.bottom]];
+  let qMin = Infinity;
+  let qMax = -Infinity;
+  let rMin = Infinity;
+  let rMax = -Infinity;
+  for (const [x, y] of corners) {
+    const axial = worldToAxial(x, y);
+    qMin = Math.min(qMin, axial.q);
+    qMax = Math.max(qMax, axial.q);
+    rMin = Math.min(rMin, axial.r);
+    rMax = Math.max(rMax, axial.r);
+  }
+  qMin -= 2;
+  qMax += 2;
+  rMin -= 2;
+  rMax += 2;
+  const provinces = world.provinces || [];
+  const cells = [];
+  const owners = new Map();
+  for (let q = qMin; q <= qMax; q++) {
+    for (let r = rMin; r <= rMax; r++) {
+      const pos = axialToWorld(q, r);
+      if (pos.x < b.left - HEX || pos.x > b.right + HEX || pos.y < b.top - HEX || pos.y > b.bottom + HEX) continue;
+      const kind = terrainAt(q, r);
+      const owner = claimOf(provinces, pos.x, pos.y);
+      const key = `${q},${r}`;
+      owners.set(key, owner ? owner.id : "");
+      cells.push({ q, r, pos, kind, owner, key });
+    }
+  }
+  for (const cell of cells) {
+    hexPath(ctx, cell.pos.x, cell.pos.y);
+    ctx.fillStyle = TERRAIN_INK[cell.kind] || TERRAIN_INK.grass;
+    ctx.fill();
+    if (cell.owner) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = FACTION_INK[cell.owner.faction] || "#e2c078";
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  for (const cell of cells) {
+    let border = false;
+    if (cell.owner) {
+      for (const [dq, dr] of HEX_DIRS) {
+        const other = owners.get(`${cell.q + dq},${cell.r + dr}`);
+        if (other !== cell.owner.id) border = true;
+      }
+    }
+    hexPath(ctx, cell.pos.x, cell.pos.y);
+    ctx.strokeStyle = border ? (FACTION_INK[cell.owner.faction] || "#e2c078") : "rgba(8, 14, 8, 0.35)";
+    ctx.lineWidth = border ? 3.2 : 1;
+    ctx.stroke();
+  }
+  for (const cell of cells) {
+    if (cell.kind === "sea" || cell.kind === "river" || cell.kind === "coast") continue;
+    drawHexFeature(ctx, cell.kind, cell.pos.x, cell.pos.y, hash(cell.key));
+    if (cam.z >= 1 && cell.owner) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
+  }
 }
 
 function traceRiver(ctx) {
@@ -196,16 +445,12 @@ function drawBirds(ctx, time) {
 function drawRiver(ctx, time) {
   ctx.lineCap = "round";
   traceRiver(ctx);
-  ctx.strokeStyle = "#3d5a34";
-  ctx.lineWidth = 58;
-  ctx.stroke();
-  traceRiver(ctx);
-  ctx.strokeStyle = "#0e2c33";
-  ctx.lineWidth = 34;
+  ctx.strokeStyle = "#0c3e46";
+  ctx.lineWidth = 28;
   ctx.stroke();
   traceRiver(ctx);
   ctx.strokeStyle = "#1c5964";
-  ctx.lineWidth = 18;
+  ctx.lineWidth = 14;
   ctx.stroke();
   traceRiver(ctx);
   ctx.save();
@@ -1189,11 +1434,10 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   ctx.clearRect(0, 0, viewW, viewH);
   worldTransform(ctx, cam, viewW, viewH, dpr);
   drawGround(ctx, cam, viewW, viewH);
-  drawHills(ctx);
-  drawLitter(ctx, cam, viewW, viewH, time);
+  drawHexMap(ctx, cam, viewW, viewH, world);
   drawRiver(ctx, time);
   drawBanks(ctx, time);
-  drawWilds(ctx, cam, viewW, viewH);
+  drawLitter(ctx, cam, viewW, viewH, time);
   drawClouds(ctx, time);
   drawBirds(ctx, time);
   const geoms = world.provinces.map(provinceGeom).sort((a, b) => a.y - b.y);
