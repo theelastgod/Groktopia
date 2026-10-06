@@ -294,5 +294,7 @@ canvas.sky { width: 100%; height: 90px; background: #120e0b; border-radius: 6px;
   .layout { grid-template-columns: 1fr; }
   .hero, .found-grid { grid-template-columns: 1fr; }
   .hero-art { height: 220px; }
-  .gate-bar { align-items: flex-start; }
+  .gate-bar { align-items: flex-start; flex-wrap: wrap; }
+  .gate-wallet { width: 100%; }
+  .gate-wallet .btn { flex: 1; text-align: center; }
 }
