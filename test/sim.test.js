@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import {
   EARN,
   ORDERS,
+  TICK_MS,
+  seasonName,
+  seasonMod,
+  offense,
+  defense,
   advanceHour,
   applyAction,
   buildingCount,
@@ -213,6 +218,46 @@ test("meeting an ambition pays and names the next one", () => {
   assert.equal(you.utopia, before + 40 + 50);
   assert.equal(you.ledger.ambition, 50);
   assert.notEqual(you.ambition, "study");
+});
+
+test("opening a place pays once", () => {
+  const w = newWorld({ seed: 17 });
+  const you = byId(w, "you");
+  const site = w.sites[0];
+  const before = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "clear", site: site.id }).ok, true);
+  assert.equal(you.utopia, before + site.purse);
+  assert.equal(you.ledger.site, site.purse);
+  assert.equal(applyAction(w, "you", { type: "clear", site: site.id }).ok, false);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(ORDERS, 4);
+  assert.equal(you.relics[site.id], true);
+  assert.equal(seasonName(0), "Thaw");
+  assert.equal(seasonName(30), "High Sun");
+  assert.equal(seasonName(90), "Frost");
+  assert.ok(seasonMod(0).food > 1);
+});
+
+test("a relic changes the host and tribute pays inside the band", () => {
+  const w = newWorld({ seed: 19 });
+  const you = byId(w, "you");
+  const bare = offense(you);
+  const bareWall = defense(you);
+  you.relics = { barrow: true, stand: true };
+  assert.ok(offense(you) > bare);
+  assert.ok(defense(you) > bareWall);
+  const harrow = byId(w, "harrow");
+  you.intel.harrow = { hour: w.hour, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  const gold = you.gold;
+  const purse = you.utopia;
+  const res = applyAction(w, "you", { type: "tribute", target: "harrow" });
+  assert.equal(res.ok, true);
+  assert.ok(you.gold > gold);
+  assert.ok(harrow.gold >= 0);
+  assert.ok(you.utopia >= purse);
+  assert.ok(you.ledger.tribute > 0);
+  assert.ok(you.ledger.tribute <= EARN.tribute);
+  assert.equal(applyAction(w, "you", { type: "tribute", target: "harrow" }).ok, false);
 });
 
 test("save and load keep the hour and the random stream", () => {

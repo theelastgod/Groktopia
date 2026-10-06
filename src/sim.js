@@ -1,6 +1,6 @@
 /** Groktopia realm rules. Original numbers. Earn unit is cents of $UTOPIA (100 = 1). */
 
-export const ORDERS = 6;
+export const ORDERS = 4;
 export const MIN_LAND = 40;
 export const COOLDOWN = 2;
 
@@ -19,6 +19,7 @@ export const EARN = {
   settle: 40,
   charter: 70,
   ledger: 15,
+  tribute: 45,
 };
 
 export const FACTIONS = {
@@ -220,6 +221,8 @@ export function blankProvince(partial) {
     ledger: {},
     marks: {},
     pacts: {},
+    relics: {},
+    demands: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -228,6 +231,8 @@ export function blankProvince(partial) {
   p.ledger = { ...(partial && partial.ledger ? partial.ledger : {}) };
   p.marks = { ...(partial && partial.marks ? partial.marks : {}) };
   p.pacts = { ...(partial && partial.pacts ? partial.pacts : {}) };
+  p.relics = { ...(partial && partial.relics ? partial.relics : {}) };
+  p.demands = { ...(partial && partial.demands ? partial.demands : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -282,6 +287,7 @@ export function newWorld(opts = {}) {
     provinces: [you, ...agents],
     log: [{ hour: 0, text: `${you.ruler} takes the seat of ${you.name}. Six lattice agents already hold land.` }],
     wonders: {},
+    sites: freshSites(),
     rng: makeRng(seed),
   };
 }
@@ -337,7 +343,8 @@ export function offense(p) {
   const fury = p.spells.fury > 0 ? 1.15 : 1;
   const oath = p.studies && p.studies.oath ? 1.05 : 1;
   const levy = p.doctrine === "levy" ? 1.05 : 1;
-  return Math.floor((p.soldiers * 3 + p.elites * f.off) * wageFactor(p) * fury * oath * levy);
+  const ash = p.relics && p.relics.barrow ? 1.04 : 1;
+  return Math.floor((p.soldiers * 3 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash);
 }
 
 export function defense(p) {
@@ -345,7 +352,8 @@ export function defense(p) {
   const bulwark = p.spells.bulwark > 0 ? 1.2 : 1;
   const pale = p.studies && p.studies.palisade ? 1.06 : 1;
   const bastion = p.marks && p.marks.bastion ? 1.08 : 1;
-  return Math.floor((p.soldiers * 1 + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale * bastion);
+  const horn = p.relics && p.relics.stand ? 1.04 : 1;
+  return Math.floor((p.soldiers * 1 + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale * bastion * horn);
 }
 
 export function networth(p) {
@@ -480,6 +488,8 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "wonder") result = doWonder(world, actor, action.wonder);
   else if (action.type === "trade") result = doTrade(world, actor, action.target);
   else if (action.type === "envoy") result = doEnvoy(world, actor, action.target);
+  else if (action.type === "clear") result = doClear(world, actor, action.site);
+  else if (action.type === "tribute") result = doTribute(world, actor, action.target);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -682,6 +692,59 @@ function doEnvoy(world, actor, targetId) {
   }
   log(world, `${actor.name} binds a pact with ${target.name} through hour ${until}.${purse}`);
   return { ok: true, message: `Pact holds through hour ${until}.${purse}` };
+}
+
+function doClear(world, actor, siteId) {
+  const site = (world.sites || []).find((row) => row.id === siteId);
+  if (!site) return fail("That place is not on the map.");
+  if (site.clearedBy) return fail(`${site.name} is already open.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if ((actor.soldiers || 0) < 15) return fail("A party wants 15 soldiers at home.");
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.soldiers -= 4;
+  site.clearedBy = actor.id;
+  actor.gold += site.gold;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += site.purse;
+    notePurse(actor, "site", site.purse);
+    purse = ` Purse +${formatUtopia(site.purse)} $UTOPIA.`;
+  }
+  actor.relics = actor.relics || {};
+  actor.relics[site.id] = true;
+  const relic = RELICS[site.id];
+  log(world, `${actor.name} opens ${site.name} and brings home ${site.gold} gold. The ${relic ? relic.name : "relic"} stays.${purse}`);
+  return { ok: true, message: `${site.name} opened. ${relic ? relic.line : ""}${purse}` };
+}
+
+function doTribute(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another holding.");
+  if (!intelFresh(actor, target.id, world.hour)) return fail("Scout them before you ask for tribute.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  actor.demands = actor.demands || {};
+  const last = actor.demands[target.id];
+  if (last != null && world.hour - last < 3) return fail("They already answered this hour's demand.");
+  const scale = nwFactor(actor, target);
+  if (scale <= 0) return fail("Networth sits outside the fair band. No tribute, no $UTOPIA.");
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.demands[target.id] = world.hour;
+  const pressed = offense(actor) > defense(target) * 0.75;
+  if (!pressed) {
+    target.grudge = actor.id;
+    log(world, `${target.name} refuses tribute and marks ${actor.name}.`);
+    return { ok: true, message: "Tribute refused.", win: false };
+  }
+  const take = Math.max(40, Math.floor(target.gold * 0.08));
+  const got = Math.min(target.gold, take);
+  target.gold -= got;
+  actor.gold += got;
+  const earned = grantEarn(actor, EARN.tribute, scale, "tribute");
+  const purse = earned ? ` Purse +${formatUtopia(earned)} $UTOPIA.` : " Outside the purse cap for this hour.";
+  log(world, `${actor.name} takes ${got} gold in tribute from ${target.name}.${purse}`);
+  return { ok: true, message: `Tribute of ${got} gold.${purse}`, win: true };
 }
 
 function onCooldown(actor, target, hour) {
@@ -890,8 +953,9 @@ function doThief(world, actor, action) {
   return fail("Unknown thief op.");
 }
 
-function economy(p) {
+function economy(p, hour) {
   const f = FACTIONS[p.faction];
+  const season = seasonMod(hour || 0);
   const jobs = p.buildings.workshop * 8 + p.buildings.field * 4;
   const employed = Math.min(p.peasants, jobs);
   let goldIn = Math.floor(employed * 1.55 * f.gold + p.buildings.workshop * 3);
@@ -900,6 +964,10 @@ function economy(p) {
   if (p.studies && p.studies.furrow) foodIn = Math.floor(foodIn * 1.08);
   if (p.doctrine === "granary") foodIn = Math.floor(foodIn * 1.08);
   if (p.marks && p.marks.mill) foodIn = Math.floor(foodIn * 1.1);
+  if (p.relics && p.relics.kilnruin) goldIn = Math.floor(goldIn * 1.06);
+  if (p.relics && p.relics.well) foodIn = Math.floor(foodIn * 1.06);
+  goldIn = Math.floor(goldIn * season.gold);
+  foodIn = Math.floor(foodIn * season.food);
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -912,16 +980,20 @@ function economy(p) {
   if (p.studies && p.studies.rite) p.aether += 6;
   const cap = p.buildings.hearth * 16;
   if (p.peasants < cap && p.grain > foodOut * 2) {
-    p.peasants = Math.min(cap, p.peasants + Math.max(1, Math.floor(p.peasants * 0.035)));
+    let grow = Math.max(1, Math.floor(p.peasants * 0.035));
+    if (p.relics && p.relics.orchard) grow += 2;
+    p.peasants = Math.min(cap, p.peasants + grow);
   }
   if (p.mystics < mysticCap(p)) p.mystics += 1;
   for (const k of Object.keys(p.spells)) {
     if (p.spells[k] > 0) p.spells[k] -= 1;
   }
   if (p.acted && p.kind === "human") {
-    const pay = EARN.hourActive + (p.studies && p.studies.ledger ? EARN.ledger : 0) + (p.doctrine === "mint" ? 10 : 0);
+    let pay = EARN.hourActive + (p.studies && p.studies.ledger ? EARN.ledger : 0) + (p.doctrine === "mint" ? 10 : 0);
+    if (p.relics && p.relics.stacks) pay += 8;
     p.utopia += pay;
-    notePurse(p, "hour", pay);
+    notePurse(p, "hour", pay - (p.relics && p.relics.stacks ? 8 : 0));
+    if (p.relics && p.relics.stacks) notePurse(p, "relic", 8);
   }
   p.acted = false;
   p.orders = ORDERS;
@@ -929,8 +1001,10 @@ function economy(p) {
 }
 
 export function advanceHour(world) {
-  for (const p of world.provinces) economy(p);
+  for (const p of world.provinces) economy(p, world.hour || 0);
+  const prevSeason = seasonName(world.hour);
   world.hour += 1;
+  if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
   for (const agent of agents) {
     for (let i = 0; i < ORDERS; i++) {
@@ -966,8 +1040,26 @@ function buildIf(agent, key) {
   return { type: "build", building: key };
 }
 
+function nearestOpenSite(world, agent) {
+  if (!Number.isFinite(agent.x) || !Number.isFinite(agent.y)) return null;
+  if ((agent.soldiers || 0) < 18) return null;
+  let best = null;
+  let bestD = 980;
+  for (const site of world.sites || []) {
+    if (site.clearedBy) continue;
+    const d = Math.hypot(agent.x - site.x, agent.y - site.y);
+    if (d < bestD) {
+      best = site;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
 export function chooseAction(world, agent) {
   const rng = world.rng;
+  const site = nearestOpenSite(world, agent);
+  if (site && rng.next() < 0.18) return { type: "clear", site: site.id };
   if (agent.persona === "harrow") {
     const prey = weakestWin(world, agent, (p) => defense(p) < offense(agent) * 0.98);
     if (prey && rng.next() < 0.8) return { type: "attack", target: prey.id, mode: "seize" };
@@ -1043,6 +1135,7 @@ export function hydrate(raw) {
   const rngState = data.rngState >>> 0;
   delete data.rngState;
   data.wonders = data.wonders || {};
+  data.sites = data.sites && data.sites.length ? data.sites : freshSites();
   return { ...data, rng: makeRng(rngState) };
 }
 
@@ -1056,7 +1149,41 @@ export function intelFresh(actor, targetId, hour) {
 export const MATCH_MS = 2 * 60 * 60 * 1000;
 export const FILL_MS = 0;
 export const JOIN_GRACE_MS = 2 * 60 * 1000;
-export const TICK_MS = 20 * 1000;
+export const TICK_MS = 60 * 1000;
+
+export const SITES = [
+  { id: "barrow", name: "Ash Barrow", x: 820, y: -980, purse: 80, gold: 420, blurb: "A hill of old ash. Send a party to open it." },
+  { id: "well", name: "Moon Well", x: -1280, y: 180, purse: 70, gold: 260, blurb: "The water keeps a light." },
+  { id: "kilnruin", name: "Cold Kiln", x: 240, y: 1280, purse: 60, gold: 520, blurb: "The chimney still stands." },
+  { id: "stacks", name: "Drowned Stacks", x: -640, y: -1480, purse: 90, gold: 200, blurb: "Ledgers under the mud." },
+  { id: "stand", name: "Horn Stand", x: 1680, y: 420, purse: 75, gold: 310, blurb: "A watch that nobody kept." },
+  { id: "orchard", name: "Grey Orchard", x: -1680, y: 760, purse: 65, gold: 360, blurb: "Trees that fruit once." },
+];
+
+export function freshSites() {
+  return SITES.map((site) => ({ ...site, clearedBy: null }));
+}
+
+export const RELICS = {
+  barrow: { name: "Ash Standard", line: "Marches hit 4% harder." },
+  well: { name: "Well Light", line: "Fields yield 6% more grain." },
+  kilnruin: { name: "Kiln Brand", line: "Workshops mint 6% more gold." },
+  stacks: { name: "Mud Ledger", line: "An active hour pays 8 extra cents." },
+  stand: { name: "Horn Watch", line: "Walls hold 4% firmer." },
+  orchard: { name: "Grey Graft", line: "The hearth grows two more peasants." },
+};
+
+export function seasonName(hour) {
+  return ["Thaw", "High Sun", "Harvest", "Frost"][Math.floor((hour || 0) / 30) % 4];
+}
+
+export function seasonMod(hour) {
+  const name = seasonName(hour);
+  if (name === "Thaw") return { food: 1.06, gold: 1, line: "Thaw. Fields drink, and grain comes in fuller." };
+  if (name === "High Sun") return { food: 1, gold: 1.05, line: "High Sun. The workshops run hot." };
+  if (name === "Harvest") return { food: 1.1, gold: 1.02, line: "Harvest. Granaries and purses both fill." };
+  return { food: 0.9, gold: 0.96, line: "Frost. Grain thins and gold slows." };
+}
 export const MAX_HUMANS = 8;
 
 export const SPAWNS = [
@@ -1126,6 +1253,7 @@ export function createOpenRealm(seed = 1) {
     provinces,
     log: [{ hour: 0, text: "The wilds are open. Eight human seats. The age clock runs for two hours." }],
     wonders: {},
+    sites: freshSites(),
     rng: makeRng(seed),
   };
 }
@@ -1221,6 +1349,8 @@ export function redact(world, seatId) {
       province.doctrine = null;
       province.marks = {};
       province.pacts = {};
+      province.relics = {};
+      province.demands = {};
       province.name = "Unscouted";
       province.ruler = "Unknown";
       province.line = "A camp in the wild. Send a thief to scout it.";

@@ -162,9 +162,11 @@ export class RealmRoom {
       return;
     }
     const action = body.action || {};
-    const moving = action.target && action.target !== seatId && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.spell === "meteor");
-    if (moving && byId(data.world, action.target)) {
-      const kind = action.type === "trade" ? "trade" : action.type === "envoy" ? "envoy" : "host";
+    const site = action.type === "clear" ? (data.world.sites || []).find((row) => row.id === action.site) : null;
+    const moving = action.target && action.target !== seatId && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.spell === "meteor");
+    if (site) this.pushRaw({ type: "march", from: seatId, to: site.id, kind: "clear", x: site.x, y: site.y });
+    else if (moving && byId(data.world, action.target)) {
+      const kind = action.type === "trade" ? "trade" : action.type === "envoy" ? "envoy" : action.type === "tribute" ? "tribute" : "host";
       this.pushRaw({ type: "march", from: seatId, to: action.target, kind });
     }
     const result = applyAction(data.world, seatId, action);

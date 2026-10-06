@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { intelFresh } from "./sim.js";
+import { intelFresh, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -18,6 +18,19 @@ export function provinceGeom(p) {
     : (HOME[p.id] || [((hash(p.id) % 400) - 200), ((hash(p.id + "y") % 400) - 200)]);
   const r = Math.max(58, Math.min(138, 34 + p.land * 0.2));
   return { id: p.id, x: home[0], y: home[1], r };
+}
+
+export function hitSite(sites, x, y) {
+  let best = null;
+  let bestD = Infinity;
+  for (const site of sites || []) {
+    const d = Math.hypot(x - site.x, y - site.y);
+    if (d <= 42 && d < bestD) {
+      best = site.id;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 export function hitProvince(provinces, x, y) {
@@ -800,10 +813,53 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
     ctx.arc(sx, sy, p.id === seatId ? 4.5 : 3, 0, Math.PI * 2);
     ctx.fill();
   }
+  for (const site of world.sites || []) {
+    const [sx, sy] = to(site.x, site.y);
+    ctx.fillStyle = site.clearedBy ? "#5c5344" : "#e2c078";
+    ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+  }
   const [cx, cy] = to(cam.x, cam.y);
   ctx.strokeStyle = "#e2c078";
   ctx.lineWidth = 1;
   ctx.strokeRect(cx - 12, cy - 9, 24, 18);
+}
+
+function drawSites(ctx, world) {
+  for (const site of world.sites || []) {
+    const open = !site.clearedBy;
+    ctx.fillStyle = open ? "#6d6248" : "#3a4034";
+    ctx.beginPath();
+    ctx.arc(site.x, site.y, open ? 18 : 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = open ? "#e2c078" : "#5c5344";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = open ? "#e2c078" : "#8a8070";
+    if (site.id === "well") {
+      ctx.beginPath();
+      ctx.arc(site.x, site.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (site.id === "orchard") {
+      ctx.beginPath();
+      ctx.arc(site.x - 5, site.y + 2, 4, 0, Math.PI * 2);
+      ctx.arc(site.x + 5, site.y + 1, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (site.id === "stacks") {
+      ctx.fillRect(site.x - 7, site.y - 3, 4, 8);
+      ctx.fillRect(site.x - 1, site.y - 6, 4, 11);
+      ctx.fillRect(site.x + 5, site.y - 2, 4, 7);
+    } else {
+      ctx.fillRect(site.x - 2, site.y - 11, 4, 16);
+      ctx.beginPath();
+      ctx.moveTo(site.x - 7, site.y - 11);
+      ctx.lineTo(site.x, site.y - 18);
+      ctx.lineTo(site.x + 7, site.y - 11);
+      ctx.fill();
+    }
+    ctx.font = "700 13px Palatino, Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.fillText(site.name, site.x, site.y + 32);
+  }
 }
 
 function drawPacts(ctx, world, seatId, time) {
@@ -831,6 +887,8 @@ function drawPacts(ctx, world, seatId, time) {
 
 const MARCH_INK = {
   envoy: "#f3e6c8",
+  clear: "#d7c4a3",
+  tribute: "#f0d7a4",
   trade: "#e2c078",
   seize: "#e07a68",
   sack: "#e2c078",
@@ -975,7 +1033,7 @@ function drawMarch(ctx, march, time) {
   ctx.font = "700 11px Palatino, Georgia, serif";
   ctx.fillStyle = color;
   ctx.textAlign = "center";
-  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH" }[kind] || "MARCH";
+  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE" }[kind] || "MARCH";
   ctx.fillText(title, x, y - 18);
 }
 
@@ -993,6 +1051,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   drawBirds(ctx, time);
   const geoms = world.provinces.map(provinceGeom).sort((a, b) => a.y - b.y);
   drawRoads(ctx, geoms);
+  drawSites(ctx, world);
   drawPacts(ctx, world, seatId, time);
   for (const g of geoms) {
     const p = world.provinces.find((row) => row.id === g.id);
@@ -1064,6 +1123,9 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   }
   screenTransform(ctx, dpr);
   ctx.fillStyle = hourTint(world.hour);
+  ctx.fillRect(0, 0, viewW, viewH);
+  const season = seasonName(world.hour);
+  ctx.fillStyle = season === "Thaw" ? "rgba(92, 140, 70, 0.06)" : season === "High Sun" ? "rgba(232, 190, 90, 0.07)" : season === "Harvest" ? "rgba(176, 92, 40, 0.07)" : "rgba(150, 180, 210, 0.08)";
   ctx.fillRect(0, 0, viewW, viewH);
   const phase = ((world.hour || 0) % 24) / 24;
   if (phase >= 0.78) {

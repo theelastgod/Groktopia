@@ -4,11 +4,14 @@ import {
   EARN,
   FACTIONS,
   WONDERS,
+  RELICS,
   ORDERS,
   AMBITIONS,
   STUDIES,
   JOIN_GRACE_MS,
   ageName,
+  seasonName,
+  seasonMod,
   byId,
   defense,
   foodNeed,
@@ -26,7 +29,7 @@ import {
   thiefCap,
   eliteCap,
 } from "./sim.js";
-import { drawMini, drawRealm, fitCamera, hitProvince, provinceGeom, screenToWorld } from "./map.js";
+import { drawMini, drawRealm, fitCamera, hitProvince, hitSite, provinceGeom, screenToWorld } from "./map.js";
 
 const SESSION = "groktopia.session";
 const app = document.querySelector("#app");
@@ -40,6 +43,7 @@ let socketGen = 0;
 let skew = 0;
 let toast = "";
 let selectedId = "";
+let selectedSite = null;
 let stake = 100;
 let soundOn = true;
 let wallet = "";
@@ -138,11 +142,12 @@ function act(action, sound) {
 }
 
 function needsMarch(action) {
-  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.spell === "meteor");
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.spell === "meteor");
 }
 
 function marchKind(action) {
   if (action.type === "trade") return "trade";
+  if (action.type === "tribute") return "tribute";
   if (action.type === "envoy") return "envoy";
   if (action.type === "thief") return "thief";
   if (action.spell === "meteor") return "meteor";
@@ -151,6 +156,15 @@ function marchKind(action) {
 }
 
 function order(action, sound) {
+  if (action.type === "clear" && !march) {
+    const fromP = seat();
+    const site = (world.sites || []).find((row) => row.id === action.site);
+    if (fromP && site) {
+      const from = provinceGeom(fromP);
+      march = { ax: from.x, ay: from.y, bx: site.x, by: site.y, t: 0, action: null, sound, kind: "clear" };
+      bed("battle");
+    }
+  }
   if (needsMarch(action) && !march) {
     const fromP = seat();
     const target = byId(world, action.target);
@@ -189,7 +203,7 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. A realm hour passes every 20 seconds, and each hour gives six orders. The age starts the moment you sit. Seven more rulers can join for two minutes, and every hour you play before they arrive is yours.</p>
+        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Seven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, climb from Camp to Crown, and open the old places on the map.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
@@ -411,7 +425,7 @@ function paint() {
   const veil = document.querySelector("#veil");
   if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 8} players</span>`;
   const age = document.querySelector("#hud-age");
-  if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/8 studies</span>`;
+  if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>${esc(seasonName(world.hour))} · ${esc(seasonMod(world.hour).line)} · legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/8 studies</span>`;
   if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)} $UTOPIA</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
   const hudWallet = document.querySelector("#hud-phantom");
   if (hudWallet) hudWallet.textContent = wallet ? shortWallet() : "Phantom";
@@ -428,7 +442,7 @@ function paint() {
       veil.innerHTML = `<div class="veil-card"><h2>The age is opening</h2><p>${meta.humans || 1} of ${meta.maxHumans || 8} players. Seats stay open, and the hours already on the clock belong to whoever is here.</p></div>`;
     } else veil.hidden = true;
   }
-  if (card) card.innerHTML = cardFor(p, byId(world, selectedId) || p);
+  if (card) card.innerHTML = selectedSite ? siteCard(p, selectedSite) : cardFor(p, byId(world, selectedId) || p);
   let toastNode = document.querySelector(".toast");
   if (toast) {
     if (!toastNode) {
@@ -508,6 +522,7 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(relicLine(actor))}</p>
       <p class="advisor">${esc(ambitionLine(actor))}</p>
       <p class="advisor">${esc(advisor(actor))}</p>
       <div class="row">${doctrineButtons(actor)}</div>
@@ -534,6 +549,7 @@ function cardFor(actor, selected) {
       ${fresh && pactOpen(actor, selected.id) ? `<button class="btn" type="button" disabled>Pact through hour ${actor.pacts[selected.id]}</button>` : ""}
       ${fresh && !pactOpen(actor, selected.id) ? `<button class="btn primary" type="button" data-pact="1">Envoy · 120g</button>` : ""}
       ${fresh ? `<button class="btn primary" type="button" data-trade="1">Caravan · 200g</button>` : ""}
+      ${fresh ? `<button class="btn" type="button" data-tribute="1">Demand tribute</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
       <button class="btn" type="button" data-thief="pilfer">Pilfer</button>
       <button class="btn" type="button" data-thief="arson">Arson</button>
@@ -584,6 +600,9 @@ function ledgerLine(actor) {
     ["caravans", book.trade],
     ["pacts", book.pact],
     ["ambitions", book.ambition],
+    ["places", book.site],
+    ["relics", book.relic],
+    ["tribute", book.tribute],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -618,6 +637,31 @@ function marchMode(mode) {
     mode,
     stake: target && target.kind === "human" ? stake : 0,
   }, "march");
+}
+
+function worldPointFrom(event, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  return screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+}
+
+function relicLine(actor) {
+  const held = Object.keys(actor.relics || {}).map((id) => RELICS[id]).filter(Boolean);
+  if (!held.length) return "Old places on the map still hold a relic. Open one and it stays with your acres.";
+  return `Relics: ${held.map((row) => `${row.name}. ${row.line}`).join(" ")}`;
+}
+
+function siteCard(actor, site) {
+  const who = site.clearedBy ? (byId(world, site.clearedBy)?.name || "someone") : "";
+  const relic = RELICS[site.id];
+  return `<h2>${esc(site.name)}</h2>
+    <p>${esc(site.blurb)}</p>
+    <p class="muted">${relic ? `${esc(relic.name)}. ${esc(relic.line)}` : ""}</p>
+    ${who ? `<p class="muted">Opened by ${esc(who)}.</p>` : `<p class="muted">A party of 15 soldiers. Brings ${site.gold} gold and ${formatUtopia(site.purse)} $UTOPIA.</p>`}
+    <div class="row">
+      ${who ? "" : `<button class="btn primary" type="button" data-clear="${esc(site.id)}">Open ${esc(site.name)}</button>`}
+      <button class="btn" type="button" data-site-close="1">Back to acres</button>
+    </div>
+    ${earnStrip(actor)}`;
 }
 
 function setSheet(open) {
@@ -684,6 +728,16 @@ function bindMap(canvas) {
     const now = performance.now();
     if (hoverId && now - lastTap < 300) focusHolding(hoverId);
     lastTap = now;
+    const point = worldPointFrom(event, canvas);
+    const siteHit = hitSite(world.sites, point.x, point.y);
+    if (!hoverId && siteHit) {
+      selectedSite = (world.sites || []).find((row) => row.id === siteHit) || null;
+      if (window.matchMedia("(max-width: 760px)").matches) setSheet(true);
+      play("click");
+      paint();
+      return;
+    }
+    selectedSite = null;
     if (!hoverId) return;
     selectedId = hoverId;
     if (window.matchMedia("(max-width: 760px)").matches) setSheet(true);
@@ -853,12 +907,25 @@ app.addEventListener("click", async (event) => {
     order({ type: "spell", spell: node.dataset.spell, target: selectedId }, "spell");
     return;
   }
+  if (node.dataset.clear) {
+    order({ type: "clear", site: node.dataset.clear }, "march");
+    return;
+  }
+  if (node.dataset.siteClose) {
+    selectedSite = null;
+    paint();
+    return;
+  }
   if (node.dataset.pact) {
     order({ type: "envoy", target: selectedId }, "click");
     return;
   }
   if (node.dataset.trade) {
     order({ type: "trade", target: selectedId }, "coin");
+    return;
+  }
+  if (node.dataset.tribute) {
+    order({ type: "tribute", target: selectedId }, "coin");
     return;
   }
   if (node.dataset.thief) {
@@ -949,6 +1016,7 @@ function takeState(msg) {
   }
   if (msg.standings) standings = msg.standings;
   if (!selectedId || !byId(world, selectedId)) selectedId = world.seat;
+  if (selectedSite) selectedSite = (world.sites || []).find((row) => row.id === selectedSite.id) || null;
   const purse = seat() && seat().utopia;
   if (purseSeen == null) purseSeen = purse;
   else if (purse > purseSeen) {
@@ -976,9 +1044,10 @@ function connectSocket(next) {
     if (msg.type === "march" && world && msg.from !== session.seatId) {
       const from = byId(world, msg.from);
       const to = byId(world, msg.to);
-      if (from && to) {
+      const site = (world.sites || []).find((row) => row.id === msg.to);
+      if (from && (to || site || Number.isFinite(msg.x))) {
         const a = provinceGeom(from);
-        const b = provinceGeom(to);
+        const b = Number.isFinite(msg.x) ? { x: msg.x, y: msg.y } : provinceGeom(to);
         march = { ax: a.x, ay: a.y, bx: b.x, by: b.y, t: 0, action: null, kind: msg.kind || "host" };
         play("march");
       }
