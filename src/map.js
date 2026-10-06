@@ -1117,6 +1117,28 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (beaconLit(p, hour)) drawBeaconFire(ctx, g, time);
   drawPen(ctx, g, time, captiveCount(p));
   drawMuster(ctx, g, time, p.muster || 0);
+  if (p.stallHour === hour) drawStall(ctx, g, time);
+}
+
+function drawStall(ctx, g, time) {
+  const x = g.x + g.r * 0.22;
+  const y = g.y + g.r * 0.46;
+  const flap = Math.sin(time * 2.4) * 0.8;
+  ctx.fillStyle = "#8a3e32";
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y);
+  ctx.lineTo(x, y - 14 + flap);
+  ctx.lineTo(x + 18, y);
+  ctx.lineTo(x + 16, y + 5);
+  ctx.lineTo(x - 16, y + 5);
+  ctx.fill();
+  ctx.fillStyle = "#6a3030";
+  ctx.fillRect(x - 1, y + 5, 2, 12);
+  ctx.fillStyle = "#c6a15a";
+  ctx.fillRect(x - 14, y + 5, 28, 7);
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(x - 10, y + 7, 6, 4);
+  ctx.fillRect(x + 2, y + 7, 6, 4);
 }
 
 function drawMuster(ctx, g, time, n) {

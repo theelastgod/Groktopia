@@ -13,6 +13,7 @@ import {
   beaconLit,
   seasonName,
   seasonMod,
+  stallQuote,
   byId,
   defense,
   foodNeed,
@@ -576,6 +577,8 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(stallLine(actor))}</p>
+      <div class="row">${stallButtons(actor)}</div>
       <p class="muted">${esc(musterLine(actor))}</p>
       <div class="row">${musterButton(actor)}</div>
       <p class="muted">${esc(penLine(actor))}</p>
@@ -667,6 +670,7 @@ function ledgerLine(actor) {
     ["watch", book.beacon],
     ["ransoms", book.ransom],
     ["musters", book.muster],
+    ["stalls", book.stall],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -706,6 +710,18 @@ function marchMode(mode) {
 function worldPointFrom(event, canvas) {
   const rect = canvas.getBoundingClientRect();
   return screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+}
+
+function stallLine(actor) {
+  const quote = stallQuote(world.hour);
+  const open = actor.stallHour === world.hour ? " The awning is up this hour." : "";
+  return `${quote.name} stall: sell ${quote.grain} grain for ${quote.sell} gold, or buy it for ${quote.buy}. Keep ${quote.keep} grain for the hearth.${open} Key 8 sells.`;
+}
+
+function stallButtons(actor) {
+  const quote = stallQuote(world.hour);
+  const pay = actor.stallHour === world.hour ? "" : ` · +${formatUtopia(EARN.stall)}`;
+  return `<button class="btn primary" type="button" data-stall="sell">Sell ${quote.grain} grain · ${quote.sell}g${pay}</button><button class="btn" type="button" data-stall="buy">Buy ${quote.grain} grain · ${quote.buy}g</button>`;
 }
 
 function musterLine(actor) {
@@ -904,6 +920,7 @@ function bindMap(canvas) {
       if (event.key === "5" && world) order({ type: "beacon" }, "spell");
       if (event.key === "6" && world && selectedId && seat().pens && seat().pens[selectedId]) order({ type: "ransom", target: selectedId }, "coin");
       if (event.key === "7" && world) order({ type: "muster" }, "build");
+      if (event.key === "8" && world) order({ type: "stall", mode: "sell" }, "coin");
       if (event.key === "4" && world) {
         const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
         if (next) order({ type: "study", study: next.id }, "build");
@@ -984,6 +1001,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.muster) {
     order({ type: "muster" }, "build");
+    return;
+  }
+  if (node.dataset.stall) {
+    order({ type: "stall", mode: node.dataset.stall }, "coin");
     return;
   }
   if (node.dataset.doctrine) {

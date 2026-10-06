@@ -23,6 +23,7 @@ export const EARN = {
   beacon: 32,
   ransom: 50,
   muster: 36,
+  stall: 28,
 };
 
 export const FACTIONS = {
@@ -230,6 +231,7 @@ export function blankProvince(partial) {
     pens: {},
     muster: 0,
     musterUntil: 0,
+    stallHour: -1,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -503,6 +505,7 @@ export const AMBITIONS = [
   { id: "beacon", name: "Light the watch", purse: 40, blurb: "Raise a watch fire.", match: (action) => action.type === "beacon" },
   { id: "ransom", name: "Ransom the pen", purse: 45, blurb: "Send penned people home for gold.", match: (action) => action.type === "ransom" },
   { id: "muster", name: "Ring the bell", purse: 40, blurb: "Call a field host.", match: (action) => action.type === "muster" },
+  { id: "stall", name: "Open the stall", purse: 35, blurb: "Sell grain at the stall.", match: (action) => action.type === "stall" && action.mode !== "buy" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -541,6 +544,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "ransom") result = doRansom(world, actor, action.target);
   else if (action.type === "release") result = doRelease(world, actor, action.target);
   else if (action.type === "muster") result = doMuster(world, actor);
+  else if (action.type === "stall") result = doStall(world, actor, action.mode);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -894,6 +898,35 @@ function doRelease(world, actor, targetId) {
   if (target.grudge === actor.id) target.grudge = null;
   log(world, `${actor.name} releases ${n} people back to ${target.name}.`);
   return { ok: true, message: `Released ${n}.` };
+}
+
+function doStall(world, actor, mode) {
+  const quote = stallQuote(world.hour);
+  if (mode !== "sell" && mode !== "buy") return fail("The stall buys or sells grain.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (mode === "sell") {
+    if ((actor.grain || 0) < quote.grain + quote.keep) return fail(`Selling keeps ${quote.keep} grain back and needs ${quote.grain} more.`);
+    actor.grain -= quote.grain;
+    actor.gold += quote.sell;
+  } else {
+    if ((actor.gold || 0) < quote.buy) return fail(`Buying ${quote.grain} grain costs ${quote.buy} gold in ${quote.name}.`);
+    actor.gold -= quote.buy;
+    actor.grain += quote.grain;
+  }
+  actor.orders -= 1;
+  actor.acted = true;
+  let purse = "";
+  if (actor.kind === "human" && mode === "sell" && actor.stallHour !== world.hour) {
+    actor.utopia += EARN.stall;
+    notePurse(actor, "stall", EARN.stall);
+    purse = ` Purse +${formatUtopia(EARN.stall)} $UTOPIA.`;
+  }
+  actor.stallHour = world.hour || 0;
+  const line = mode === "sell"
+    ? `${actor.name} sells ${quote.grain} grain for ${quote.sell} gold in ${quote.name}.${purse}`
+    : `${actor.name} buys ${quote.grain} grain for ${quote.buy} gold in ${quote.name}.`;
+  log(world, line);
+  return { ok: true, message: line };
 }
 
 function settleMuster(p, hour) {
@@ -1299,6 +1332,10 @@ export function chooseAction(world, agent) {
     return trainBias(agent) || buildIf(agent, "den");
   }
   if (agent.persona === "brine") {
+    const quote = stallQuote(world.hour);
+    if (agent.grain >= quote.grain + quote.keep + 800 && agent.orders >= 1 && rng.next() < 0.28) {
+      return { type: "stall", mode: "sell" };
+    }
     const fat = world.provinces
       .filter((p) => p.id !== agent.id && nwFactor(agent, p) > 0 && !onCooldown(agent, p, world.hour) && p.gold > 6000 && defense(p) < offense(agent))
       .sort((a, b) => b.gold - a.gold)[0];
@@ -1306,6 +1343,10 @@ export function chooseAction(world, agent) {
     return buildIf(agent, "workshop") || buildIf(agent, "field") || trainBias(agent);
   }
   if (agent.persona === "moss") {
+    const quote = stallQuote(world.hour);
+    if (agent.grain < foodNeed(agent) && agent.gold >= quote.buy && agent.orders >= 1 && rng.next() < 0.35) {
+      return { type: "stall", mode: "buy" };
+    }
     const cost = 300 + agent.land * 3;
     if (agent.gold > cost + 800 && agent.orders > 0 && rng.next() < 0.7) return { type: "explore" };
     const prey = weakestWin(world, agent, (p) => defense(p) * 1.4 < offense(agent));
@@ -1378,6 +1419,12 @@ export const RELICS = {
   stand: { name: "Horn Watch", line: "Walls hold 4% firmer." },
   orchard: { name: "Grey Graft", line: "The hearth grows two more peasants." },
 };
+
+export function stallQuote(hour) {
+  const name = seasonName(hour);
+  const sell = { Thaw: 220, "High Sun": 200, Harvest: 160, Frost: 280 }[name] || 200;
+  return { name, grain: 400, sell, buy: sell + 40, keep: 200 };
+}
 
 export function seasonName(hour) {
   return ["Thaw", "High Sun", "Harvest", "Frost"][Math.floor((hour || 0) / 30) % 4];

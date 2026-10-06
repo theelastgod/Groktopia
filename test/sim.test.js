@@ -25,6 +25,7 @@ import {
   beaconLit,
   captiveCount,
   intelFresh,
+  stallQuote,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -460,6 +461,48 @@ test("the muster bell calls a field host and sends them home", () => {
   advanceHour(w);
   assert.equal(you.muster, 0);
   assert.ok(you.peasants >= home + 36);
+});
+
+test("the grain stall pays once an hour and follows the season", () => {
+  assert.equal(stallQuote(0).name, "Thaw");
+  assert.equal(stallQuote(0).sell, 220);
+  assert.equal(stallQuote(30).sell, 200);
+  assert.equal(stallQuote(60).sell, 160);
+  assert.equal(stallQuote(90).sell, 280);
+  assert.equal(stallQuote(90).buy, 320);
+  const w = newWorld({ seed: 28 });
+  const you = byId(w, "you");
+  const grain = you.grain;
+  const gold = you.gold;
+  const purse = you.utopia;
+  const sold = applyAction(w, "you", { type: "stall", mode: "sell" });
+  assert.equal(sold.ok, true);
+  assert.equal(you.grain, grain - 400);
+  assert.equal(you.gold, gold + 220);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.stall, EARN.stall);
+  assert.equal(you.utopia, purse + EARN.stall);
+  assert.equal(you.stallHour, 0);
+  you.orders = ORDERS;
+  assert.equal(applyAction(w, "you", { type: "stall", mode: "sell" }).ok, true);
+  assert.equal(you.ledger.stall, EARN.stall);
+  assert.equal(you.grain, grain - 800);
+  you.grain = 100;
+  you.orders = ORDERS;
+  assert.equal(applyAction(w, "you", { type: "stall", mode: "sell" }).ok, false);
+  w.hour = 90;
+  you.gold = 5000;
+  you.orders = ORDERS;
+  const beforeGrain = you.grain;
+  const beforeGold = you.gold;
+  const beforePurse = you.utopia;
+  const bought = applyAction(w, "you", { type: "stall", mode: "buy" });
+  assert.equal(bought.ok, true);
+  assert.equal(you.grain, beforeGrain + 400);
+  assert.equal(you.gold, beforeGold - 320);
+  assert.equal(you.utopia, beforePurse);
+  assert.equal(you.stallHour, 90);
+  assert.equal(applyAction(w, "you", { type: "stall", mode: "barter" }).ok, false);
 });
 
 test("save and load keep the hour and the random stream", () => {
