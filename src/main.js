@@ -10,6 +10,7 @@ import {
   STUDIES,
   JOIN_GRACE_MS,
   ageName,
+  beaconLit,
   seasonName,
   seasonMod,
   byId,
@@ -53,13 +54,14 @@ let audioReady = false;
 let mounted = false;
 let cam = { x: 0, y: 0, z: 1 };
 let goal = { x: 0, y: 0, z: 1 };
-let march = null;
+let parties = [];
+let logReady = false;
 let strikes = [];
 let dragging = null;
 let hoverId = null;
 let pointer = null;
 let motes = [];
-let seenLog = "";
+const seenLines = new Set();
 let purseSeen = null;
 let keys = {};
 let windowBound = false;
@@ -155,23 +157,37 @@ function marchKind(action) {
   return "host";
 }
 
+function pushParty(ax, ay, bx, by, kind) {
+  const dist = Math.hypot(bx - ax, by - ay);
+  parties.push({
+    ax,
+    ay,
+    bx,
+    by,
+    t: 0,
+    kind: kind || "host",
+    dur: Math.max(3.2, Math.min(8, dist / 240)),
+  });
+  if (parties.length > 18) parties.shift();
+}
+
 function order(action, sound) {
-  if (action.type === "clear" && !march) {
+  if (action.type === "clear") {
     const fromP = seat();
     const site = (world.sites || []).find((row) => row.id === action.site);
     if (fromP && site) {
       const from = provinceGeom(fromP);
-      march = { ax: from.x, ay: from.y, bx: site.x, by: site.y, t: 0, action: null, sound, kind: "clear" };
+      pushParty(from.x, from.y, site.x, site.y, "clear");
       bed("battle");
     }
   }
-  if (needsMarch(action) && !march) {
+  if (needsMarch(action)) {
     const fromP = seat();
     const target = byId(world, action.target);
     if (fromP && target) {
       const from = provinceGeom(fromP);
       const to = provinceGeom(target);
-      march = { ax: from.x, ay: from.y, bx: to.x, by: to.y, t: 0, action: null, sound, kind: marchKind(action) };
+      pushParty(from.x, from.y, to.x, to.y, marchKind(action));
       bed("battle");
     }
   }
@@ -274,13 +290,12 @@ function render() {
     const loop = (now) => {
       const dt = Math.min(0.05, (now - lastFrame) / 1000);
       lastFrame = now;
-      if (march) {
-        march.t += dt / 1.15;
-        if (march.t >= 1) {
-          impact(march.bx, march.by, march.kind);
-          march = null;
-        }
-      }
+      parties = parties.filter((party) => {
+        party.t += dt / party.dur;
+        if (party.t < 1) return true;
+        impact(party.bx, party.by, party.kind);
+        return false;
+      });
       stepCamera(dt);
       stepMotes(dt);
       stepStrikes(dt);
@@ -327,7 +342,7 @@ function draw() {
   const h = Math.max(1, canvas.clientHeight);
   if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) resize();
   const ctx = canvas.getContext("2d");
-  drawRealm(ctx, w, h, world, seat().id, selectedId, cam, march, performance.now() / 1000, hoverId, dpr, motes, strikes);
+  drawRealm(ctx, w, h, world, seat().id, selectedId, cam, parties, performance.now() / 1000, hoverId, dpr, motes, strikes);
   const mini = document.querySelector("#mini");
   if (mini) drawMini(mini.getContext("2d"), mini.width, mini.height, world, seat().id, cam);
 }
@@ -373,6 +388,9 @@ function stepMotes(dt) {
 
 const STRIKE = {
   trade: "#e2c078",
+  tribute: "#f0d7a4",
+  clear: "#d7c4a3",
+  envoy: "#f3e6c8",
   seize: "#e07a68",
   sack: "#e2c078",
   raze: "#ffb15a",
@@ -404,15 +422,47 @@ function stepStrikes(dt) {
 }
 
 function watchLog() {
-  const line = world?.log?.[0]?.text || "";
-  if (line === seenLog) return;
-  const previous = seenLog;
-  seenLog = line;
-  if (!previous || !/seized|sacked|razed|meteor|burn|pilfer/i.test(line)) return;
-  const target = byId(world, selectedId) || seat();
-  const g = provinceGeom(target);
-  const kind = /meteor|burn/i.test(line) ? "meteor" : /razed/i.test(line) ? "raze" : /sacked/i.test(line) ? "sack" : /pilfer/i.test(line) ? "thief" : "seize";
-  impact(g.x, g.y, kind);
+  const lines = (world?.log || []).slice(0, 12);
+  if (!logReady) {
+    for (const row of lines) seenLines.add(`${row.hour}|${row.text}`);
+    logReady = true;
+    return;
+  }
+  for (const row of [...lines].reverse()) {
+    const key = `${row.hour}|${row.text}`;
+    if (seenLines.has(key)) continue;
+    seenLines.add(key);
+    spawnFromLog(row.text);
+  }
+}
+
+function spawnFromLog(text) {
+  const mine = seat();
+  if (!text || (mine && text.startsWith(`${mine.name} `))) return;
+  const named = (world.provinces || [])
+    .filter((p) => p.name && p.name !== "Unscouted" && text.includes(p.name))
+    .sort((a, b) => b.name.length - a.name.length);
+  const site = (world.sites || []).find((row) => text.includes(row.name));
+  if (named.length < 2 && site && named[0]) {
+    const from = provinceGeom(named[0]);
+    pushParty(from.x, from.y, site.x, site.y, "clear");
+    return;
+  }
+  if (named.length < 2) return;
+  const fromP = named.find((p) => text.startsWith(`${p.name} `)) || named[0];
+  const toP = named.find((p) => p.id !== fromP.id);
+  if (!toP) return;
+  const from = provinceGeom(fromP);
+  const to = provinceGeom(toP);
+  let kind = "host";
+  if (/caravan/i.test(text)) kind = "trade";
+  else if (/pact/i.test(text)) kind = "envoy";
+  else if (/tribute/i.test(text)) kind = "tribute";
+  else if (/scout|pilfer|burn/i.test(text)) kind = "thief";
+  else if (/meteor/i.test(text)) kind = "meteor";
+  else if (/razed/i.test(text)) kind = "raze";
+  else if (/sacked/i.test(text)) kind = "sack";
+  pushParty(from.x, from.y, to.x, to.y, kind);
 }
 
 function paint() {
@@ -423,7 +473,8 @@ function paint() {
   const card = document.querySelector("#card");
   const log = document.querySelector("#log");
   const veil = document.querySelector("#veil");
-  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 8} players</span>`;
+  const watch = beaconLit(p, world.hour) ? ` · watch through ${p.beaconUntil - 1}` : "";
+  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 8} players${watch}</span>`;
   const age = document.querySelector("#hud-age");
   if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>${esc(seasonName(world.hour))} · ${esc(seasonMod(world.hour).line)} · legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/8 studies</span>`;
   if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)} $UTOPIA</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
@@ -499,6 +550,7 @@ function cardFor(actor, selected) {
     <p>${selected.line ? esc(selected.line) : ""}</p>
     <p class="muted">${esc(ageName(selected))} age · ${studyCount(selected)} studies${Number.isFinite(selected.seatedHour) ? ` · seated at hour ${selected.seatedHour}` : ""} · land ${selected.land} · empty ${freeLand(selected)} · people ${self || fresh ? population(selected) : "—"} · networth ${self || fresh ? networth(selected) : "—"}</p>
     <p>Offense ${self ? offense(actor) : fresh ? fresh.offense : "—"} · defense ${knownDef}. ${esc(band)}</p>
+    ${beaconLit(selected, world.hour) ? `<p class="muted">A watch fire burns through hour ${selected.beaconUntil - 1}. Camps in its light are read, and a second fire chains one hop.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
     const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
@@ -522,6 +574,8 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(beaconLine(actor))}</p>
+      <div class="row">${beaconButton(actor)}</div>
       <p class="muted">${esc(relicLine(actor))}</p>
       <p class="advisor">${esc(ambitionLine(actor))}</p>
       <p class="advisor">${esc(advisor(actor))}</p>
@@ -555,7 +609,7 @@ function cardFor(actor, selected) {
       <button class="btn" type="button" data-thief="arson">Arson</button>
       <button class="btn" type="button" data-spell="meteor">Meteor</button>
     </div>
-    <p class="muted">The party crosses the map, then the hour's order resolves. ${fresh ? "A caravan needs this scout and pays inside the fair band, up to the hour's combat cap." : "Scout the camp before a caravan can roll."} ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
+    <p class="muted">Watch the party cross the map. The order resolves as they step off. ${fresh ? "A caravan needs this scout and pays inside the fair band, up to the hour's combat cap." : "Scout the camp before a caravan can roll."} ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
 }
 
 function wonderButtons(actor) {
@@ -603,6 +657,7 @@ function ledgerLine(actor) {
     ["places", book.site],
     ["relics", book.relic],
     ["tribute", book.tribute],
+    ["watch", book.beacon],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -642,6 +697,16 @@ function marchMode(mode) {
 function worldPointFrom(event, canvas) {
   const rect = canvas.getBoundingClientRect();
   return screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+}
+
+function beaconLine(actor) {
+  if (beaconLit(actor, world.hour)) return `The watch fire holds through hour ${actor.beaconUntil - 1}. Nearby camps stay scouted, and a lit fire beside them chains one hop.`;
+  return "Light the watch fire for 160 gold and 80 grain. For six hours it scouts camps within reach. Key 5 lights it.";
+}
+
+function beaconButton(actor) {
+  if (beaconLit(actor, world.hour)) return `<button class="btn" type="button" disabled>Watch fire through hour ${actor.beaconUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-beacon="1">Light the watch · 160g · +${formatUtopia(EARN.beacon)}</button>`;
 }
 
 function relicLine(actor) {
@@ -805,6 +870,7 @@ function bindMap(canvas) {
       if (event.key === "1") marchMode("seize");
       if (event.key === "2") marchMode("sack");
       if (event.key === "3") marchMode("raze");
+      if (event.key === "5" && world) order({ type: "beacon" }, "spell");
       if (event.key === "4" && world) {
         const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
         if (next) order({ type: "study", study: next.id }, "build");
@@ -877,6 +943,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.study) {
     order({ type: "study", study: node.dataset.study }, "build");
+    return;
+  }
+  if (node.dataset.beacon) {
+    order({ type: "beacon" }, "spell");
     return;
   }
   if (node.dataset.doctrine) {
@@ -1048,7 +1118,7 @@ function connectSocket(next) {
       if (from && (to || site || Number.isFinite(msg.x))) {
         const a = provinceGeom(from);
         const b = Number.isFinite(msg.x) ? { x: msg.x, y: msg.y } : provinceGeom(to);
-        march = { ax: a.x, ay: a.y, bx: b.x, by: b.y, t: 0, action: null, kind: msg.kind || "host" };
+        pushParty(a.x, a.y, b.x, b.y, msg.kind || "host");
         play("march");
       }
       return;

@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { intelFresh, seasonName } from "./sim.js";
+import { beaconLit, intelFresh, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -602,7 +602,128 @@ function drawCivic(ctx, p, g, time) {
   }
 }
 
-function drawHoldings(ctx, p, g, time, known) {
+function drawFolk(ctx, x, y, ang, time, role) {
+  const step = Math.sin(time * 8 + x * 0.05);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.scale(1.35, 1.35);
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.beginPath();
+  ctx.ellipse(0, 3.2, 3.4, 1.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#3a2a1c";
+  ctx.lineWidth = 1.35;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-1.1, 0.4);
+  ctx.lineTo(-1.5 + step * 2.4, 4.6);
+  ctx.moveTo(1.1, 0.4);
+  ctx.lineTo(1.5 - step * 2.4, 4.6);
+  ctx.stroke();
+  const tunic = {
+    soldier: "#8a3e32",
+    elite: "#5f7d58",
+    thief: "#2a2438",
+    mystic: "#9a86c8",
+    smith: "#6a5344",
+    farmer: "#c6a15a",
+    hauler: "#8a5a32",
+  }[role] || "#c6a15a";
+  ctx.fillStyle = tunic;
+  ctx.fillRect(-2.3, -4.6, 4.6, 5.4);
+  ctx.fillStyle = "#e6c7a2";
+  ctx.beginPath();
+  ctx.arc(0, -6.4, 2.15, 0, Math.PI * 2);
+  ctx.fill();
+  if (role === "farmer") {
+    ctx.strokeStyle = "#5c4632";
+    ctx.beginPath();
+    ctx.moveTo(2, -1);
+    ctx.lineTo(6.5, -5 + Math.max(0, -step) * 2.4);
+    ctx.stroke();
+    ctx.fillStyle = "#7d9a72";
+    ctx.fillRect(5.2, -6.2 + Math.max(0, -step) * 2.4, 2.4, 1.6);
+  } else if (role === "smith") {
+    const arm = Math.sin(time * 11);
+    ctx.strokeStyle = "#5c4632";
+    ctx.beginPath();
+    ctx.moveTo(2, -1.5);
+    ctx.lineTo(5.5, -4 + arm * 3);
+    ctx.stroke();
+    ctx.fillStyle = "#b9b3aa";
+    ctx.fillRect(4.4, -5.2 + arm * 3, 2.4, 2);
+  } else if (role === "hauler") {
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(1.8, -3.2, 3.6, 3);
+  } else if (role === "soldier" || role === "elite") {
+    ctx.strokeStyle = "#e8d6b0";
+    ctx.beginPath();
+    ctx.moveTo(1.6, -2);
+    ctx.lineTo(7.2, -0.6);
+    ctx.stroke();
+  } else if (role === "thief") {
+    ctx.fillStyle = "#1a1420";
+    ctx.fillRect(-2.6, -8.6, 5.2, 2.2);
+  }
+  ctx.restore();
+}
+
+function drawCrew(ctx, p, g, time, known) {
+  const wander = (slot, radius, role) => {
+    const lap = time * 0.35 + slot * 1.7;
+    const x = g.x + Math.cos(lap) * radius;
+    const y = g.y + Math.sin(lap) * radius * 0.72;
+    drawFolk(ctx, x, y, lap + Math.PI / 2, time + slot, role);
+  };
+  if (!known) {
+    wander(0, g.r * 0.28, "hauler");
+    wander(1, g.r * 0.42, "farmer");
+    return;
+  }
+  const fields = Math.min(7, Math.max(2, Math.round((p.buildings.field || 0) / 7)));
+  const plotX = g.x - g.r * 0.58;
+  const plotY = g.y - g.r * 0.44;
+  const plotW = g.r * 0.96;
+  const farmers = Math.min(3, Math.max(p.buildings.field ? 2 : 0, Math.round((p.peasants || 0) / 400)));
+  for (let i = 0; i < farmers; i++) {
+    const span = (time * 0.16 + i / Math.max(1, farmers)) % 1;
+    const dir = Math.floor(time * 0.16 + i) % 2 === 0 ? 1 : -1;
+    const along = dir > 0 ? span : 1 - span;
+    const x = plotX + 8 + along * (plotW - 16);
+    const y = plotY + 6 + (i % fields) * 9;
+    drawFolk(ctx, x, y, dir > 0 ? 0 : Math.PI, time + i, "farmer");
+  }
+  const smiths = (p.buildings.workshop || 0) > 0 ? 1 : 0;
+  for (let i = 0; i < smiths; i++) {
+    const x = g.x + g.r * 0.42;
+    const y = g.y + g.r * 0.08;
+    drawFolk(ctx, x, y, -0.6, time, "smith");
+  }
+  const haulers = (p.buildings.hearth || 0) > 0 ? 1 : 0;
+  for (let i = 0; i < haulers; i++) {
+    const span = (time * 0.1) % 1;
+    const x = g.x + (span - 0.5) * g.r * 0.7;
+    const y = g.y + g.r * 0.38;
+    drawFolk(ctx, x, y, span < 0.5 ? 0 : Math.PI, time, "hauler");
+  }
+  const soldiers = Math.min(4, Math.round((p.soldiers || 0) / 28));
+  for (let i = 0; i < soldiers; i++) {
+    const lap = time * 0.28 + (i / Math.max(1, soldiers)) * Math.PI * 2;
+    const x = g.x + Math.cos(lap) * g.r * 0.7;
+    const y = g.y + Math.sin(lap) * g.r * 0.7;
+    drawFolk(ctx, x, y, lap + Math.PI / 2, time + i, "soldier");
+  }
+  const elites = Math.min(2, Math.round((p.elites || 0) / 16));
+  for (let i = 0; i < elites; i++) {
+    const lap = -time * 0.2 + i * Math.PI;
+    const x = g.x + Math.cos(lap) * g.r * 0.22;
+    const y = g.y + Math.sin(lap) * g.r * 0.22;
+    drawFolk(ctx, x, y, lap + Math.PI / 2, time + i, "elite");
+  }
+}
+
+function drawHoldings(ctx, p, g, time, known, hour) {
   ctx.save();
   blob(ctx, g);
   ctx.clip();
@@ -705,18 +826,7 @@ function drawHoldings(ctx, p, g, time, known) {
   } else {
     for (const [dx, dy] of scatter(p.id + "camp", 3, g.r * 0.4)) specs.hearth(g.x + dx, g.y + dy);
   }
-  const men = known ? Math.min(12, Math.round((p.soldiers || 0) / 10)) : 0;
-  for (let i = 0; i < men; i++) {
-    const bob = Math.sin(time * 3 + i) * 0.8;
-    const x = g.x - 18 + (i % 6) * 6;
-    const y = g.y + g.r * 0.28 + Math.floor(i / 6) * 6 + bob;
-    ctx.fillStyle = p.kind === "human" ? "#f0d7a4" : "#d7c4a2";
-    ctx.beginPath();
-    ctx.arc(x, y, 1.7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#6a3030";
-    ctx.fillRect(x - 0.4, y - 3.2, 0.8, 2.2);
-  }
+  drawCrew(ctx, p, g, time, known);
   ctx.restore();
   ctx.save();
   blob(ctx, g);
@@ -746,6 +856,42 @@ function drawHoldings(ctx, p, g, time, known) {
     }
     ctx.globalAlpha = 1;
   }
+  if (beaconLit(p, hour)) drawBeaconFire(ctx, g, time);
+}
+
+function drawBeaconFire(ctx, g, time) {
+  const x = g.x + g.r * 0.62;
+  const y = g.y - g.r * 0.55;
+  ctx.fillStyle = "#3a2a22";
+  ctx.fillRect(x - 1.4, y - 4, 2.8, 26);
+  const flicker = 0.62 + Math.sin(time * 9) * 0.28;
+  const glow = ctx.createRadialGradient(x, y - 8, 1, x, y - 8, 22);
+  glow.addColorStop(0, `rgba(255, 196, 96, ${0.9 * flicker})`);
+  glow.addColorStop(0.4, `rgba(196, 74, 42, ${0.4 * flicker})`);
+  glow.addColorStop(1, "rgba(196, 74, 42, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y - 8, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f3e6c8";
+  ctx.beginPath();
+  ctx.moveTo(x, y - 20 - flicker * 4);
+  ctx.lineTo(x + 6, y - 4);
+  ctx.lineTo(x - 6, y - 4);
+  ctx.fill();
+  ctx.fillStyle = "#e07a68";
+  ctx.beginPath();
+  ctx.moveTo(x, y - 14);
+  ctx.lineTo(x + 3.2, y - 4);
+  ctx.lineTo(x - 3.2, y - 4);
+  ctx.fill();
+  for (let i = 0; i < 3; i++) {
+    const t = (time * 0.7 + i * 0.33) % 1;
+    ctx.globalAlpha = 0.75 * (1 - t);
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(x - 1 + Math.sin(time * 4 + i) * 5, y - 18 - t * 18, 2, 2);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawRoads(ctx, geoms) {
@@ -762,17 +908,61 @@ function drawRoads(ctx, geoms) {
       const key = [a.id, b.id].sort().join("|");
       if (seen.has(key)) continue;
       seen.add(key);
-      const mx = (a.x + b.x) / 2 + (hash(a.id + b.id) % 40) - 20;
-      const my = (a.y + b.y) / 2 + 24;
       ctx.strokeStyle = "rgba(92, 70, 42, 0.55)";
       ctx.lineWidth = 7;
       ctx.beginPath();
+      const bend = roadBend(a, b);
       ctx.moveTo(a.x, a.y);
-      ctx.quadraticCurveTo(mx, my, b.x, b.y);
+      ctx.quadraticCurveTo(bend.mx, bend.my, b.x, b.y);
       ctx.stroke();
       ctx.strokeStyle = "rgba(176, 146, 96, 0.45)";
       ctx.lineWidth = 2;
       ctx.stroke();
+    }
+  }
+}
+
+function roadBend(a, b) {
+  return {
+    mx: (a.x + b.x) / 2 + (hash(a.id + b.id) % 40) - 20,
+    my: (a.y + b.y) / 2 + 24,
+  };
+}
+
+function curvePoint(a, b, bend, t) {
+  const u = 1 - t;
+  return {
+    x: u * u * a.x + 2 * u * t * bend.mx + t * t * b.x,
+    y: u * u * a.y + 2 * u * t * bend.my + t * t * b.y,
+  };
+}
+
+function drawRoadFolk(ctx, geoms, time) {
+  const seen = new Set();
+  for (const a of geoms) {
+    const near = geoms
+      .filter((b) => b.id !== a.id)
+      .map((b) => ({ b, d: Math.hypot(a.x - b.x, a.y - b.y) }))
+      .sort((p, q) => p.d - q.d)
+      .slice(0, 2);
+    for (const { b, d } of near) {
+      if (d > 1400) continue;
+      const key = [a.id, b.id].sort().join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const bend = roadBend(a, b);
+      for (let i = 0; i < 2; i++) {
+        const forward = i === 0;
+        const t = (time * (forward ? 0.045 : -0.04) + (hash(key) % 80) / 80 + i * 0.5) % 1;
+        const span = (t + 1) % 1;
+        const here = curvePoint(a, b, bend, span);
+        const ahead = curvePoint(a, b, bend, Math.min(0.98, span + 0.02));
+        const ang = Math.atan2(ahead.y - here.y, ahead.x - here.x);
+        const nx = Math.cos(ang + Math.PI / 2);
+        const ny = Math.sin(ang + Math.PI / 2);
+        const side = i === 0 ? 8 : -8;
+        drawFolk(ctx, here.x + nx * side, here.y + ny * side, ang, time + i, i === 0 ? "hauler" : "farmer");
+      }
     }
   }
 }
@@ -812,6 +1002,13 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
     ctx.beginPath();
     ctx.arc(sx, sy, p.id === seatId ? 4.5 : 3, 0, Math.PI * 2);
     ctx.fill();
+    if (beaconLit(p, world.hour)) {
+      ctx.strokeStyle = "#e07a68";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 6.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
   for (const site of world.sites || []) {
     const [sx, sy] = to(site.x, site.y);
@@ -898,129 +1095,61 @@ const MARCH_INK = {
   host: "#f0d7a4",
 };
 
+function marchPoint(march, t) {
+  return {
+    x: march.ax + (march.bx - march.ax) * t,
+    y: march.ay + (march.by - march.ay) * t,
+  };
+}
+
 function drawMarch(ctx, march, time) {
   const kind = march.kind || "host";
   const color = MARCH_INK[kind] || "#e2c078";
-  const x = march.ax + (march.bx - march.ax) * march.t;
-  const y = march.ay + (march.by - march.ay) * march.t;
   const ang = Math.atan2(march.by - march.ay, march.bx - march.ax);
   const nx = Math.cos(ang + Math.PI / 2);
   const ny = Math.sin(ang + Math.PI / 2);
-  for (let i = 1; i <= 8; i++) {
-    const t = Math.max(0, march.t - i * 0.035);
-    const px = march.ax + (march.bx - march.ax) * t;
-    const py = march.ay + (march.by - march.ay) * t;
-    ctx.globalAlpha = Math.max(0, 0.22 - i * 0.022);
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.ellipse(px - nx * (i % 2 ? 4 : -4), py - ny * (i % 2 ? 4 : -4), 5 - i * 0.3, 2.4, ang, 0, Math.PI * 2);
-    ctx.fill();
+  const count = kind === "thief" || kind === "envoy" ? 2 : kind === "trade" || kind === "tribute" ? 4 : 7;
+  const role = kind === "thief" ? "thief" : kind === "trade" || kind === "tribute" ? "hauler" : kind === "meteor" ? "mystic" : "soldier";
+  for (let i = count - 1; i >= 0; i--) {
+    const t = march.t - i * 0.035;
+    if (t <= 0.01) continue;
+    const clamped = Math.min(0.99, t);
+    const pos = marchPoint(march, clamped);
+    const side = (i % 2 ? 7 : -7);
+    ctx.globalAlpha = t > 1 ? Math.max(0, 1 - (t - 1) * 4) : 1;
+    drawFolk(ctx, pos.x + nx * side, pos.y + ny * side, ang, time + i * 0.2, i === 0 && kind !== "trade" ? "elite" : role);
+    if (kind === "trade" && i === 0) {
+      ctx.save();
+      ctx.translate(pos.x, pos.y);
+      ctx.rotate(ang);
+      ctx.fillStyle = "#8a5a32";
+      ctx.fillRect(-10, -5, 16, 9);
+      ctx.fillStyle = "#e2c078";
+      ctx.fillRect(2, -8, 8, 6);
+      ctx.fillStyle = "#24180f";
+      ctx.beginPath();
+      ctx.arc(-5, 5, 2.3, 0, Math.PI * 2);
+      ctx.arc(6, 5, 2.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   }
   ctx.globalAlpha = 1;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(ang);
-  if (kind === "trade") {
-    ctx.fillStyle = "#8a5a32";
-    ctx.fillRect(-8, -4, 14, 8);
-    ctx.fillStyle = "#e2c078";
-    ctx.fillRect(4, -7, 7, 7);
-    ctx.fillStyle = "#24180f";
+  if (kind === "meteor") {
+    const drop = (1 - Math.min(1, march.t)) * 90;
+    const pos = marchPoint(march, Math.min(0.98, march.t));
+    ctx.fillStyle = "rgba(224,122,104,0.45)";
     ctx.beginPath();
-    ctx.arc(-4, 5, 2.2, 0, Math.PI * 2);
-    ctx.arc(6, 5, 2.2, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (kind === "meteor") {
-    const drop = (1 - march.t) * 86;
-    ctx.rotate(-ang);
-    ctx.fillStyle = "rgba(224,122,104,0.4)";
-    ctx.beginPath();
-    ctx.moveTo(0, -drop);
-    ctx.lineTo(-6, -drop - 40);
-    ctx.lineTo(6, -drop - 30);
+    ctx.moveTo(pos.x, pos.y - drop);
+    ctx.lineTo(pos.x - 7, pos.y - drop - 36);
+    ctx.lineTo(pos.x + 7, pos.y - drop - 28);
     ctx.fill();
     ctx.fillStyle = "#4a3428";
     ctx.beginPath();
-    ctx.arc(0, -drop, 8, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y - drop, 8, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#e07a68";
-    ctx.beginPath();
-    ctx.arc(-2, -drop - 2, 3, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (kind === "thief") {
-    ctx.fillStyle = "#1a1420";
-    ctx.beginPath();
-    ctx.ellipse(0, 2, 8, 4.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#9a86c8";
-    ctx.fillRect(-1, -9, 2, 8);
-    ctx.beginPath();
-    ctx.arc(6, -1, 2, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (kind === "raze") {
-    for (let i = 0; i < 4; i++) {
-      const ox = -i * 7;
-      const oy = (i - 1.5) * 5;
-      ctx.fillStyle = "#6a3030";
-      ctx.beginPath();
-      ctx.arc(ox, oy, 2.2, 0, Math.PI * 2);
-      ctx.fill();
-      const flick = Math.sin(time * 14 + i) * 2;
-      ctx.fillStyle = "#ffb15a";
-      ctx.beginPath();
-      ctx.moveTo(ox + 2, oy - 3);
-      ctx.lineTo(ox + 6, oy - 10 - flick);
-      ctx.lineTo(ox - 1, oy - 4);
-      ctx.fill();
-    }
-  } else {
-    for (let i = 0; i < 6; i++) {
-      const ox = -i * 6;
-      const oy = (i - 2.5) * 3.5;
-      ctx.fillStyle = i === 0 ? "#f0d7a4" : "#6a3030";
-      ctx.beginPath();
-      ctx.arc(ox, oy, i === 0 ? 3 : 2.1, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#e8d6b0";
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(ox + 2, oy);
-      ctx.lineTo(ox + 11, oy - 2);
-      ctx.stroke();
-    }
-    if (kind === "sack") {
-      ctx.fillStyle = "#e2c078";
-      ctx.fillRect(-28, -4, 8, 6);
-      ctx.fillStyle = "#8a5a32";
-      ctx.fillRect(-29, -6, 10, 3);
-    }
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(8, -14);
-    ctx.lineTo(18, -8);
-    ctx.lineTo(8, -4);
-    ctx.fill();
-    ctx.strokeStyle = "#5c4632";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(8, -14);
-    ctx.lineTo(8, 2);
-    ctx.stroke();
   }
-  ctx.restore();
-  if (kind === "seize" || kind === "host") {
-    ctx.strokeStyle = "rgba(240, 215, 164, 0.8)";
-    ctx.lineWidth = 1.2;
-    for (let i = 0; i < 3; i++) {
-      const ahead = Math.min(1, march.t + 0.08 + i * 0.05);
-      const ax = march.ax + (march.bx - march.ax) * ahead;
-      const ay = march.ay + (march.by - march.ay) * ahead;
-      ctx.beginPath();
-      ctx.moveTo(ax - Math.cos(ang) * 8, ay - Math.sin(ang) * 8);
-      ctx.lineTo(ax + Math.cos(ang) * 6, ay + Math.sin(ang) * 6);
-      ctx.stroke();
-    }
-  }
+  const lead = marchPoint(march, Math.min(0.98, Math.max(0.02, march.t)));
   const pulse = 16 + Math.sin(time * 6) * 4;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
@@ -1034,7 +1163,7 @@ function drawMarch(ctx, march, time) {
   ctx.fillStyle = color;
   ctx.textAlign = "center";
   const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE" }[kind] || "MARCH";
-  ctx.fillText(title, x, y - 18);
+  ctx.fillText(title, lead.x, lead.y - 18);
 }
 
 export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, march, time = 0, hoverId = null, dpr = 1, motes = [], strikes = []) {
@@ -1061,7 +1190,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
     ctx.fill();
     const viewer = world.provinces.find((row) => row.id === seatId);
     const known = p.id === seatId || Boolean(viewer && intelFresh(viewer, p.id, world.hour));
-    drawHoldings(ctx, p, g, time, known);
+    drawHoldings(ctx, p, g, time, known, world.hour);
     const studied = p.studies ? Object.values(p.studies).filter(Boolean).length : 0;
     if (studied >= 2) {
       ctx.beginPath();
@@ -1100,7 +1229,9 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
       ctx.stroke();
     }
   }
-  if (march) drawMarch(ctx, march, time);
+  drawRoadFolk(ctx, geoms, time);
+  const parties = Array.isArray(march) ? march : march ? [march] : [];
+  for (const party of parties) drawMarch(ctx, party, time);
   for (const mote of motes) {
     ctx.globalAlpha = Math.max(0, mote.life);
     ctx.fillStyle = mote.color;
