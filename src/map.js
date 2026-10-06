@@ -336,6 +336,28 @@ function drawHoldings(ctx, p, g, time, known) {
       ctx.lineTo(g.x + 5, g.y - 18);
       ctx.fill();
     }
+    if (p.marks && p.marks.mill) {
+      ctx.strokeStyle = "#d7e4ea";
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(g.x - 18, g.y + 8, 7, 0, Math.PI * 2);
+      ctx.moveTo(g.x - 18, g.y + 1);
+      ctx.lineTo(g.x - 18, g.y + 15);
+      ctx.moveTo(g.x - 25, g.y + 8);
+      ctx.lineTo(g.x - 11, g.y + 8);
+      ctx.stroke();
+    }
+    if (p.marks && p.marks.archive) {
+      ctx.fillStyle = "#241e30";
+      ctx.fillRect(g.x + 12, g.y - 24, 6, 22);
+      ctx.fillStyle = "#e2c078";
+      ctx.fillRect(g.x + 13, g.y - 28, 4, 4);
+    }
+    if (p.marks && p.marks.bastion) {
+      ctx.strokeStyle = "#f3e6c8";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(g.x - 10, g.y - 30, 18, 10);
+    }
   } else {
     for (const [dx, dy] of scatter(p.id + "camp", 3, g.r * 0.4)) specs.hearth[0](g.x + dx, g.y + dy);
   }

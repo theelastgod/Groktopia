@@ -3,6 +3,7 @@ import {
   DOCTRINES,
   EARN,
   FACTIONS,
+  WONDERS,
   ORDERS,
   STUDIES,
   ageName,
@@ -336,7 +337,7 @@ function paint() {
   const veil = document.querySelector("#veil");
   if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 8} players</span>`;
   const age = document.querySelector("#hud-age");
-  if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>${studyCount(p)}/8 studies · play earns the purse</span>`;
+  if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/8 studies</span>`;
   if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)} $UTOPIA</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
   if (log) {
     const board = standings.slice(0, 6).map((row, index) => `${index + 1}. ${row.name} ${formatUtopia(row.utopia || 0)}`).join(" · ");
@@ -429,6 +430,7 @@ function cardFor(actor, selected) {
       <p class="advisor">${esc(advisor(actor))}</p>
       <div class="row">${doctrineButtons(actor)}</div>
       <div class="row">${studyButtons(actor)}</div>
+      <div class="row">${wonderButtons(actor)}</div>
       <p class="muted">Play to earn: an active hour pays ${formatUtopia(EARN.hourActive + (actor.studies && actor.studies.ledger ? EARN.ledger : 0))} $UTOPIA, settling pays ${formatUtopia(actor.studies && actor.studies.charter ? EARN.charter : EARN.settle)}, and each study pays its own purse. Fair marches still pay inside the combat cap of ${formatUtopia(actor.earnLeft)} this hour. Placement at the bell is 25, 15, 8, 4, 2, then 1.00. Key 4 starts the next study. WASD pans. Q and E zoom.</p>
       ${earnStrip(actor)}`;
   }
@@ -455,6 +457,23 @@ function cardFor(actor, selected) {
     <p class="muted">The party crosses the map, then the hour's order resolves. ${selected.kind === "agent" ? "Agents pay $UTOPIA when the march lands inside the band." : "A human stake is paid in $UTOPIA by both purses."}</p>`;
 }
 
+function wonderButtons(actor) {
+  const built = world.wonders || {};
+  return Object.entries(WONDERS).map(([id, spec]) => {
+    const owner = built[id];
+    if (actor.marks && actor.marks[id]) return `<button class="btn" type="button" disabled>${esc(spec.name)} · yours</button>`;
+    if (owner) {
+      const holder = byId(world, owner);
+      const who = holder && holder.name !== "Unscouted" ? holder.name : "somewhere in the wild";
+      return `<button class="btn" type="button" disabled>${esc(spec.name)} · ${esc(who)}</button>`;
+    }
+    if (studyCount(actor) < spec.need) return "";
+    const cost = actor.doctrine === "college" ? Math.max(200, spec.cost - 100) : spec.cost;
+    const ae = spec.aether ? ` · ${spec.aether} ae` : "";
+    return `<button class="btn primary" type="button" data-wonder="${id}">${esc(spec.name)} · ${cost}g${ae} · +${formatUtopia(spec.purse)}</button>`;
+  }).join("");
+}
+
 function doctrineButtons(actor) {
   return Object.entries(DOCTRINES).map(([id, spec]) => {
     const on = actor.doctrine === id;
@@ -471,6 +490,7 @@ function ledgerLine(actor) {
     ["marches", book.combat],
     ["stakes", book.stake],
     ["placement", book.place],
+    ["wonders", book.wonder],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -669,6 +689,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.doctrine) {
     order({ type: "doctrine", doctrine: node.dataset.doctrine }, "click");
+    return;
+  }
+  if (node.dataset.wonder) {
+    order({ type: "wonder", wonder: node.dataset.wonder }, "build");
     return;
   }
   if (node.dataset.train) {

@@ -152,6 +152,13 @@ export const DOCTRINES = {
   college: { name: "Lantern College", blurb: "The next study costs 100 gold less." },
 };
 
+/** One of each in a realm. The builder is paid, and the landmark stays theirs. */
+export const WONDERS = {
+  mill: { name: "River Mill", cost: 1400, aether: 0, need: 2, purse: 220, blurb: "The builder's fields swell." },
+  archive: { name: "Night Archive", cost: 1600, aether: 80, need: 4, purse: 300, blurb: "Later studies pay a richer purse." },
+  bastion: { name: "Pale Bastion", cost: 1800, aether: 0, need: 5, purse: 360, blurb: "The builder's defense stands taller." },
+};
+
 function notePurse(actor, bucket, cents) {
   if (!actor || actor.kind !== "human" || !cents || cents <= 0) return;
   if (!actor.ledger) actor.ledger = {};
@@ -209,12 +216,14 @@ export function blankProvince(partial) {
     studies: {},
     doctrine: null,
     ledger: {},
+    marks: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
   if (partial && partial.spells) p.spells = { ...base.spells, ...partial.spells };
   p.studies = { ...(partial && partial.studies ? partial.studies : {}) };
   p.ledger = { ...(partial && partial.ledger ? partial.ledger : {}) };
+  p.marks = { ...(partial && partial.marks ? partial.marks : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -268,6 +277,7 @@ export function newWorld(opts = {}) {
     burned: 0,
     provinces: [you, ...agents],
     log: [{ hour: 0, text: `${you.ruler} takes the seat of ${you.name}. Six lattice agents already hold land.` }],
+    wonders: {},
     rng: makeRng(seed),
   };
 }
@@ -330,7 +340,8 @@ export function defense(p) {
   const f = FACTIONS[p.faction];
   const bulwark = p.spells.bulwark > 0 ? 1.2 : 1;
   const pale = p.studies && p.studies.palisade ? 1.06 : 1;
-  return Math.floor((p.soldiers * 1 + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale);
+  const bastion = p.marks && p.marks.bastion ? 1.08 : 1;
+  return Math.floor((p.soldiers * 1 + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale * bastion);
 }
 
 export function networth(p) {
@@ -433,6 +444,7 @@ export function applyAction(world, actorId, action) {
   if (action.type === "explore") return doExplore(world, actor);
   if (action.type === "study") return doStudy(world, actor, action.study);
   if (action.type === "doctrine") return doDoctrine(world, actor, action.doctrine);
+  if (action.type === "wonder") return doWonder(world, actor, action.wonder);
   if (action.type === "attack") return doAttack(world, actor, action);
   if (action.type === "spell") return doSpell(world, actor, action);
   if (action.type === "thief") return doThief(world, actor, action);
@@ -537,9 +549,10 @@ function doStudy(world, actor, id) {
   actor.studies[id] = world.hour || 1;
   let purse = "";
   if (actor.kind === "human") {
-    actor.utopia += spec.purse;
-    notePurse(actor, "study", spec.purse);
-    purse = ` Purse +${formatUtopia(spec.purse)} $UTOPIA.`;
+    const cents = actor.marks && actor.marks.archive ? Math.floor(spec.purse * 1.25) : spec.purse;
+    actor.utopia += cents;
+    notePurse(actor, "study", cents);
+    purse = ` Purse +${formatUtopia(cents)} $UTOPIA.`;
   }
   log(world, `${actor.name} completes ${spec.name} and enters the ${ageName(actor)} age.${purse}`);
   return { ok: true, message: `${spec.name} seated.${purse}` };
@@ -557,6 +570,33 @@ function doDoctrine(world, actor, id) {
   actor.doctrine = id;
   log(world, `${actor.name} adopts ${spec.name}. ${spec.blurb}`);
   return { ok: true, message: `${spec.name} adopted.` };
+}
+
+function doWonder(world, actor, id) {
+  const spec = WONDERS[id];
+  if (!spec) return fail("Unknown wonder.");
+  world.wonders = world.wonders || {};
+  if (world.wonders[id]) return fail(`${spec.name} already stands.`);
+  if (studyCount(actor) < spec.need) return fail(`${spec.name} waits on ${spec.need} studies.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const cost = actor.doctrine === "college" ? Math.max(200, spec.cost - 100) : spec.cost;
+  if (actor.gold < cost) return fail(`${spec.name} wants ${cost} gold.`);
+  if ((actor.aether || 0) < spec.aether) return fail(`${spec.name} wants ${spec.aether} aether.`);
+  actor.gold -= cost;
+  actor.aether -= spec.aether;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.marks = actor.marks || {};
+  actor.marks[id] = true;
+  world.wonders[id] = actor.id;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += spec.purse;
+    notePurse(actor, "wonder", spec.purse);
+    purse = ` Purse +${formatUtopia(spec.purse)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises the ${spec.name}.${purse}`);
+  return { ok: true, message: `${spec.name} raised.${purse}` };
 }
 
 function onCooldown(actor, target, hour) {
@@ -769,6 +809,7 @@ function economy(p) {
   if (p.studies && p.studies.kiln) goldIn = Math.floor(goldIn * 1.06);
   if (p.studies && p.studies.furrow) foodIn = Math.floor(foodIn * 1.08);
   if (p.doctrine === "granary") foodIn = Math.floor(foodIn * 1.08);
+  if (p.marks && p.marks.mill) foodIn = Math.floor(foodIn * 1.1);
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -911,6 +952,7 @@ export function hydrate(raw) {
   const data = typeof raw === "string" ? JSON.parse(raw) : raw;
   const rngState = data.rngState >>> 0;
   delete data.rngState;
+  data.wonders = data.wonders || {};
   return { ...data, rng: makeRng(rngState) };
 }
 
@@ -993,6 +1035,7 @@ export function createOpenRealm(seed = 1) {
     closed: false,
     provinces,
     log: [{ hour: 0, text: "The wilds are open. Eight human seats. The age clock runs for two hours." }],
+    wonders: {},
     rng: makeRng(seed),
   };
 }
@@ -1083,6 +1126,7 @@ export function redact(world, seatId) {
       province.utopia = 0;
       province.studies = {};
       province.doctrine = null;
+      province.marks = {};
       province.name = "Unscouted";
       province.ruler = "Unknown";
       province.line = "A camp in the wild. Send a thief to scout it.";
@@ -1090,6 +1134,11 @@ export function redact(world, seatId) {
   }
   for (const row of copy.log || []) {
     for (const name of hiddenNames) row.text = row.text.split(name).join("an unscouted camp");
+  }
+  copy.wonders = copy.wonders || {};
+  for (const [id, owner] of Object.entries(copy.wonders)) {
+    const holder = copy.provinces.find((p) => p.id === owner);
+    if (!holder || holder.name === "Unscouted") copy.wonders[id] = "";
   }
   return copy;
 }

@@ -156,6 +156,23 @@ test("studies pay the purse and climb from Camp to Borough", () => {
   assert.ok(you.utopia > purse);
 });
 
+test("a wonder pays once and hides until the builder is scouted", () => {
+  const w = newWorld({ seed: 12 });
+  const you = byId(w, "you");
+  assert.equal(applyAction(w, "you", { type: "study", study: "furrow" }).ok, true);
+  assert.equal(applyAction(w, "you", { type: "study", study: "kiln" }).ok, true);
+  const raised = applyAction(w, "you", { type: "wonder", wonder: "mill" });
+  assert.equal(raised.ok, true);
+  assert.equal(you.ledger.wonder, 220);
+  assert.equal(w.wonders.mill, "you");
+  assert.equal(applyAction(w, "you", { type: "wonder", wonder: "mill" }).ok, false);
+  const view = redact(w, "harrow");
+  assert.equal(view.wonders.mill, "");
+  assert.equal(view.provinces.find((p) => p.id === "you").name, "Unscouted");
+  const kept = hydrate(serialize(w));
+  assert.equal(kept.wonders.mill, "you");
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
