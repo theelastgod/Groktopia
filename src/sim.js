@@ -28,6 +28,7 @@ export const EARN = {
   bounty: 40,
   vein: 34,
   relief: 38,
+  smith: 33,
 };
 
 export const FACTIONS = {
@@ -240,6 +241,7 @@ export function blankProvince(partial) {
     vein: "",
     veinUntil: 0,
     reliefs: {},
+    smithUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -365,7 +367,8 @@ export function offense(p) {
   const levy = p.doctrine === "levy" ? 1.05 : 1;
   const ash = p.relics && p.relics.barrow ? 1.04 : 1;
   const seam = p.vein === "iron" ? 1.04 : 1;
-  return Math.floor((p.soldiers * 3 + (p.muster || 0) * 2 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash * seam);
+  const bite = p.smithUntil > 0 ? 4 : 3;
+  return Math.floor((p.soldiers * bite + (p.muster || 0) * 2 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash * seam);
 }
 
 export function defense(p) {
@@ -521,6 +524,7 @@ export const AMBITIONS = [
   { id: "bounty", name: "Post a price", purse: 40, blurb: "Put a bounty on a camp.", match: (action) => action.type === "bounty" },
   { id: "vein", name: "Strike a vein", purse: 35, blurb: "Prospect the acres.", match: (action) => action.type === "prospect" },
   { id: "relief", name: "Send relief", purse: 40, blurb: "Cart grain to a hungry camp.", match: (action) => action.type === "relief" },
+  { id: "smith", name: "Bank the forge", purse: 35, blurb: "Arm the host at the smith.", match: (action) => action.type === "smith" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -564,6 +568,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "bounty") result = doBounty(world, actor, action.target);
   else if (action.type === "prospect") result = doProspect(world, actor);
   else if (action.type === "relief") result = doRelief(world, actor, action.target);
+  else if (action.type === "smith") result = doSmith(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -986,6 +991,31 @@ function settleVein(p, hour) {
   p.veinUntil = 0;
 }
 
+function settleSmith(p, hour) {
+  if (!p || !(p.smithUntil > 0)) return;
+  if (p.smithUntil > (hour || 0)) return;
+  p.smithUntil = 0;
+}
+
+function doSmith(world, actor) {
+  if ((actor.smithUntil || 0) > (world.hour || 0)) return fail(`The forge is already banked through hour ${actor.smithUntil - 1}.`);
+  settleSmith(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 200) return fail("The smith wants 200 gold.");
+  actor.gold -= 200;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.smithUntil = (world.hour || 0) + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.smith;
+    notePurse(actor, "smith", EARN.smith);
+    purse = ` Purse +${formatUtopia(EARN.smith)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} banks the forge through hour ${actor.smithUntil - 1}. Each soldier hits harder.${purse}`);
+  return { ok: true, message: `Forge banked through hour ${actor.smithUntil - 1}.${purse}` };
+}
+
 function doRelief(world, actor, targetId) {
   const target = byId(world, targetId);
   if (!target || target.id === actor.id) return fail("Pick another holding.");
@@ -1401,6 +1431,7 @@ export function advanceHour(world) {
   world.hour += 1;
   for (const p of world.provinces) settleMuster(p, world.hour);
   for (const p of world.provinces) settleVein(p, world.hour);
+  for (const p of world.provinces) settleSmith(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -1461,6 +1492,9 @@ export function chooseAction(world, agent) {
     const held = byId(world, penned[0]);
     if (held && held.gold >= 20) return { type: "ransom", target: held.id };
     if (held) return { type: "release", target: held.id };
+  }
+  if (agent.persona === "harrow" && !(agent.smithUntil > world.hour) && agent.gold >= 500 && agent.soldiers >= 40 && agent.orders >= 1 && rng.next() < 0.16) {
+    return { type: "smith" };
   }
   if (agent.persona === "harrow" && !(agent.muster > 0) && agent.peasants >= 60 && agent.gold >= 120 && agent.soldiers < 80 && agent.orders >= 1 && rng.next() < 0.22) {
     return { type: "muster" };

@@ -679,6 +679,33 @@ test("relief feeds a hungry camp, pays once, and waits out the road", () => {
   assert.equal(applyAction(fat, "you", { type: "relief", target: "harrow" }).ok, false);
 });
 
+test("the smith arms the host for six hours", () => {
+  const w = newWorld({ seed: 39 });
+  const you = byId(w, "you");
+  const bare = offense(you);
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "smith" }).ok, true);
+  assert.equal(you.gold, gold - 200);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.smithUntil, 6);
+  assert.equal(you.ledger.smith, EARN.smith);
+  assert.equal(you.utopia, purse + EARN.smith);
+  assert.ok(offense(you) > bare);
+  assert.equal(applyAction(w, "you", { type: "smith" }).ok, false);
+  const poor = newWorld({ seed: 40 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "smith" }).ok, false);
+  w.provinces = [you];
+  w.hour = 5;
+  you.smithUntil = 6;
+  const armed = offense(you);
+  advanceHour(w);
+  assert.equal(w.hour, 6);
+  assert.equal(you.smithUntil, 0);
+  assert.ok(offense(you) < armed);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

@@ -561,6 +561,7 @@ function cardFor(actor, selected) {
     ${beaconLit(selected, world.hour) ? `<p class="muted">A watch fire burns through hour ${selected.beaconUntil - 1}. Camps in its light are read, and a second fire chains one hop.</p>` : ""}
     ${feastLive(selected, world.hour) ? `<p class="muted">A long table is set through hour ${selected.feastUntil - 1}. The hearth grows faster while the flags fly.</p>` : ""}
     ${selected.vein && VEINS[selected.vein] && selected.veinUntil > world.hour ? `<p class="muted">${esc(VEINS[selected.vein].name)} through hour ${selected.veinUntil - 1}. ${esc(VEINS[selected.vein].line)}</p>` : ""}
+    ${(selected.smithUntil || 0) > world.hour ? `<p class="muted">The forge is banked through hour ${selected.smithUntil - 1}. Soldiers hit harder while the smoke rises.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
     const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
@@ -584,6 +585,8 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(smithLine(actor))}</p>
+      <div class="row">${smithButton(actor)}</div>
       <p class="muted">${esc(veinLine(actor))}</p>
       <div class="row">${veinButton(actor)}</div>
       <p class="muted">${esc(feastLine(actor))}</p>
@@ -689,6 +692,7 @@ function ledgerLine(actor) {
     ["bounties", book.bounty],
     ["veins", book.vein],
     ["relief", book.relief],
+    ["smith", book.smith],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -735,6 +739,16 @@ function bountyLine(selected) {
   if (!row) return "";
   const who = byId(world, row.poster);
   return `A bounty of ${row.gold} gold sits through hour ${row.until - 1}, posted by ${who ? who.name : "someone"}. A winning seize or sack by anyone else collects it.`;
+}
+
+function smithLine(actor) {
+  if ((actor.smithUntil || 0) > world.hour) return `The forge is banked through hour ${actor.smithUntil - 1}. Each soldier hits harder while the smoke stands.`;
+  return "Bank the forge for 200 gold. For six hours each soldier hits harder. Key S calls the smith.";
+}
+
+function smithButton(actor) {
+  if ((actor.smithUntil || 0) > world.hour) return `<button class="btn" type="button" disabled>Forge through hour ${actor.smithUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-smith="1">Bank the forge · 200g · +${formatUtopia(EARN.smith)}</button>`;
 }
 
 function veinLine(actor) {
@@ -970,6 +984,7 @@ function bindMap(canvas) {
       if (event.key === "8" && world) order({ type: "stall", mode: "sell" }, "coin");
       if (event.key === "9" && world) order({ type: "feast" }, "coin");
       if (event.key === "0" && world) order({ type: "prospect" }, "build");
+      if (event.key.toLowerCase() === "s" && world) order({ type: "smith" }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
       if (event.key === "4" && world) {
@@ -1072,6 +1087,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.prospect) {
     order({ type: "prospect" }, "build");
+    return;
+  }
+  if (node.dataset.smith) {
+    order({ type: "smith" }, "build");
     return;
   }
   if (node.dataset.doctrine) {
