@@ -29,6 +29,7 @@ export const EARN = {
   vein: 34,
   relief: 38,
   smith: 33,
+  seal: 30,
 };
 
 export const FACTIONS = {
@@ -242,6 +243,7 @@ export function blankProvince(partial) {
     veinUntil: 0,
     reliefs: {},
     smithUntil: 0,
+    sealUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -525,6 +527,7 @@ export const AMBITIONS = [
   { id: "vein", name: "Strike a vein", purse: 35, blurb: "Prospect the acres.", match: (action) => action.type === "prospect" },
   { id: "relief", name: "Send relief", purse: 40, blurb: "Cart grain to a hungry camp.", match: (action) => action.type === "relief" },
   { id: "smith", name: "Bank the forge", purse: 35, blurb: "Arm the host at the smith.", match: (action) => action.type === "smith" },
+  { id: "seal", name: "Seal the bins", purse: 35, blurb: "Seal the grain.", match: (action) => action.type === "seal" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -569,6 +572,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "prospect") result = doProspect(world, actor);
   else if (action.type === "relief") result = doRelief(world, actor, action.target);
   else if (action.type === "smith") result = doSmith(world, actor);
+  else if (action.type === "seal") result = doSeal(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -991,6 +995,31 @@ function settleVein(p, hour) {
   p.veinUntil = 0;
 }
 
+function settleSeal(p, hour) {
+  if (!p || !(p.sealUntil > 0)) return;
+  if (p.sealUntil > (hour || 0)) return;
+  p.sealUntil = 0;
+}
+
+function doSeal(world, actor) {
+  if ((actor.sealUntil || 0) > (world.hour || 0)) return fail(`The bins are already sealed through hour ${actor.sealUntil - 1}.`);
+  settleSeal(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 90) return fail("A grain seal wants 90 gold.");
+  actor.gold -= 90;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.sealUntil = (world.hour || 0) + 5;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.seal;
+    notePurse(actor, "seal", EARN.seal);
+    purse = ` Purse +${formatUtopia(EARN.seal)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} seals the grain bins through hour ${actor.sealUntil - 1}. A sack takes half the grain.${purse}`);
+  return { ok: true, message: `Bins sealed through hour ${actor.sealUntil - 1}.${purse}` };
+}
+
 function settleSmith(p, hour) {
   if (!p || !(p.smithUntil > 0)) return;
   if (p.smithUntil > (hour || 0)) return;
@@ -1203,7 +1232,8 @@ function doAttack(world, actor, action) {
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "sack") {
     const g = Math.floor(target.gold * 0.14 * Math.max(scale, 0.35));
-    const f = Math.floor(target.grain * 0.14 * Math.max(scale, 0.35));
+    let f = Math.floor(target.grain * 0.14 * Math.max(scale, 0.35));
+    if ((target.sealUntil || 0) > (world.hour || 0)) f = Math.floor(f / 2);
     target.gold -= g;
     target.grain -= f;
     actor.gold += g;
@@ -1432,6 +1462,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleMuster(p, world.hour);
   for (const p of world.provinces) settleVein(p, world.hour);
   for (const p of world.provinces) settleSmith(p, world.hour);
+  for (const p of world.provinces) settleSeal(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -1546,6 +1577,7 @@ export function chooseAction(world, agent) {
   }
   if (agent.persona === "brine") {
     if (!agent.vein && agent.gold >= 800 && agent.orders >= 1 && rng.next() < 0.14) return { type: "prospect" };
+    if (!(agent.sealUntil > world.hour) && agent.grain >= 4000 && agent.gold >= 200 && agent.orders >= 1 && rng.next() < 0.12) return { type: "seal" };
     const quote = stallQuote(world.hour);
     if (agent.grain >= quote.grain + quote.keep + 800 && agent.orders >= 1 && rng.next() < 0.28) {
       return { type: "stall", mode: "sell" };

@@ -706,6 +706,51 @@ test("the smith arms the host for six hours", () => {
   assert.ok(offense(you) < armed);
 });
 
+test("a grain seal halves what a sack can carry", () => {
+  const w = newWorld({ seed: 41 });
+  const you = byId(w, "you");
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "seal" }).ok, true);
+  assert.equal(you.gold, gold - 90);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.sealUntil, 5);
+  assert.equal(you.ledger.seal, EARN.seal);
+  assert.equal(you.utopia, purse + EARN.seal);
+  assert.equal(applyAction(w, "you", { type: "seal" }).ok, false);
+  const poor = newWorld({ seed: 42 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "seal" }).ok, false);
+
+  const open = newWorld({ seed: 43 });
+  const shut = newWorld({ seed: 43 });
+  for (const realm of [open, shut]) {
+    const camp = byId(realm, "harrow");
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+    camp.grain = 10000;
+  }
+  byId(shut, "harrow").sealUntil = shut.hour + 5;
+  const openBefore = byId(open, "harrow").grain;
+  const shutBefore = byId(shut, "harrow").grain;
+  assert.equal(applyAction(open, "you", { type: "attack", target: "harrow", mode: "sack" }).win, true);
+  assert.equal(applyAction(shut, "you", { type: "attack", target: "harrow", mode: "sack" }).win, true);
+  const openLost = openBefore - byId(open, "harrow").grain;
+  const shutLost = shutBefore - byId(shut, "harrow").grain;
+  assert.ok(openLost > 0);
+  assert.equal(shutLost, Math.floor(openLost / 2));
+
+  const aged = newWorld({ seed: 44 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 4;
+  seat.sealUntil = 5;
+  advanceHour(aged);
+  assert.equal(aged.hour, 5);
+  assert.equal(seat.sealUntil, 0);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

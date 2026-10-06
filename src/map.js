@@ -1121,6 +1121,27 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (feastLive(p, hour)) drawFeast(ctx, g, time);
   if (p.vein) drawVein(ctx, g, time, p.vein);
   if ((p.smithUntil || 0) > (hour || 0)) drawSmith(ctx, g, time);
+  if ((p.sealUntil || 0) > (hour || 0)) drawSeal(ctx, g);
+}
+
+function drawSeal(ctx, g) {
+  const x = g.x + g.r * 0.42;
+  const y = g.y - g.r * 0.58;
+  ctx.fillStyle = "#6a4a32";
+  ctx.fillRect(x - 9, y - 7, 18, 16);
+  ctx.strokeStyle = "#e2c078";
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(x - 9, y - 7, 18, 16);
+  ctx.beginPath();
+  ctx.moveTo(x - 7, y - 2);
+  ctx.lineTo(x + 7, y - 2);
+  ctx.moveTo(x - 7, y + 3);
+  ctx.lineTo(x + 7, y + 3);
+  ctx.stroke();
+  ctx.fillStyle = "#a14a3c";
+  ctx.beginPath();
+  ctx.arc(x, y + 7, 3.2, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawSmith(ctx, g, time) {
