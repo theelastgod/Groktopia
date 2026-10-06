@@ -226,7 +226,10 @@ function shell() {
       <button class="btn" id="sound" type="button">${soundOn ? "Sound on" : "Sound off"}</button>
     </header>
     <canvas id="mini" width="168" height="168"></canvas>
-    <section class="hud-card" id="card"></section>
+    <div class="sheet">
+      <button class="btn sheet-handle" id="sheet" type="button">Orders</button>
+      <section class="hud-card" id="card"></section>
+    </div>
     <ol class="hud-log log" id="log"></ol>
     <div id="veil" class="veil" hidden></div>
     ${toast ? `<div class="toast">${esc(toast)}</div>` : ""}
@@ -599,7 +602,16 @@ function marchMode(mode) {
   }, "march");
 }
 
+function setSheet(open) {
+  document.body.classList.toggle("sheet-open", open);
+  const handle = document.querySelector("#sheet");
+  if (handle) handle.textContent = open ? "Map" : "Orders";
+}
+
 function bindMap(canvas) {
+  const fingers = new Map();
+  let pinch = null;
+  let lastTap = 0;
   const track = (event) => {
     const rect = canvas.getBoundingClientRect();
     pointer = {
@@ -614,12 +626,27 @@ function bindMap(canvas) {
     canvas.classList.toggle("pointing", Boolean(hoverId) && !dragging);
   };
   canvas.addEventListener("pointerdown", (event) => {
+    fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (fingers.size === 2) {
+      const pts = [...fingers.values()];
+      pinch = { dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1, z: cam.z };
+      dragging = null;
+      canvas.classList.remove("dragging");
+      return;
+    }
     dragging = { id: event.pointerId, x: event.clientX, y: event.clientY, cx: cam.x, cy: cam.y, moved: false };
     canvas.setPointerCapture(event.pointerId);
     canvas.classList.add("dragging");
   });
   canvas.addEventListener("pointermove", (event) => {
+    if (fingers.has(event.pointerId)) fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     track(event);
+    if (fingers.size >= 2 && pinch) {
+      const pts = [...fingers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      cam.z = goal.z = clampZoom(pinch.z * (dist / pinch.dist));
+      return;
+    }
     if (!dragging || dragging.id !== event.pointerId) return;
     const dx = event.clientX - dragging.x;
     const dy = event.clientY - dragging.y;
@@ -631,14 +658,31 @@ function bindMap(canvas) {
     if (!dragging || dragging.id !== event.pointerId) return;
     const moved = dragging.moved;
     dragging = null;
+    fingers.delete(event.pointerId);
+    if (fingers.size < 2) pinch = null;
     canvas.classList.remove("dragging");
     track(event);
     if (moved || !world) return;
+    const now = performance.now();
+    if (hoverId && now - lastTap < 300) focusHolding(hoverId);
+    lastTap = now;
     if (!hoverId) return;
     selectedId = hoverId;
+    if (window.matchMedia("(max-width: 760px)").matches) setSheet(true);
     play("click");
     bed(hoverId === seat().id ? "throne" : "battle");
     paint();
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    if (fingers.has(event.pointerId) && (!dragging || dragging.id !== event.pointerId)) {
+      fingers.delete(event.pointerId);
+      if (fingers.size < 2) pinch = null;
+    }
+  });
+  canvas.addEventListener("pointercancel", (event) => {
+    fingers.delete(event.pointerId);
+    if (dragging && dragging.id === event.pointerId) dragging = null;
+    if (fingers.size < 2) pinch = null;
   });
   canvas.addEventListener("pointerleave", () => {
     pointer = null;
@@ -726,6 +770,10 @@ app.addEventListener("click", async (event) => {
     return;
   }
   if (!world) return;
+  if (node.id === "sheet") {
+    setSheet(!document.body.classList.contains("sheet-open"));
+    return;
+  }
   if (node.id === "home") {
     const home = provinceGeom(seat());
     goal.x = home.x;
