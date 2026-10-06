@@ -21,6 +21,8 @@ import {
   seatRival,
   serialize,
   studyCount,
+  beaconLit,
+  intelFresh,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -258,6 +260,100 @@ test("a relic changes the host and tribute pays inside the band", () => {
   assert.ok(you.ledger.tribute > 0);
   assert.ok(you.ledger.tribute <= EARN.tribute);
   assert.equal(applyAction(w, "you", { type: "tribute", target: "harrow" }).ok, false);
+});
+
+test("a watch fire scouts in range, chains one hop, and dulls a pilfer", () => {
+  const w = newWorld({ seed: 21 });
+  const you = byId(w, "you");
+  const harrow = byId(w, "harrow");
+  const vellum = byId(w, "vellum");
+  const moss = byId(w, "moss");
+  you.x = 0;
+  you.y = 0;
+  harrow.x = 700;
+  harrow.y = 0;
+  vellum.x = 1400;
+  vellum.y = 0;
+  moss.x = 2400;
+  moss.y = 0;
+  you.gold = 5000;
+  you.grain = 40;
+  assert.equal(applyAction(w, "you", { type: "beacon" }).ok, false);
+  you.grain = 5000;
+  const purse = you.utopia;
+  const lit = applyAction(w, "you", { type: "beacon" });
+  assert.equal(lit.ok, true);
+  assert.equal(you.ledger.beacon, EARN.beacon);
+  assert.equal(you.utopia, purse + EARN.beacon);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(beaconLit(you, w.hour), true);
+  assert.ok(intelFresh(you, "harrow", w.hour));
+  assert.equal(intelFresh(you, "vellum", w.hour), null);
+  assert.equal(intelFresh(you, "moss", w.hour), null);
+  assert.equal(applyAction(w, "you", { type: "beacon" }).ok, false);
+  you.beaconUntil = 0;
+  you.intel = {};
+  you.orders = ORDERS;
+  harrow.beaconUntil = w.hour + 6;
+  assert.equal(applyAction(w, "you", { type: "beacon" }).ok, true);
+  assert.ok(intelFresh(you, "vellum", w.hour));
+  assert.equal(intelFresh(you, "moss", w.hour), null);
+  assert.equal(you.ledger.beacon, EARN.beacon * 2);
+  const view = redact(w, "moss");
+  const hidden = view.provinces.find((p) => p.id === "you");
+  assert.equal(hidden.name, "Unscouted");
+  assert.equal(hidden.beaconUntil, you.beaconUntil);
+  const kept = hydrate(serialize(w));
+  assert.equal(byId(kept, "you").beaconUntil, you.beaconUntil);
+
+  const open = newWorld({ seed: 22 });
+  const thief = byId(open, "you");
+  const camp = byId(open, "harrow");
+  camp.land = thief.land;
+  camp.buildings = { ...thief.buildings, keep: 0 };
+  thief.buildings = { ...thief.buildings, keep: 0 };
+  camp.peasants = thief.peasants;
+  camp.soldiers = thief.soldiers;
+  camp.elites = thief.elites;
+  camp.thieves = thief.thieves = 10;
+  camp.mystics = thief.mystics;
+  camp.gold = thief.gold;
+  camp.grain = thief.grain;
+  camp.faction = thief.faction;
+  const easy = applyAction(open, "you", { type: "thief", op: "pilfer", target: "harrow" });
+  assert.equal(easy.win, true);
+
+  const shut = newWorld({ seed: 22 });
+  const thief2 = byId(shut, "you");
+  const camp2 = byId(shut, "harrow");
+  camp2.land = thief2.land;
+  camp2.buildings = { ...thief2.buildings, keep: 0 };
+  thief2.buildings = { ...thief2.buildings, keep: 0 };
+  camp2.peasants = thief2.peasants;
+  camp2.soldiers = thief2.soldiers;
+  camp2.elites = thief2.elites;
+  camp2.thieves = thief2.thieves = 10;
+  camp2.mystics = thief2.mystics;
+  camp2.gold = thief2.gold;
+  camp2.grain = thief2.grain;
+  camp2.faction = thief2.faction;
+  camp2.beaconUntil = shut.hour + 6;
+  const resisted = applyAction(shut, "you", { type: "thief", op: "pilfer", target: "harrow" });
+  assert.equal(resisted.win, false);
+
+  const refresh = newWorld({ seed: 23 });
+  const home = byId(refresh, "you");
+  const near = byId(refresh, "harrow");
+  home.x = 0;
+  home.y = 0;
+  near.x = 120;
+  near.y = 0;
+  home.beaconUntil = 4;
+  home.intel = {};
+  home.acted = false;
+  advanceHour(refresh);
+  assert.equal(refresh.hour, 1);
+  assert.ok(intelFresh(home, "harrow", refresh.hour));
 });
 
 test("save and load keep the hour and the random stream", () => {

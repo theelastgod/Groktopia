@@ -20,6 +20,7 @@ export const EARN = {
   charter: 70,
   ledger: 15,
   tribute: 45,
+  beacon: 32,
 };
 
 export const FACTIONS = {
@@ -223,6 +224,7 @@ export function blankProvince(partial) {
     pacts: {},
     relics: {},
     demands: {},
+    beaconUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -448,6 +450,41 @@ function remember(actor, target, hour) {
   };
 }
 
+/** A lit fire reads camps inside this distance. A second lit fire chains one hop. */
+export const BEACON_RANGE = 980;
+export const BEACON_HOURS = 6;
+
+export function beaconLit(p, hour) {
+  return Boolean(p && typeof p.beaconUntil === "number" && p.beaconUntil > (hour || 0));
+}
+
+function provinceNear(a, b) {
+  if (!a || !b || !Number.isFinite(a.x) || !Number.isFinite(a.y) || !Number.isFinite(b.x) || !Number.isFinite(b.y)) return false;
+  return Math.hypot(a.x - b.x, a.y - b.y) <= BEACON_RANGE;
+}
+
+function watchSweep(world, actor) {
+  const hour = world.hour || 0;
+  const direct = world.provinces.filter((other) => other.id !== actor.id && provinceNear(actor, other));
+  const hops = [...direct];
+  for (const mid of direct) {
+    if (!beaconLit(mid, hour)) continue;
+    for (const other of world.provinces) {
+      if (other.id === actor.id || other.id === mid.id) continue;
+      if (provinceNear(mid, other)) hops.push(other);
+    }
+  }
+  const seen = new Set();
+  let fresh = 0;
+  for (const other of hops) {
+    if (seen.has(other.id)) continue;
+    seen.add(other.id);
+    if (!intelFresh(actor, other.id, hour)) fresh += 1;
+    remember(actor, other, hour);
+  }
+  return { seen: seen.size, fresh };
+}
+
 /** A fresh aim each time the last one is met. Matching the aim pays the purse. */
 export const AMBITIONS = [
   { id: "acres", name: "Break ground", purse: 40, blurb: "Settle 10 acres.", match: (action) => action.type === "explore" },
@@ -456,6 +493,7 @@ export const AMBITIONS = [
   { id: "field", name: "Raise a field", purse: 35, blurb: "Build a field.", match: (action) => action.type === "build" && action.building === "field" },
   { id: "host", name: "Drill the host", purse: 35, blurb: "Train soldiers.", match: (action) => action.type === "train" && action.unit === "soldier" },
   { id: "caravan", name: "Roll a caravan", purse: 45, blurb: "Send a caravan.", match: (action) => action.type === "trade" },
+  { id: "beacon", name: "Light the watch", purse: 40, blurb: "Raise a watch fire.", match: (action) => action.type === "beacon" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -490,6 +528,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "envoy") result = doEnvoy(world, actor, action.target);
   else if (action.type === "clear") result = doClear(world, actor, action.site);
   else if (action.type === "tribute") result = doTribute(world, actor, action.target);
+  else if (action.type === "beacon") result = doBeacon(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -747,6 +786,27 @@ function doTribute(world, actor, targetId) {
   return { ok: true, message: `Tribute of ${got} gold.${purse}`, win: true };
 }
 
+function doBeacon(world, actor) {
+  if (beaconLit(actor, world.hour)) return fail(`The watch fire already holds through hour ${actor.beaconUntil - 1}.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 160) return fail("A watch fire wants 160 gold.");
+  if ((actor.grain || 0) < 80) return fail("A watch fire wants 80 grain.");
+  actor.gold -= 160;
+  actor.grain -= 80;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.beaconUntil = (world.hour || 0) + BEACON_HOURS;
+  const sweep = watchSweep(world, actor);
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.beacon;
+    notePurse(actor, "beacon", EARN.beacon);
+    purse = ` Purse +${formatUtopia(EARN.beacon)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} lights a watch fire through hour ${actor.beaconUntil - 1}. It reads ${sweep.seen} camps.${purse}`);
+  return { ok: true, message: `Watch fire lit. ${sweep.seen} camps in the light.${purse}` };
+}
+
 function onCooldown(actor, target, hour) {
   const last = actor.cooldown[target.id];
   return last != null && hour - last < COOLDOWN;
@@ -900,7 +960,8 @@ function doThief(world, actor, action) {
   const scale = nwFactor(actor, target);
   if (action.op !== "scout" && scale <= 0) return fail("Outside the fair band.");
   const mine = thiefPower(actor);
-  const theirs = thiefPower(target) + target.buildings.keep * 0.0008;
+  let theirs = thiefPower(target) + target.buildings.keep * 0.0008;
+  if (beaconLit(target, world.hour)) theirs *= 1.18;
   actor.orders -= 1;
   actor.acted = true;
   if (action.op === "scout") {
@@ -1002,6 +1063,11 @@ function economy(p, hour) {
 
 export function advanceHour(world) {
   for (const p of world.provinces) economy(p, world.hour || 0);
+  for (const p of world.provinces) {
+    if (!beaconLit(p, world.hour || 0)) continue;
+    const sweep = watchSweep(world, p);
+    if (sweep.fresh > 0 && p.kind === "human") log(world, `${p.name}'s watch fire reads ${sweep.fresh} new camps.`);
+  }
   const prevSeason = seasonName(world.hour);
   world.hour += 1;
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
@@ -1058,6 +1124,9 @@ function nearestOpenSite(world, agent) {
 
 export function chooseAction(world, agent) {
   const rng = world.rng;
+  if ((agent.persona === "sable" || agent.persona === "moss") && !beaconLit(agent, world.hour) && agent.orders >= 1 && agent.gold >= 160 && agent.grain >= 80 && rng.next() < 0.2) {
+    return { type: "beacon" };
+  }
   const site = nearestOpenSite(world, agent);
   if (site && rng.next() < 0.18) return { type: "clear", site: site.id };
   if (agent.persona === "harrow") {
