@@ -15,6 +15,7 @@ import {
   bountyOn,
   feastLive,
   foldLive,
+  curfewUp,
   leveeUp,
   roadLive,
   seasonName,
@@ -569,6 +570,7 @@ function cardFor(actor, selected) {
     ${(selected.sealUntil || 0) > world.hour ? `<p class="muted">The grain bins are sealed through hour ${selected.sealUntil - 1}. A sack takes half the grain.</p>` : ""}
     ${leveeUp(selected, world.hour) ? `<p class="muted">A levee rings the holding through hour ${selected.leveeUntil - 1}. It takes one building blow, and the ditch waters the near fields.</p>` : ""}
     ${foldLive(selected, world.hour) ? `<p class="muted">A flock of ${selected.fold} is penned through hour ${selected.foldUntil - 1}. Each hour the fold yields wool and milk. A sack scatters them.</p>` : ""}
+    ${curfewUp(selected, world.hour) ? `<p class="muted">Curfew lanterns hang through hour ${selected.curfewUntil - 1}. A pilfer takes half the gold.</p>` : ""}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -598,6 +600,8 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-arm="sapper">Sappers · 280g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(curfewLine(actor))}</p>
+      <div class="row">${curfewButton(actor)}</div>
       <p class="muted">${esc(foldLine(actor))}</p>
       <div class="row">${foldButton(actor)}</div>
       <p class="muted">${esc(leveeLine(actor))}</p>
@@ -719,6 +723,7 @@ function ledgerLine(actor) {
     ["levees", book.levee],
     ["roads", book.road],
     ["folds", book.fold],
+    ["curfews", book.curfew],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -765,6 +770,16 @@ function bountyLine(selected) {
   if (!row) return "";
   const who = byId(world, row.poster);
   return `A bounty of ${row.gold} gold sits through hour ${row.until - 1}, posted by ${who ? who.name : "someone"}. A winning seize or sack by anyone else collects it.`;
+}
+
+function curfewLine(actor) {
+  if (curfewUp(actor, world.hour)) return `The lanterns stay lit through hour ${actor.curfewUntil - 1}. A successful pilfer takes half the gold.`;
+  return "Hang curfew lanterns for 85 gold. For five hours a pilfer takes half the gold. Key N lights them.";
+}
+
+function curfewButton(actor) {
+  if (curfewUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Curfew through hour ${actor.curfewUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-curfew="1">Hang the lanterns · 85g · +${formatUtopia(EARN.curfew)}</button>`;
 }
 
 function foldLine(actor) {
@@ -1050,6 +1065,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "y" && world) order({ type: "seal" }, "build");
       if (event.key.toLowerCase() === "l" && world) order({ type: "levee" }, "build");
       if (event.key.toLowerCase() === "f" && world) order({ type: "fold" }, "build");
+      if (event.key.toLowerCase() === "n" && world) order({ type: "curfew" }, "build");
       if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
@@ -1169,6 +1185,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.fold) {
     order({ type: "fold" }, "build");
+    return;
+  }
+  if (node.dataset.curfew) {
+    order({ type: "curfew" }, "build");
     return;
   }
   if (node.dataset.road) {

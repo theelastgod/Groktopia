@@ -32,6 +32,7 @@ import {
   leveeUp,
   roadLive,
   foldLive,
+  curfewUp,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -968,6 +969,54 @@ test("settling buys live tiles and each arm locks to its ground", () => {
   if (wood) wood.crew = "rider";
   const illegal = (you.plots || []).filter((tile) => tile.crew === "rider" && !["grass", "plain", "coast"].includes(terrainKind(tile.q, tile.r)));
   assert.equal(illegal.length, wood && terrainKind(wood.q, wood.r) === "wood" ? 1 : 0);
+});
+
+test("a curfew halves what a pilfer can carry", () => {
+  const w = newWorld({ seed: 63 });
+  const you = byId(w, "you");
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "curfew" }).ok, true);
+  assert.equal(you.gold, gold - 85);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.curfewUntil, 5);
+  assert.equal(curfewUp(you, w.hour), true);
+  assert.equal(you.ledger.curfew, EARN.curfew);
+  assert.equal(you.utopia, purse + EARN.curfew);
+  assert.equal(applyAction(w, "you", { type: "curfew" }).ok, false);
+  const poor = newWorld({ seed: 64 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "curfew" }).ok, false);
+
+  const open = newWorld({ seed: 65 });
+  const shut = newWorld({ seed: 65 });
+  for (const realm of [open, shut]) {
+    const seat = byId(realm, "you");
+    const camp = byId(realm, "harrow");
+    seat.thieves = 80;
+    camp.thieves = 0;
+    camp.buildings.keep = 0;
+    camp.gold = 8000;
+  }
+  byId(shut, "harrow").curfewUntil = 5;
+  const openBefore = byId(open, "harrow").gold;
+  const shutBefore = byId(shut, "harrow").gold;
+  assert.equal(applyAction(open, "you", { type: "thief", op: "pilfer", target: "harrow" }).win, true);
+  assert.equal(applyAction(shut, "you", { type: "thief", op: "pilfer", target: "harrow" }).win, true);
+  const openLost = openBefore - byId(open, "harrow").gold;
+  const shutLost = shutBefore - byId(shut, "harrow").gold;
+  assert.ok(openLost > 0);
+  assert.equal(shutLost, Math.floor(openLost / 2));
+
+  const aged = newWorld({ seed: 66 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 4;
+  seat.curfewUntil = 5;
+  advanceHour(aged);
+  assert.equal(aged.hour, 5);
+  assert.equal(seat.curfewUntil, 0);
+  assert.equal(curfewUp(seat, aged.hour), false);
 });
 
 test("save and load keep the hour and the random stream", () => {

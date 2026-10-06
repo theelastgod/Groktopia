@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, bountyOn, captiveCount, feastLive, foldLive, intelFresh, leveeUp, roadLive, seasonName, seatPoint, worldToAxial } from "./sim.js";
+import { beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, intelFresh, leveeUp, roadLive, seasonName, seatPoint, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1167,6 +1167,32 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if ((p.sealUntil || 0) > (hour || 0)) drawSeal(ctx, g);
   if (leveeUp(p, hour)) drawLevee(ctx, g, time);
   if (foldLive(p, hour)) drawFold(ctx, g, time);
+  if (curfewUp(p, hour)) drawCurfew(ctx, g, time);
+}
+
+function drawCurfew(ctx, g, time) {
+  const y = g.y - g.r * 0.78;
+  ctx.save();
+  ctx.strokeStyle = "#3a2a22";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(g.x - 24, y);
+  ctx.lineTo(g.x + 24, y);
+  ctx.stroke();
+  for (let i = 0; i < 5; i++) {
+    const x = g.x - 18 + i * 9;
+    const glow = 0.4 + 0.4 * Math.sin(time * 3 + i * 0.7);
+    ctx.globalAlpha = 0.22 * glow;
+    ctx.fillStyle = "#e2c078";
+    ctx.beginPath();
+    ctx.arc(x, y + 5, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = glow;
+    ctx.beginPath();
+    ctx.arc(x, y + 5, 2.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawFold(ctx, g, time) {

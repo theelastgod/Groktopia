@@ -34,6 +34,7 @@ export const EARN = {
   road: 36,
   fold: 32,
   arm: 32,
+  curfew: 29,
 };
 
 export const FACTIONS = {
@@ -453,6 +454,7 @@ export function blankProvince(partial) {
     roads: {},
     fold: 0,
     foldUntil: 0,
+    curfewUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -750,6 +752,7 @@ export const AMBITIONS = [
   { id: "levee", name: "Raise the bank", purse: 35, blurb: "Throw up a levee.", match: (action) => action.type === "levee" },
   { id: "road", name: "Lay a causeway", purse: 40, blurb: "Pave a road to a camp.", match: (action) => action.type === "road" },
   { id: "fold", name: "Pen the flock", purse: 35, blurb: "Fold sheep on the acres.", match: (action) => action.type === "fold" },
+  { id: "curfew", name: "Hang the lanterns", purse: 35, blurb: "Call a night curfew.", match: (action) => action.type === "curfew" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -799,6 +802,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "levee") result = doLevee(world, actor);
   else if (action.type === "road") result = doRoad(world, actor, action.target);
   else if (action.type === "fold") result = doFold(world, actor);
+  else if (action.type === "curfew") result = doCurfew(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1352,6 +1356,35 @@ function doFold(world, actor) {
   return { ok: true, message: `Flock penned through hour ${actor.foldUntil - 1}.${purse}` };
 }
 
+export function curfewUp(p, hour) {
+  return Boolean(p && (p.curfewUntil || 0) > (hour || 0));
+}
+
+function settleCurfew(p, hour) {
+  if (!p || !(p.curfewUntil > 0)) return;
+  if (p.curfewUntil > (hour || 0)) return;
+  p.curfewUntil = 0;
+}
+
+function doCurfew(world, actor) {
+  if (curfewUp(actor, world.hour)) return fail(`The lanterns already hang through hour ${actor.curfewUntil - 1}.`);
+  settleCurfew(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 85) return fail("A curfew wants 85 gold.");
+  actor.gold -= 85;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.curfewUntil = (world.hour || 0) + 5;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.curfew;
+    notePurse(actor, "curfew", EARN.curfew);
+    purse = ` Purse +${formatUtopia(EARN.curfew)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} hangs curfew lanterns through hour ${actor.curfewUntil - 1}. A pilfer takes half the gold.${purse}`);
+  return { ok: true, message: `Curfew through hour ${actor.curfewUntil - 1}.${purse}` };
+}
+
 function soakedHits(target, hour, hits) {
   if (!leveeUp(target, hour) || hits < 1) return hits;
   return Math.max(0, hits - 1);
@@ -1738,7 +1771,8 @@ function doThief(world, actor, action) {
       log(world, `${actor.name} is caught in ${target.name}. ${lost} thieves lost.`);
       return { ok: true, message: "Caught.", win: false };
     }
-    const g = Math.floor(target.gold * 0.09 * Math.max(scale, 0.4));
+    let g = Math.floor(target.gold * 0.09 * Math.max(scale, 0.4));
+    if (curfewUp(target, world.hour)) g = Math.floor(g / 2);
     target.gold -= g;
     actor.gold += g;
     target.grudge = actor.id;
@@ -1852,6 +1886,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleLevee(p, world.hour);
   for (const p of world.provinces) settleRoads(p, world.hour);
   for (const p of world.provinces) settleFold(p, world.hour);
+  for (const p of world.provinces) settleCurfew(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -1921,6 +1956,9 @@ export function chooseAction(world, agent) {
   }
   if ((agent.persona === "sable" || agent.persona === "moss") && !beaconLit(agent, world.hour) && agent.orders >= 1 && agent.gold >= 160 && agent.grain >= 80 && rng.next() < 0.2) {
     return { type: "beacon" };
+  }
+  if (agent.persona === "sable" && !curfewUp(agent, world.hour) && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) {
+    return { type: "curfew" };
   }
   const site = nearestOpenSite(world, agent);
   if (site && rng.next() < 0.18) return { type: "clear", site: site.id };
