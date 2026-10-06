@@ -248,7 +248,7 @@ test("opening a place pays once", () => {
   assert.equal(you.ledger.site, site.purse);
   assert.equal(applyAction(w, "you", { type: "clear", site: site.id }).ok, false);
   assert.equal(TICK_MS, 60 * 1000);
-  assert.equal(ORDERS, 4);
+  assert.equal(ORDERS, 10);
   assert.equal(you.relics[site.id], true);
   assert.equal(seasonName(0), "Thaw");
   assert.equal(seasonName(30), "High Sun");
