@@ -583,6 +583,7 @@ function cardFor(actor, selected) {
       return `<button class="btn" type="button" data-spell="${key}">${esc(spec.name)} · ${spec.cost} ae${left}</button>`;
     }).join("");
     return `${head}
+      <p class="muted">${esc(armsLine(actor))}</p>
       <p class="muted">Click a structure to raise it on your acres. Soldiers ${actor.soldiers}/${soldierCap(actor)} · ${esc(f.elite)} ${actor.elites}/${eliteCap(actor)} · thieves ${actor.thieves}/${thiefCap(actor)} · mystics ${actor.mystics}/${mysticCap(actor)}. Food need ${foodNeed(actor)}. Aether ${actor.aether}.</p>
       <div class="row">${builds}</div>
       <div class="row">
@@ -590,7 +591,11 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-train="elite">Train 2 ${esc(f.elite)}</button>
         <button class="btn" type="button" data-train="thief">Train 2 thieves</button>
         <button class="btn" type="button" data-train="disband">Release 10</button>
-        <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
+        <button class="btn primary" type="button" id="explore">Settle 10 acres · 2 tiles · ${explore}g</button>
+        <button class="btn" type="button" data-arm="foot">Foot · 80g</button>
+        <button class="btn" type="button" data-arm="rider">Riders · 240g</button>
+        <button class="btn" type="button" data-arm="engine">Catapults · 380g</button>
+        <button class="btn" type="button" data-arm="sapper">Sappers · 280g</button>
       </div>
       <div class="row">${spells}</div>
       <p class="muted">${esc(foldLine(actor))}</p>
@@ -707,6 +712,7 @@ function ledgerLine(actor) {
     ["feasts", book.feast],
     ["bounties", book.bounty],
     ["veins", book.vein],
+    ["arms", book.arm],
     ["relief", book.relief],
     ["smith", book.smith],
     ["seals", book.seal],
@@ -865,6 +871,12 @@ function beaconLine(actor) {
 function beaconButton(actor) {
   if (beaconLit(actor, world.hour)) return `<button class="btn" type="button" disabled>Watch fire through hour ${actor.beaconUntil - 1}</button>`;
   return `<button class="btn primary" type="button" data-beacon="1">Light the watch · 160g · +${formatUtopia(EARN.beacon)}</button>`;
+}
+
+function armsLine(actor) {
+  const plots = actor.plots || [];
+  const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
+  return `${plots.length} worked tiles. Hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber.`;
 }
 
 function relicLine(actor) {
@@ -1169,6 +1181,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.wonder) {
     order({ type: "wonder", wonder: node.dataset.wonder }, "build");
+    return;
+  }
+  if (node.dataset.arm) {
+    order({ type: "arm", unit: node.dataset.arm }, "build");
     return;
   }
   if (node.dataset.train) {

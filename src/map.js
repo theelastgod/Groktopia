@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, bountyOn, captiveCount, feastLive, foldLive, intelFresh, leveeUp, roadLive, seasonName } from "./sim.js";
+import { beaconLit, bountyOn, captiveCount, feastLive, foldLive, intelFresh, leveeUp, roadLive, seasonName, seatPoint, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -13,9 +13,7 @@ export const HOME = {
 };
 
 export function provinceGeom(p) {
-  const home = Number.isFinite(p.x) && Number.isFinite(p.y)
-    ? [p.x, p.y]
-    : (HOME[p.id] || [((hash(p.id) % 400) - 200), ((hash(p.id + "y") % 400) - 200)]);
+  const home = seatPoint(p);
   const r = Math.max(58, Math.min(138, 34 + p.land * 0.2));
   return { id: p.id, x: home[0], y: home[1], r };
 }
@@ -183,20 +181,6 @@ function axialToWorld(q, r) {
   };
 }
 
-function worldToAxial(x, y) {
-  const q = (2 / 3 * x) / HEX;
-  const r = (-1 / 3 * x + (Math.sqrt(3) / 3) * y) / HEX;
-  let rq = Math.round(q);
-  let rr = Math.round(r);
-  const rs = Math.round(-q - r);
-  const dq = Math.abs(rq - q);
-  const dr = Math.abs(rr - r);
-  const ds = Math.abs(rs + q + r);
-  if (dq > dr && dq > ds) rq = -rr - rs;
-  else if (dr > ds) rr = -rq - rs;
-  return { q: rq, r: rr };
-}
-
 function hexPath(ctx, x, y) {
   ctx.beginPath();
   for (let i = 0; i < 6; i++) {
@@ -246,9 +230,14 @@ function claimReach(p) {
 }
 
 function claimOf(provinces, x, y) {
+  const axial = worldToAxial(x, y);
+  for (const p of provinces) {
+    if ((p.plots || []).some((tile) => tile.q === axial.q && tile.r === axial.r)) return p;
+  }
   let best = null;
   let bestD = Infinity;
   for (const p of provinces) {
+    if (p.plots && p.plots.length) continue;
     const g = provinceGeom(p);
     const d = Math.hypot(x - g.x, y - g.y);
     if (d <= claimReach(p) && d < bestD) {
@@ -329,7 +318,7 @@ function drawYields(ctx, x, y, kind) {
   }
 }
 
-function drawHexMap(ctx, cam, viewW, viewH, world) {
+function drawHexMap(ctx, cam, viewW, viewH, world, time) {
   const b = viewBounds(cam, viewW, viewH);
   const corners = [[b.left, b.top], [b.right, b.top], [b.left, b.bottom], [b.right, b.bottom]];
   let qMin = Infinity;
@@ -390,6 +379,11 @@ function drawHexMap(ctx, cam, viewW, viewH, world) {
     if (cell.kind === "sea" || cell.kind === "river" || cell.kind === "coast") continue;
     drawHexFeature(ctx, cell.kind, cell.pos.x, cell.pos.y, hash(cell.key));
     if (cam.z >= 1 && cell.owner) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
+    const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
+    if (plot && plot.crew) {
+      const role = plot.crew === "hand" ? "hand" : plot.crew;
+      drawFolk(ctx, cell.pos.x, cell.pos.y - 4, 0.4, time || 0, role, cell.kind);
+    }
   }
 }
 
@@ -847,7 +841,7 @@ function drawCivic(ctx, p, g, time) {
   }
 }
 
-function drawFolk(ctx, x, y, ang, time, role) {
+function drawFolk(ctx, x, y, ang, time, role, terrain) {
   const step = Math.sin(time * 8 + x * 0.05);
   ctx.save();
   ctx.translate(x, y);
@@ -875,8 +869,14 @@ function drawFolk(ctx, x, y, ang, time, role) {
     farmer: "#c6a15a",
     hauler: "#8a5a32",
     host: "#efe6d6",
+    hand: "#c6a15a",
+    foot: "#8a3e32",
+    rider: "#6a3030",
+    sapper: "#6e675f",
+    engine: "#5c4632",
   }[role] || "#c6a15a";
-  ctx.fillStyle = tunic;
+  const coat = terrain === "wood" ? "#1e4e30" : terrain === "marsh" ? "#3e5c48" : terrain === "hill" || terrain === "mount" ? "#8a7a58" : terrain === "plain" ? "#c6a15a" : terrain === "coast" ? "#2f7c74" : tunic;
+  ctx.fillStyle = role === "engine" ? "#5c4632" : coat;
   ctx.fillRect(-2.3, -4.6, 4.6, 5.4);
   ctx.fillStyle = "#e6c7a2";
   ctx.beginPath();
@@ -914,7 +914,50 @@ function drawFolk(ctx, x, y, ang, time, role) {
   } else if (role === "hauler") {
     ctx.fillStyle = "#e2c078";
     ctx.fillRect(1.8, -3.2, 3.6, 3);
-  } else if (role === "soldier" || role === "elite") {
+  } else if (role === "rider") {
+    ctx.fillStyle = terrain === "plain" ? "#d2b15a" : "#6a4a32";
+    ctx.beginPath();
+    ctx.ellipse(3, 1.5, 7.2, 3.1, -0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(7, 1, 1.6, 3.4);
+    ctx.fillRect(-1, 1.2, 1.6, 3.4);
+    ctx.fillStyle = "#e6c7a2";
+    ctx.beginPath();
+    ctx.arc(-2, -3.2, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#8a3e32";
+    ctx.fillRect(-3.2, -2.2, 2.6, 2.4);
+  } else if (role === "engine") {
+    ctx.fillStyle = "#5c4632";
+    ctx.fillRect(-7, -1, 14, 3.2);
+    ctx.beginPath();
+    ctx.arc(-5, 2.4, 2.1, 0, Math.PI * 2);
+    ctx.arc(5, 2.4, 2.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#3a2a1c";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(-1, -1);
+    ctx.lineTo(7, -9);
+    ctx.stroke();
+    ctx.fillStyle = "#6e675f";
+    ctx.beginPath();
+    ctx.arc(8, -9, 2.3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (role === "sapper") {
+    ctx.strokeStyle = "#8d8478";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(2, -1);
+    ctx.lineTo(7, -7);
+    ctx.stroke();
+    ctx.fillStyle = "#b9b3aa";
+    ctx.beginPath();
+    ctx.moveTo(6, -8);
+    ctx.lineTo(9, -6);
+    ctx.lineTo(5, -5);
+    ctx.fill();
+  } else if (role === "soldier" || role === "elite" || role === "foot") {
     ctx.strokeStyle = "#e8d6b0";
     ctx.beginPath();
     ctx.moveTo(1.6, -2);
@@ -1694,7 +1737,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   ctx.clearRect(0, 0, viewW, viewH);
   worldTransform(ctx, cam, viewW, viewH, dpr);
   drawGround(ctx, cam, viewW, viewH);
-  drawHexMap(ctx, cam, viewW, viewH, world);
+  drawHexMap(ctx, cam, viewW, viewH, world, time);
   drawRiver(ctx, time);
   drawBanks(ctx, time);
   drawLitter(ctx, cam, viewW, viewH, time);

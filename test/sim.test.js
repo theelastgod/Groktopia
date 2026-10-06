@@ -18,6 +18,7 @@ import {
   hydrate,
   redact,
   newWorld,
+  terrainKind,
   nwFactor,
   seatRival,
   serialize,
@@ -937,6 +938,36 @@ test("a fold yields wool and milk until a sack scatters it", () => {
   assert.equal(aged.hour, 6);
   assert.equal(seat.fold, 0);
   assert.equal(seat.foldUntil, 0);
+});
+
+test("settling buys live tiles and each arm locks to its ground", () => {
+  const w = newWorld({ seed: 26 });
+  const you = byId(w, "you");
+  const before = you.plots.length;
+  assert.ok(before >= 6);
+  assert.ok(you.plots.every((tile) => tile.crew === "hand"));
+  const settled = applyAction(w, "you", { type: "explore" });
+  assert.equal(settled.ok, true);
+  assert.equal(you.land, 210);
+  assert.equal(you.plots.length, before + 2);
+  assert.match(settled.message, /live tiles/);
+  const rider = applyAction(w, "you", { type: "arm", unit: "rider" });
+  assert.equal(rider.ok, true);
+  const horse = you.plots.find((tile) => tile.crew === "rider");
+  assert.ok(horse);
+  assert.ok(["grass", "plain", "coast"].includes(terrainKind(horse.q, horse.r)));
+  const engine = applyAction(w, "you", { type: "arm", unit: "engine" });
+  assert.equal(engine.ok, true);
+  const catapult = you.plots.find((tile) => tile.crew === "engine");
+  assert.ok(["hill", "grass", "plain"].includes(terrainKind(catapult.q, catapult.r)));
+  const sapper = applyAction(w, "you", { type: "arm", unit: "sapper" });
+  assert.equal(sapper.ok, true);
+  assert.ok(["hill", "mount", "wood"].includes(terrainKind(you.plots.find((tile) => tile.crew === "sapper").q, you.plots.find((tile) => tile.crew === "sapper").r)));
+  assert.equal(you.ledger.arm, EARN.arm * 3);
+  const wood = you.plots.find((tile) => terrainKind(tile.q, tile.r) === "wood");
+  if (wood) wood.crew = "rider";
+  const illegal = (you.plots || []).filter((tile) => tile.crew === "rider" && !["grass", "plain", "coast"].includes(terrainKind(tile.q, tile.r)));
+  assert.equal(illegal.length, wood && terrainKind(wood.q, wood.r) === "wood" ? 1 : 0);
 });
 
 test("save and load keep the hour and the random stream", () => {

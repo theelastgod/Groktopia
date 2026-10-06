@@ -33,6 +33,7 @@ export const EARN = {
   levee: 31,
   road: 36,
   fold: 32,
+  arm: 32,
 };
 
 export const FACTIONS = {
@@ -181,6 +182,207 @@ function notePurse(actor, bucket, cents) {
   actor.ledger[bucket] = (actor.ledger[bucket] || 0) + cents;
 }
 
+export const SEAT = {
+  you: [0, 40],
+  rival: [280, 60],
+  harrow: [170, -210],
+  sable: [300, 230],
+  vellum: [-240, -160],
+  brine: [30, 270],
+  quill: [-220, 190],
+  moss: [-20, -250],
+};
+
+export const HEX = 62;
+const HEX_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+
+export const ARMS = {
+  foot: {
+    name: "Foot",
+    locks: ["grass", "plain", "wood", "hill", "coast", "marsh"],
+    gold: 80,
+    soldiers: 4,
+    line: "Foot take any land tile except water and high stone.",
+  },
+  rider: {
+    name: "Riders",
+    locks: ["grass", "plain", "coast"],
+    gold: 240,
+    soldiers: 6,
+    line: "Horses take open ground. Woods, marsh, hills, and stone refuse them.",
+  },
+  engine: {
+    name: "Catapults",
+    locks: ["hill", "grass", "plain"],
+    gold: 380,
+    soldiers: 8,
+    line: "Engines take a hill or open ground. They will not enter a wood or a marsh.",
+  },
+  sapper: {
+    name: "Sappers",
+    locks: ["hill", "mount", "wood"],
+    gold: 280,
+    soldiers: 5,
+    line: "Sappers take stone and timber.",
+  },
+};
+
+export function hash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function seatPoint(p) {
+  if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) return [p.x, p.y];
+  if (p && SEAT[p.id]) return SEAT[p.id];
+  const id = (p && p.id) || "x";
+  return [(hash(id) % 400) - 200, (hash(id + "y") % 400) - 200];
+}
+
+export function axialToWorld(q, r) {
+  return {
+    x: HEX * 1.5 * q,
+    y: HEX * Math.sqrt(3) * (r + q / 2),
+  };
+}
+
+export function worldToAxial(x, y) {
+  const q = (2 / 3 * x) / HEX;
+  const r = (-1 / 3 * x + (Math.sqrt(3) / 3) * y) / HEX;
+  let rq = Math.round(q);
+  let rr = Math.round(r);
+  const rs = Math.round(-q - r);
+  const dq = Math.abs(rq - q);
+  const dr = Math.abs(rr - r);
+  const ds = Math.abs(rs + q + r);
+  if (dq > dr && dq > ds) rq = -rr - rs;
+  else if (dr > ds) rr = -rq - rs;
+  return { q: rq, r: rr };
+}
+
+export function riverPoint(t) {
+  return {
+    x: -2200 + t * 4400,
+    y: Math.sin(t * 5.2) * 150 + Math.sin(t * 13) * 36,
+  };
+}
+
+function riverDist(x, y) {
+  const t = Math.max(0, Math.min(1, (x + 2200) / 4400));
+  let best = Infinity;
+  for (let i = -3; i <= 3; i++) {
+    const spot = riverPoint(Math.max(0, Math.min(1, t + i * 0.012)));
+    best = Math.min(best, Math.hypot(x - spot.x, y - spot.y));
+  }
+  return best;
+}
+
+const HILL_OVALS = [[-900, -700, 520, 180], [400, 500, 640, 200], [-200, 900, 480, 150], [1100, -200, 400, 140]];
+
+export function terrainKind(q, r) {
+  const { x, y } = axialToWorld(q, r);
+  const n = hash(`hex:${q},${r}`);
+  const edge = Math.hypot(x, y);
+  if (edge > 2480) return "sea";
+  if (edge > 2140) return "coast";
+  if (riverDist(x, y) < 34) return "river";
+  for (const [hx, hy, rx, ry] of HILL_OVALS) {
+    const nx = (x - hx) / rx;
+    const ny = (y - hy) / ry;
+    const inside = nx * nx + ny * ny;
+    if (inside < 0.28 && n % 3 === 0) return "mount";
+    if (inside < 1) return "hill";
+  }
+  if (n % 11 === 0) return "marsh";
+  if (n % 4 === 0) return "wood";
+  if (n % 5 === 0) return "plain";
+  return "grass";
+}
+
+function plotKey(q, r) {
+  return `${q},${r}`;
+}
+
+function takenPlots(world) {
+  const taken = new Set();
+  for (const p of world.provinces || []) {
+    for (const tile of p.plots || []) taken.add(plotKey(tile.q, tile.r));
+  }
+  return taken;
+}
+
+export function ensurePlots(world) {
+  const taken = takenPlots(world);
+  for (const p of world.provinces || []) {
+    if (p.plots && p.plots.length) continue;
+    p.plots = [];
+    const [x, y] = seatPoint(p);
+    const city = worldToAxial(x, y);
+    const want = 6 + Math.min(6, Math.floor((p.land || 0) / 80));
+    const seen = new Set([plotKey(city.q, city.r)]);
+    const queue = HEX_DIRS.map(([dq, dr]) => ({ q: city.q + dq, r: city.r + dr, dist: 1 }));
+    while (p.plots.length < want && queue.length && queue.length < 240) {
+      const cell = queue.shift();
+      const key = plotKey(cell.q, cell.r);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const kind = terrainKind(cell.q, cell.r);
+      if (!taken.has(key) && kind !== "sea" && kind !== "river") {
+        taken.add(key);
+        p.plots.push({ q: cell.q, r: cell.r, crew: "hand" });
+      }
+      if (cell.dist < 3) {
+        for (const [dq, dr] of HEX_DIRS) queue.push({ q: cell.q + dq, r: cell.r + dr, dist: cell.dist + 1 });
+      }
+    }
+  }
+}
+
+export function claimTiles(world, actor, n) {
+  ensurePlots(world);
+  const taken = takenPlots(world);
+  const [x, y] = seatPoint(actor);
+  const city = worldToAxial(x, y);
+  const seen = new Set([plotKey(city.q, city.r), ...(actor.plots || []).map((tile) => plotKey(tile.q, tile.r))]);
+  const queue = [];
+  const seeds = [{ q: city.q, r: city.r }, ...(actor.plots || [])];
+  for (const seed of seeds) {
+    for (const [dq, dr] of HEX_DIRS) queue.push({ q: seed.q + dq, r: seed.r + dr });
+  }
+  const bought = [];
+  let guard = 0;
+  while (bought.length < n && queue.length && guard < 500) {
+    guard += 1;
+    const cell = queue.shift();
+    const key = plotKey(cell.q, cell.r);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const kind = terrainKind(cell.q, cell.r);
+    for (const [dq, dr] of HEX_DIRS) queue.push({ q: cell.q + dq, r: cell.r + dr });
+    if (taken.has(key) || kind === "sea") continue;
+    taken.add(key);
+    const tile = { q: cell.q, r: cell.r, crew: "hand" };
+    actor.plots.push(tile);
+    bought.push({ ...tile, kind });
+  }
+  return bought;
+}
+
+function takePlot(world, actor, target) {
+  ensurePlots(world);
+  if (!target.plots || target.plots.length <= 4) return null;
+  const tile = target.plots.find((row) => row.crew === "hand") || target.plots[target.plots.length - 1];
+  target.plots = target.plots.filter((row) => row !== tile);
+  tile.crew = "foot";
+  actor.plots = actor.plots || [];
+  actor.plots.push(tile);
+  return terrainKind(tile.q, tile.r);
+}
+
 export function makeRng(seed) {
   let a = seed >>> 0;
   return {
@@ -310,7 +512,7 @@ export function newWorld(opts = {}) {
       aether: r.id === "vellum" ? 400 : 160,
     });
   });
-  return {
+  const world = {
     seed,
     hour: 0,
     seat: "you",
@@ -322,6 +524,8 @@ export function newWorld(opts = {}) {
     sites: freshSites(),
     rng: makeRng(seed),
   };
+  ensurePlots(world);
+  return world;
 }
 
 export function byId(world, id) {
@@ -378,7 +582,13 @@ export function offense(p) {
   const ash = p.relics && p.relics.barrow ? 1.04 : 1;
   const seam = p.vein === "iron" ? 1.04 : 1;
   const bite = p.smithUntil > 0 ? 4 : 3;
-  return Math.floor((p.soldiers * bite + (p.muster || 0) * 2 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash * seam);
+  const posted = (p.plots || []).reduce((sum, tile) => {
+    if (tile.crew === "rider") return sum + 6;
+    if (tile.crew === "engine") return sum + 8;
+    if (tile.crew === "sapper") return sum + 2;
+    return sum;
+  }, 0);
+  return Math.floor((p.soldiers * bite + (p.muster || 0) * 2 + p.elites * f.off + posted) * wageFactor(p) * fury * oath * levy * ash * seam);
 }
 
 export function defense(p) {
@@ -387,7 +597,8 @@ export function defense(p) {
   const pale = p.studies && p.studies.palisade ? 1.06 : 1;
   const bastion = p.marks && p.marks.bastion ? 1.08 : 1;
   const horn = p.relics && p.relics.stand ? 1.04 : 1;
-  return Math.floor((p.soldiers * 1 + (p.muster || 0) + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale * bastion * horn);
+  const foot = (p.plots || []).filter((tile) => tile.crew === "foot").length * 2;
+  return Math.floor((p.soldiers * 1 + (p.muster || 0) + p.elites * f.def + p.buildings.keep * 10 + foot) * wageFactor(p) * bulwark * pale * bastion * horn);
 }
 
 export function networth(p) {
@@ -566,6 +777,7 @@ export function applyAction(world, actorId, action) {
   if (action.type === "build") result = doBuild(world, actor, action.building);
   else if (action.type === "train") result = doTrain(world, actor, action);
   else if (action.type === "explore") result = doExplore(world, actor);
+  else if (action.type === "arm") result = doArm(world, actor, action.unit);
   else if (action.type === "study") result = doStudy(world, actor, action.study);
   else if (action.type === "doctrine") result = doDoctrine(world, actor, action.doctrine);
   else if (action.type === "wonder") result = doWonder(world, actor, action.wonder);
@@ -664,6 +876,7 @@ function doExplore(world, actor) {
   actor.land += 10;
   actor.peasants += 8;
   actor.acted = true;
+  const bought = claimTiles(world, actor, 2);
   let purse = "";
   if (actor.kind === "human") {
     const cents = actor.studies && actor.studies.charter ? EARN.charter : EARN.settle;
@@ -671,8 +884,35 @@ function doExplore(world, actor) {
     notePurse(actor, "settle", cents);
     purse = ` Purse +${formatUtopia(cents)} $UTOPIA.`;
   }
-  log(world, `${actor.name} settles 10 acres (${cost} gold).${purse}`);
-  return { ok: true, message: `Settled 10 acres for ${cost} gold.${purse}` };
+  const names = bought.map((tile) => tile.kind).join(" and ");
+  const tiles = bought.length ? ` Bought ${bought.length} live ${bought.length === 1 ? "tile" : "tiles"} (${names}).` : "";
+  log(world, `${actor.name} settles 10 acres (${cost} gold).${tiles}${purse}`);
+  return { ok: true, message: `Settled 10 acres for ${cost} gold.${tiles}${purse}` };
+}
+
+function doArm(world, actor, unit) {
+  const spec = ARMS[unit];
+  if (!spec) return fail("Unknown arm.");
+  ensurePlots(world);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < spec.gold) return fail(`${spec.name} want ${spec.gold} gold.`);
+  if (actor.soldiers < spec.soldiers) return fail(`${spec.name} want ${spec.soldiers} soldiers.`);
+  const plot = (actor.plots || []).find((tile) => (!tile.crew || tile.crew === "hand") && spec.locks.includes(terrainKind(tile.q, tile.r)));
+  if (!plot) return fail(`No bought tile will take ${spec.name}. ${spec.line}`);
+  actor.gold -= spec.gold;
+  actor.soldiers -= spec.soldiers;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = unit;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.arm;
+    notePurse(actor, "arm", EARN.arm);
+    purse = ` Purse +${formatUtopia(EARN.arm)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} posts ${spec.name} on a ${kind} tile.${purse}`);
+  return { ok: true, message: `${spec.name} hold the ${kind} tile.${purse}` };
 }
 
 function doStudy(world, actor, id) {
@@ -1348,6 +1588,8 @@ function doAttack(world, actor, action) {
     target.peasants -= folk;
     actor.peasants += folk;
     detail = `seized ${moved} acres`;
+    const taken = takePlot(world, actor, target);
+    if (taken) detail += ` and the ${taken} tile`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "sack") {
@@ -1546,6 +1788,14 @@ function economy(p, hour) {
   if (p.vein === "salt") goldIn = Math.floor(goldIn * 1.06);
   if (p.vein === "spring") foodIn = Math.floor(foodIn * 1.06);
   if (leveeUp(p, hour)) foodIn = Math.floor(foodIn * 1.04);
+  for (const tile of p.plots || []) {
+    const kind = terrainKind(tile.q, tile.r);
+    if (tile.crew === "hand" && (kind === "grass" || kind === "plain" || kind === "coast")) foodIn += 4;
+    else if (tile.crew === "hand" && kind === "wood") goldIn += 3;
+    else if (tile.crew === "rider" && (kind === "plain" || kind === "grass" || kind === "coast")) goldIn += 6;
+    else if (tile.crew === "engine" && (kind === "hill" || kind === "plain" || kind === "grass")) goldIn += 8;
+    else if (tile.crew === "sapper" && (kind === "hill" || kind === "mount" || kind === "wood")) goldIn += 5;
+  }
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -1785,7 +2035,9 @@ export function hydrate(raw) {
   delete data.rngState;
   data.wonders = data.wonders || {};
   data.sites = data.sites && data.sites.length ? data.sites : freshSites();
-  return { ...data, rng: makeRng(rngState) };
+  const world = { ...data, rng: makeRng(rngState) };
+  ensurePlots(world);
+  return world;
 }
 
 export function intelFresh(actor, targetId, hour) {
@@ -1899,7 +2151,7 @@ export function createOpenRealm(seed = 1) {
       aether: r.persona === "vellum" ? 320 : 140,
     });
   });
-  return {
+  const world = {
     seed,
     hour: 0,
     seat: null,
@@ -1912,6 +2164,8 @@ export function createOpenRealm(seed = 1) {
     sites: freshSites(),
     rng: makeRng(seed),
   };
+  ensurePlots(world);
+  return world;
 }
 
 export function humanCount(world) {
@@ -1938,6 +2192,7 @@ export function claimSeat(world, opts) {
   province.seatedHour = world.hour || 0;
   rollAmbition(province, world.hour || 0);
   world.provinces.push(province);
+  ensurePlots(world);
   if (!world.seat) world.seat = province.id;
   const behind = province.seatedHour > 0 ? ` The age is already at hour ${province.seatedHour}.` : "";
   log(world, `${province.ruler} claims ${province.name} on the open map. ${humanCount(world)} of ${MAX_HUMANS} human seats filled.${behind}`);
