@@ -35,6 +35,7 @@ export const EARN = {
   fold: 32,
   arm: 32,
   curfew: 29,
+  hospice: 34,
 };
 
 export const FACTIONS = {
@@ -455,6 +456,7 @@ export function blankProvince(partial) {
     fold: 0,
     foldUntil: 0,
     curfewUntil: 0,
+    hospiceUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -664,9 +666,10 @@ function takeLand(def, acres, rng) {
   return moved;
 }
 
-function casualties(p, frac, rng) {
+function casualties(p, frac, rng, hour) {
+  const eased = hospiceUp(p, hour) ? frac * 0.5 : frac;
   const j = 0.85 + rng.next() * 0.3;
-  const hit = (n) => Math.max(0, n - Math.floor(n * frac * j));
+  const hit = (n) => Math.max(0, n - Math.floor(n * eased * j));
   p.soldiers = hit(p.soldiers);
   p.elites = hit(p.elites);
   p.muster = hit(p.muster || 0);
@@ -753,6 +756,7 @@ export const AMBITIONS = [
   { id: "road", name: "Lay a causeway", purse: 40, blurb: "Pave a road to a camp.", match: (action) => action.type === "road" },
   { id: "fold", name: "Pen the flock", purse: 35, blurb: "Fold sheep on the acres.", match: (action) => action.type === "fold" },
   { id: "curfew", name: "Hang the lanterns", purse: 35, blurb: "Call a night curfew.", match: (action) => action.type === "curfew" },
+  { id: "hospice", name: "Pitch the tent", purse: 35, blurb: "Open a field hospice.", match: (action) => action.type === "hospice" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -803,6 +807,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "road") result = doRoad(world, actor, action.target);
   else if (action.type === "fold") result = doFold(world, actor);
   else if (action.type === "curfew") result = doCurfew(world, actor);
+  else if (action.type === "hospice") result = doHospice(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1385,6 +1390,37 @@ function doCurfew(world, actor) {
   return { ok: true, message: `Curfew through hour ${actor.curfewUntil - 1}.${purse}` };
 }
 
+export function hospiceUp(p, hour) {
+  return Boolean(p && (p.hospiceUntil || 0) > (hour || 0));
+}
+
+function settleHospice(p, hour) {
+  if (!p || !(p.hospiceUntil > 0)) return;
+  if (p.hospiceUntil > (hour || 0)) return;
+  p.hospiceUntil = 0;
+}
+
+function doHospice(world, actor) {
+  if (hospiceUp(actor, world.hour)) return fail(`The hospice already stands through hour ${actor.hospiceUntil - 1}.`);
+  settleHospice(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 140) return fail("A hospice wants 140 gold.");
+  if (actor.grain < 180) return fail("A hospice wants 180 grain.");
+  actor.gold -= 140;
+  actor.grain -= 180;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.hospiceUntil = (world.hour || 0) + 5;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.hospice;
+    notePurse(actor, "hospice", EARN.hospice);
+    purse = ` Purse +${formatUtopia(EARN.hospice)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} pitches a hospice through hour ${actor.hospiceUntil - 1}. Battle losses are halved, and the tent adds a few people each hour.${purse}`);
+  return { ok: true, message: `Hospice through hour ${actor.hospiceUntil - 1}.${purse}` };
+}
+
 function soakedHits(target, hour, hits) {
   if (!leveeUp(target, hour) || hits < 1) return hits;
   return Math.max(0, hits - 1);
@@ -1601,8 +1637,8 @@ function doAttack(world, actor, action) {
   const defn = defense(target);
   const win = off > defn;
   const ratio = off / Math.max(1, defn);
-  casualties(actor, win ? 0.06 : 0.12, world.rng);
-  casualties(target, win ? 0.07 : 0.04, world.rng);
+  casualties(actor, win ? 0.06 : 0.12, world.rng, world.hour);
+  casualties(target, win ? 0.07 : 0.04, world.rng, world.hour);
   actor.orders -= 1;
   actor.acted = true;
   actor.cooldown[target.id] = world.hour;
@@ -1854,6 +1890,9 @@ function economy(p, hour) {
   } else if (feastLive(p, hour) && p.peasants < cap && p.grain > foodOut) {
     p.peasants = Math.min(cap, p.peasants + 4);
   }
+  if (hospiceUp(p, hour) && p.peasants < cap && p.grain > foodOut) {
+    p.peasants = Math.min(cap, p.peasants + 3);
+  }
   if (p.mystics < mysticCap(p)) p.mystics += 1;
   for (const k of Object.keys(p.spells)) {
     if (p.spells[k] > 0) p.spells[k] -= 1;
@@ -1887,6 +1926,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleRoads(p, world.hour);
   for (const p of world.provinces) settleFold(p, world.hour);
   for (const p of world.provinces) settleCurfew(p, world.hour);
+  for (const p of world.provinces) settleHospice(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -2034,6 +2074,9 @@ export function chooseAction(world, agent) {
     }
     if (!foldLive(agent, world.hour) && agent.peasants >= 80 && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) {
       return { type: "fold" };
+    }
+    if (!hospiceUp(agent, world.hour) && agent.gold >= 500 && agent.grain >= 800 && agent.orders >= 1 && rng.next() < 0.12) {
+      return { type: "hospice" };
     }
     const hungry = world.provinces.find((p) => p.id !== agent.id && p.grain < foodNeed(p) && !(agent.reliefs && agent.reliefs[p.id] > (world.hour || 0)));
     if (hungry && agent.grain >= 1200 && agent.orders >= 1 && rng.next() < 0.22) return { type: "relief", target: hungry.id };

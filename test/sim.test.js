@@ -33,6 +33,7 @@ import {
   roadLive,
   foldLive,
   curfewUp,
+  hospiceUp,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -1017,6 +1018,71 @@ test("a curfew halves what a pilfer can carry", () => {
   assert.equal(aged.hour, 5);
   assert.equal(seat.curfewUntil, 0);
   assert.equal(curfewUp(seat, aged.hour), false);
+});
+
+test("a hospice halves march losses and adds people", () => {
+  const w = newWorld({ seed: 67 });
+  const you = byId(w, "you");
+  const gold = you.gold;
+  const grain = you.grain;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "hospice" }).ok, true);
+  assert.equal(you.gold, gold - 140);
+  assert.equal(you.grain, grain - 180);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.hospiceUntil, 5);
+  assert.equal(hospiceUp(you, w.hour), true);
+  assert.equal(you.ledger.hospice, EARN.hospice);
+  assert.equal(you.utopia, purse + EARN.hospice);
+  assert.equal(applyAction(w, "you", { type: "hospice" }).ok, false);
+  const poor = newWorld({ seed: 68 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "hospice" }).ok, false);
+  const hungry = newWorld({ seed: 69 });
+  byId(hungry, "you").grain = 10;
+  assert.equal(applyAction(hungry, "you", { type: "hospice" }).ok, false);
+
+  const open = newWorld({ seed: 70 });
+  const tent = newWorld({ seed: 70 });
+  for (const realm of [open, tent]) {
+    const seat = byId(realm, "you");
+    const camp = byId(realm, "harrow");
+    seat.soldiers = 200;
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+  }
+  byId(tent, "you").hospiceUntil = 5;
+  const openBefore = byId(open, "you").soldiers;
+  const tentBefore = byId(tent, "you").soldiers;
+  assert.equal(applyAction(open, "you", { type: "attack", target: "harrow", mode: "seize" }).win, true);
+  assert.equal(applyAction(tent, "you", { type: "attack", target: "harrow", mode: "seize" }).win, true);
+  const openLost = openBefore - byId(open, "you").soldiers;
+  const tentLost = tentBefore - byId(tent, "you").soldiers;
+  assert.ok(openLost > tentLost);
+
+  function grown(withTent) {
+    const realm = newWorld({ seed: 71 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    seat.grain = 50000;
+    seat.peasants = 700;
+    if (withTent) seat.hospiceUntil = 6;
+    const before = seat.peasants;
+    advanceHour(realm);
+    return seat.peasants - before;
+  }
+  assert.equal(grown(true), grown(false) + 3);
+
+  const aged = newWorld({ seed: 72 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 4;
+  seat.hospiceUntil = 5;
+  advanceHour(aged);
+  assert.equal(aged.hour, 5);
+  assert.equal(seat.hospiceUntil, 0);
+  assert.equal(hospiceUp(seat, aged.hour), false);
 });
 
 test("save and load keep the hour and the random stream", () => {

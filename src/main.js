@@ -16,6 +16,7 @@ import {
   feastLive,
   foldLive,
   curfewUp,
+  hospiceUp,
   leveeUp,
   roadLive,
   seasonName,
@@ -571,6 +572,7 @@ function cardFor(actor, selected) {
     ${leveeUp(selected, world.hour) ? `<p class="muted">A levee rings the holding through hour ${selected.leveeUntil - 1}. It takes one building blow, and the ditch waters the near fields.</p>` : ""}
     ${foldLive(selected, world.hour) ? `<p class="muted">A flock of ${selected.fold} is penned through hour ${selected.foldUntil - 1}. Each hour the fold yields wool and milk. A sack scatters them.</p>` : ""}
     ${curfewUp(selected, world.hour) ? `<p class="muted">Curfew lanterns hang through hour ${selected.curfewUntil - 1}. A pilfer takes half the gold.</p>` : ""}
+    ${hospiceUp(selected, world.hour) ? `<p class="muted">A hospice tent stands through hour ${selected.hospiceUntil - 1}. Battle losses are halved, and a few people arrive each hour.</p>` : ""}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -600,6 +602,8 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-arm="sapper">Sappers · 280g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(hospiceLine(actor))}</p>
+      <div class="row">${hospiceButton(actor)}</div>
       <p class="muted">${esc(curfewLine(actor))}</p>
       <div class="row">${curfewButton(actor)}</div>
       <p class="muted">${esc(foldLine(actor))}</p>
@@ -724,6 +728,7 @@ function ledgerLine(actor) {
     ["roads", book.road],
     ["folds", book.fold],
     ["curfews", book.curfew],
+    ["hospices", book.hospice],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -770,6 +775,16 @@ function bountyLine(selected) {
   if (!row) return "";
   const who = byId(world, row.poster);
   return `A bounty of ${row.gold} gold sits through hour ${row.until - 1}, posted by ${who ? who.name : "someone"}. A winning seize or sack by anyone else collects it.`;
+}
+
+function hospiceLine(actor) {
+  if (hospiceUp(actor, world.hour)) return `The hospice stands through hour ${actor.hospiceUntil - 1}. Your losses in a march are halved, and three people arrive each hour while grain lasts.`;
+  return "Pitch a hospice for 140 gold and 180 grain. For five hours battle losses are halved and the tent adds people. Key H raises it.";
+}
+
+function hospiceButton(actor) {
+  if (hospiceUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Hospice through hour ${actor.hospiceUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-hospice="1">Pitch the hospice · 140g · 180 grain · +${formatUtopia(EARN.hospice)}</button>`;
 }
 
 function curfewLine(actor) {
@@ -1066,6 +1081,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "l" && world) order({ type: "levee" }, "build");
       if (event.key.toLowerCase() === "f" && world) order({ type: "fold" }, "build");
       if (event.key.toLowerCase() === "n" && world) order({ type: "curfew" }, "build");
+      if (event.key.toLowerCase() === "h" && world) order({ type: "hospice" }, "build");
       if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
@@ -1189,6 +1205,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.curfew) {
     order({ type: "curfew" }, "build");
+    return;
+  }
+  if (node.dataset.hospice) {
+    order({ type: "hospice" }, "build");
     return;
   }
   if (node.dataset.road) {
