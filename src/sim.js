@@ -14,6 +14,9 @@ export const EARN = {
   pilfer: 80,
   pvpFee: 0.05,
   minStake: 100,
+  settle: 40,
+  charter: 70,
+  ledger: 15,
 };
 
 export const FACTIONS = {
@@ -116,6 +119,31 @@ export function spellbook() {
   return SPELLS;
 }
 
+/** Civic studies. Completing one pays the purse. Counts rise through Camp, Borough, Realm, and Crown. */
+export const STUDIES = [
+  { id: "furrow", name: "Furrow", cost: 400, aether: 0, need: 0, purse: 40, blurb: "Fields feed a larger hour." },
+  { id: "kiln", name: "Kiln", cost: 500, aether: 0, need: 0, purse: 50, blurb: "Workshops strike a little more gold." },
+  { id: "palisade", name: "Palisade", cost: 650, aether: 0, need: 1, purse: 70, blurb: "The pale holds a firmer line." },
+  { id: "charter", name: "Charter", cost: 700, aether: 0, need: 2, purse: 80, blurb: "New acres cost less and pay the purse twice." },
+  { id: "ledger", name: "Ledger", cost: 800, aether: 0, need: 2, purse: 90, blurb: "An active hour pays a fuller purse." },
+  { id: "rite", name: "River Rite", cost: 900, aether: 40, need: 3, purse: 110, blurb: "Spires draw a brighter aether." },
+  { id: "oath", name: "Road Oath", cost: 1000, aether: 0, need: 4, purse: 130, blurb: "The host marches a little heavier." },
+  { id: "crown", name: "Crown Seat", cost: 1600, aether: 80, need: 6, purse: 250, blurb: "The monument of the age." },
+];
+
+export function studyCount(p) {
+  if (!p || !p.studies) return 0;
+  return Object.values(p.studies).filter(Boolean).length;
+}
+
+export function ageName(p) {
+  const n = studyCount(p);
+  if (n >= 8) return "Crown";
+  if (n >= 5) return "Realm";
+  if (n >= 2) return "Borough";
+  return "Camp";
+}
+
 export function makeRng(seed) {
   let a = seed >>> 0;
   return {
@@ -164,10 +192,12 @@ export function blankProvince(partial) {
     cooldown: {},
     grudge: null,
     line: "",
+    studies: {},
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
   if (partial && partial.spells) p.spells = { ...base.spells, ...partial.spells };
+  p.studies = { ...(partial && partial.studies ? partial.studies : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
   return p;
@@ -274,13 +304,15 @@ export function wageFactor(p) {
 export function offense(p) {
   const f = FACTIONS[p.faction];
   const fury = p.spells.fury > 0 ? 1.15 : 1;
-  return Math.floor((p.soldiers * 3 + p.elites * f.off) * wageFactor(p) * fury);
+  const oath = p.studies && p.studies.oath ? 1.05 : 1;
+  return Math.floor((p.soldiers * 3 + p.elites * f.off) * wageFactor(p) * fury * oath);
 }
 
 export function defense(p) {
   const f = FACTIONS[p.faction];
   const bulwark = p.spells.bulwark > 0 ? 1.2 : 1;
-  return Math.floor((p.soldiers * 1 + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark);
+  const pale = p.studies && p.studies.palisade ? 1.06 : 1;
+  return Math.floor((p.soldiers * 1 + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale);
 }
 
 export function networth(p) {
@@ -380,6 +412,7 @@ export function applyAction(world, actorId, action) {
   if (action.type === "build") return doBuild(world, actor, action.building);
   if (action.type === "train") return doTrain(world, actor, action);
   if (action.type === "explore") return doExplore(world, actor);
+  if (action.type === "study") return doStudy(world, actor, action.study);
   if (action.type === "attack") return doAttack(world, actor, action);
   if (action.type === "spell") return doSpell(world, actor, action);
   if (action.type === "thief") return doThief(world, actor, action);
@@ -448,15 +481,45 @@ function doTrain(world, actor, action) {
 
 function doExplore(world, actor) {
   if (actor.orders < 1) return fail("No orders left this hour.");
-  const cost = 300 + actor.land * 3;
+  let cost = 300 + actor.land * 3;
+  if (actor.studies && actor.studies.charter) cost = Math.floor(cost * 0.85);
   if (actor.gold < cost) return fail(`Exploration wants ${cost} gold.`);
   actor.gold -= cost;
   actor.orders -= 1;
   actor.land += 10;
   actor.peasants += 8;
   actor.acted = true;
-  log(world, `${actor.name} settles 10 acres (${cost} gold).`);
-  return { ok: true, message: `Settled 10 acres for ${cost} gold.` };
+  let purse = "";
+  if (actor.kind === "human") {
+    const cents = actor.studies && actor.studies.charter ? EARN.charter : EARN.settle;
+    actor.utopia += cents;
+    purse = ` Purse +${formatUtopia(cents)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} settles 10 acres (${cost} gold).${purse}`);
+  return { ok: true, message: `Settled 10 acres for ${cost} gold.${purse}` };
+}
+
+function doStudy(world, actor, id) {
+  const spec = STUDIES.find((row) => row.id === id);
+  if (!spec) return fail("Unknown study.");
+  actor.studies = actor.studies || {};
+  if (actor.studies[id]) return fail(`${spec.name} is already seated.`);
+  if (studyCount(actor) < spec.need) return fail(`${spec.name} waits on ${spec.need} earlier studies.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < spec.cost) return fail(`${spec.name} wants ${spec.cost} gold.`);
+  if (actor.aether < spec.aether) return fail(`${spec.name} wants ${spec.aether} aether.`);
+  actor.gold -= spec.cost;
+  actor.aether -= spec.aether;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.studies[id] = world.hour || 1;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += spec.purse;
+    purse = ` Purse +${formatUtopia(spec.purse)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} completes ${spec.name} and enters the ${ageName(actor)} age.${purse}`);
+  return { ok: true, message: `${spec.name} seated.${purse}` };
 }
 
 function onCooldown(actor, target, hour) {
@@ -662,8 +725,10 @@ function economy(p) {
   const f = FACTIONS[p.faction];
   const jobs = p.buildings.workshop * 8 + p.buildings.field * 4;
   const employed = Math.min(p.peasants, jobs);
-  const goldIn = Math.floor(employed * 1.55 * f.gold + p.buildings.workshop * 3);
-  const foodIn = Math.floor(p.buildings.field * 40 * f.food);
+  let goldIn = Math.floor(employed * 1.55 * f.gold + p.buildings.workshop * 3);
+  let foodIn = Math.floor(p.buildings.field * 40 * f.food);
+  if (p.studies && p.studies.kiln) goldIn = Math.floor(goldIn * 1.06);
+  if (p.studies && p.studies.furrow) foodIn = Math.floor(foodIn * 1.08);
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -673,6 +738,7 @@ function economy(p) {
     p.grain = 0;
   }
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
+  if (p.studies && p.studies.rite) p.aether += 6;
   const cap = p.buildings.hearth * 16;
   if (p.peasants < cap && p.grain > foodOut * 2) {
     p.peasants = Math.min(cap, p.peasants + Math.max(1, Math.floor(p.peasants * 0.035)));
@@ -681,7 +747,9 @@ function economy(p) {
   for (const k of Object.keys(p.spells)) {
     if (p.spells[k] > 0) p.spells[k] -= 1;
   }
-  if (p.acted && p.kind === "human") p.utopia += EARN.hourActive;
+  if (p.acted && p.kind === "human") {
+    p.utopia += EARN.hourActive + (p.studies && p.studies.ledger ? EARN.ledger : 0);
+  }
   p.acted = false;
   p.orders = ORDERS;
   p.earnLeft = EARN.combatCap;

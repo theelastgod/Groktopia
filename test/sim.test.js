@@ -8,11 +8,13 @@ import {
   buildingCount,
   byId,
   formatUtopia,
+  ageName,
   hydrate,
   newWorld,
   nwFactor,
   seatRival,
   serialize,
+  studyCount,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -125,6 +127,25 @@ test("forty-eight hours stay inside the realm", () => {
       assert.ok(n >= 0);
     }
   }
+});
+
+test("studies pay the purse and climb from Camp to Borough", () => {
+  const w = newWorld({ seed: 11 });
+  const you = byId(w, "you");
+  assert.equal(ageName(you), "Camp");
+  const before = you.utopia;
+  const furrow = applyAction(w, "you", { type: "study", study: "furrow" });
+  assert.equal(furrow.ok, true);
+  assert.equal(you.utopia, before + 40);
+  assert.equal(applyAction(w, "you", { type: "study", study: "furrow" }).ok, false);
+  assert.equal(applyAction(w, "you", { type: "study", study: "crown" }).ok, false);
+  assert.equal(applyAction(w, "you", { type: "study", study: "kiln" }).ok, true);
+  assert.equal(studyCount(you), 2);
+  assert.equal(ageName(you), "Borough");
+  const purse = you.utopia;
+  const settled = applyAction(w, "you", { type: "explore" });
+  assert.equal(settled.ok, true);
+  assert.ok(you.utopia > purse);
 });
 
 test("save and load keep the hour and the random stream", () => {

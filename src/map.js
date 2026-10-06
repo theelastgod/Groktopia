@@ -1,4 +1,5 @@
 /** Overhead realm. World Y grows south. */
+import { intelFresh } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -277,7 +278,7 @@ function roof(ctx, x, y, w, h, wall, cap) {
   ctx.fill();
 }
 
-function drawHoldings(ctx, p, g, time) {
+function drawHoldings(ctx, p, g, time, known) {
   ctx.save();
   blob(ctx, g);
   ctx.clip();
@@ -286,7 +287,7 @@ function drawHoldings(ctx, p, g, time) {
   meadow.addColorStop(1, "#3d5630");
   ctx.fillStyle = meadow;
   ctx.fillRect(g.x - g.r, g.y - g.r, g.r * 2, g.r * 2);
-  const fields = Math.min(7, Math.max(2, Math.round((p.buildings.field || 0) / 7)));
+  const fields = known ? Math.min(7, Math.max(2, Math.round((p.buildings.field || 0) / 7))) : 2;
   for (let i = 0; i < fields; i++) {
     const y = g.y - g.r * 0.42 + i * 7;
     ctx.fillStyle = i % 2 ? "#c6a15a" : "#8ea84a";
@@ -320,12 +321,25 @@ function drawHoldings(ctx, p, g, time) {
       ctx.fill();
     }],
   };
-  for (const key of Object.keys(specs)) {
-    const count = Math.min(6, p.buildings[key] || 0);
-    if (!count) continue;
-    for (const [dx, dy] of scatter(p.id + key, count, g.r * 0.78)) specs[key][0](g.x + dx, g.y + dy);
+  if (known) {
+    for (const key of Object.keys(specs)) {
+      const count = Math.min(6, p.buildings[key] || 0);
+      if (!count) continue;
+      for (const [dx, dy] of scatter(p.id + key, count, g.r * 0.78)) specs[key][0](g.x + dx, g.y + dy);
+    }
+    if (p.studies && p.studies.crown) {
+      ctx.fillStyle = "#e2c078";
+      ctx.fillRect(g.x - 2, g.y - 18, 4, 16);
+      ctx.beginPath();
+      ctx.moveTo(g.x - 5, g.y - 18);
+      ctx.lineTo(g.x, g.y - 26);
+      ctx.lineTo(g.x + 5, g.y - 18);
+      ctx.fill();
+    }
+  } else {
+    for (const [dx, dy] of scatter(p.id + "camp", 3, g.r * 0.4)) specs.hearth[0](g.x + dx, g.y + dy);
   }
-  const men = Math.min(12, Math.round((p.soldiers || 0) / 10));
+  const men = known ? Math.min(12, Math.round((p.soldiers || 0) / 10)) : 0;
   for (let i = 0; i < men; i++) {
     const bob = Math.sin(time * 3 + i) * 0.8;
     const x = g.x - 18 + (i % 6) * 6;
@@ -455,7 +469,20 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
     ctx.beginPath();
     ctx.ellipse(g.x + 6, g.y + 10, g.r * 0.72, g.r * 0.28, 0, 0, Math.PI * 2);
     ctx.fill();
-    drawHoldings(ctx, p, g, time);
+    const viewer = world.provinces.find((row) => row.id === seatId);
+    const known = p.id === seatId || Boolean(viewer && intelFresh(viewer, p.id, world.hour));
+    drawHoldings(ctx, p, g, time, known);
+    const studied = p.studies ? Object.values(p.studies).filter(Boolean).length : 0;
+    if (studied >= 2) {
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.r + 16, 0, Math.PI * 2);
+      ctx.lineWidth = studied >= 8 ? 2.6 : 1.4;
+      ctx.strokeStyle = studied >= 8 ? "rgba(226,192,120,0.9)" : studied >= 5 ? "rgba(154,134,200,0.85)" : "rgba(198,161,90,0.8)";
+      ctx.setLineDash([4, 6]);
+      ctx.lineDashOffset = -time * 8;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     const selected = p.id === selectedId;
     const mine = p.id === seatId;
     const hover = p.id === hoverId;

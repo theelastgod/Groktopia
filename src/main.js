@@ -3,6 +3,8 @@ import {
   EARN,
   FACTIONS,
   ORDERS,
+  STUDIES,
+  ageName,
   byId,
   defense,
   foodNeed,
@@ -16,6 +18,7 @@ import {
   population,
   soldierCap,
   spellbook,
+  studyCount,
   thiefCap,
   eliteCap,
 } from "./sim.js";
@@ -48,6 +51,7 @@ let hoverId = null;
 let pointer = null;
 let motes = [];
 let seenLog = "";
+let purseSeen = null;
 let keys = {};
 let windowBound = false;
 let raf = 0;
@@ -153,7 +157,7 @@ function gate() {
     <img src="/public/art/banner.jpg" alt="A walled riverside province at dusk">
     <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
     <h1>Groktopia</h1>
-    <p class="lede">An open realm, seen from above. Matchmaking seats you with other players, up to eight humans, and the Grok agents hold the wilds between you. The age clock runs for two hours, then the realm closes and placement is paid in <b>$UTOPIA</b>.</p>
+    <p class="lede">An open realm, seen from above. You earn <b>$UTOPIA</b> by playing: settle acres, complete studies, march inside the fair band, and keep an hour active. The age runs from Camp to Crown. After two hours, placement pays the purse. Matchmaking seats up to eight humans. The Grok agents hold the wilds, and a camp stays dark until you scout it.</p>
     <form class="card" id="found">
       <label>Ruler <input name="ruler" required maxlength="32" value="Ada"></label>
       <label>Province <input name="province" required maxlength="32" value="First Acre"></label>
@@ -172,6 +176,7 @@ function shell() {
     <header class="hud-top">
       <div class="brand-row hud-chip"><img class="coin-mark" src="/public/art/coin.jpg" alt=""><div class="brand">Groktopia</div></div>
       <div class="hud-chip" id="hud-hour"></div>
+      <div class="hud-chip" id="hud-age"></div>
       <div class="hud-chip"><b id="clock">2:00:00</b><span id="clock-note">age clock</span></div>
       <div class="hud-chip" id="hud-purse"></div>
       <button class="btn" id="home" type="button">My acres</button>
@@ -328,10 +333,12 @@ function paint() {
   const card = document.querySelector("#card");
   const log = document.querySelector("#log");
   const veil = document.querySelector("#veil");
-  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} · ${meta.humans || 1}/${meta.maxHumans || 8} players</span>`;
-  if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)}</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
+  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 8} players</span>`;
+  const age = document.querySelector("#hud-age");
+  if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>${studyCount(p)}/8 studies · play earns the purse</span>`;
+  if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)} $UTOPIA</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
   if (log) {
-    const board = standings.slice(0, 6).map((row, index) => `${index + 1}. ${row.name}`).join(" · ");
+    const board = standings.slice(0, 6).map((row, index) => `${index + 1}. ${row.name} ${formatUtopia(row.utopia || 0)}`).join(" · ");
     log.innerHTML = `<li><b>Board</b> ${esc(board)}</li>` + world.log.slice(0, 7).map((row) => `<li><b>${row.hour}</b> ${esc(row.text)}</li>`).join("");
   }
   if (veil) {
@@ -356,6 +363,23 @@ function paint() {
   }
 }
 
+function advisor(actor) {
+  const next = STUDIES.find((row) => !(actor.studies || {})[row.id] && studyCount(actor) >= row.need);
+  if (!next) return `${ageName(actor)} age. The crown is seated. Keep an hour active and the purse still grows until placement.`;
+  return `${ageName(actor)} age. Next study: ${next.name}. ${next.blurb} It pays ${formatUtopia(next.purse)} $UTOPIA.`;
+}
+
+function studyButtons(actor) {
+  return STUDIES.map((row) => {
+    const owned = Boolean((actor.studies || {})[row.id]);
+    const open = studyCount(actor) >= row.need;
+    if (owned) return `<button class="btn" type="button" disabled>${esc(row.name)} seated</button>`;
+    if (!open) return "";
+    const ae = row.aether ? ` · ${row.aether} ae` : "";
+    return `<button class="btn primary" type="button" data-study="${row.id}">${esc(row.name)} · ${row.cost}g${ae} · +${formatUtopia(row.purse)}</button>`;
+  }).join("");
+}
+
 function oddsLine(actor, selected) {
   const fresh = intelFresh(actor, selected.id, world.hour);
   if (!fresh) return "Scout to read the garrison. Keys 1, 2, and 3 send seize, sack, and raze.";
@@ -375,7 +399,7 @@ function cardFor(actor, selected) {
   const head = `<h2>${esc(selected.name)}</h2>
     <p class="muted">${esc(selected.ruler)} · ${esc(f.name)} · ${selected.kind === "agent" ? "Grok agent" : "human"}</p>
     <p>${selected.line ? esc(selected.line) : ""}</p>
-    <p class="muted">Land ${selected.land} · empty ${freeLand(selected)} · people ${population(selected)} · networth ${self || fresh ? networth(selected) : "—"}</p>
+    <p class="muted">${esc(ageName(selected))} age · ${studyCount(selected)} studies · land ${selected.land} · empty ${freeLand(selected)} · people ${self || fresh ? population(selected) : "—"} · networth ${self || fresh ? networth(selected) : "—"}</p>
     <p>Offense ${self ? offense(actor) : fresh ? fresh.offense : "—"} · defense ${knownDef}. ${esc(band)}</p>
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -399,7 +423,9 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
-      <p class="muted">Active hour pays ${formatUtopia(EARN.hourActive)} $UTOPIA after you act. Combat pay this hour can still reach ${formatUtopia(actor.earnLeft)}. WASD pans the realm. Q and E zoom. Double-click a holding to center it.</p>
+      <p class="advisor">${esc(advisor(actor))}</p>
+      <div class="row">${studyButtons(actor)}</div>
+      <p class="muted">Play to earn: an active hour pays ${formatUtopia(EARN.hourActive + (actor.studies && actor.studies.ledger ? EARN.ledger : 0))} $UTOPIA, settling pays ${formatUtopia(actor.studies && actor.studies.charter ? EARN.charter : EARN.settle)}, and each study pays its own purse. Fair marches still pay inside the combat cap of ${formatUtopia(actor.earnLeft)} this hour. Placement at the bell is 25, 15, 8, 4, 2, then 1.00. Key 4 starts the next study. WASD pans. Q and E zoom.</p>
       ${earnStrip(actor)}`;
   }
   const stakeRow = selected.kind === "human"
@@ -545,6 +571,10 @@ function bindMap(canvas) {
       if (event.key === "1") marchMode("seize");
       if (event.key === "2") marchMode("sack");
       if (event.key === "3") marchMode("raze");
+      if (event.key === "4" && world) {
+        const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
+        if (next) order({ type: "study", study: next.id }, "build");
+      }
       if (key === "h") {
         const home = world && provinceGeom(seat());
         if (home) {
@@ -605,6 +635,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.id === "explore") {
     order({ type: "explore" }, "march");
+    return;
+  }
+  if (node.dataset.study) {
+    order({ type: "study", study: node.dataset.study }, "build");
     return;
   }
   if (node.dataset.train) {
@@ -705,6 +739,14 @@ function takeState(msg) {
   }
   if (msg.standings) standings = msg.standings;
   if (!selectedId || !byId(world, selectedId)) selectedId = world.seat;
+  const purse = seat() && seat().utopia;
+  if (purseSeen == null) purseSeen = purse;
+  else if (purse > purseSeen) {
+    const gain = purse - purseSeen;
+    purseSeen = purse;
+    note(`Purse +${formatUtopia(gain)} $UTOPIA`);
+    play("coin");
+  } else purseSeen = purse;
   render();
 }
 

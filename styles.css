@@ -164,6 +164,13 @@ nav button[aria-current="page"] { background: var(--gold); color: var(--ink); bo
 .panel { padding: 14px; }
 .panel h2 { margin: 0 0 8px; font-size: 22px; color: var(--gold); }
 .muted { color: var(--muted); }
+.advisor {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--gold);
+  background: rgba(226, 192, 120, 0.08);
+  color: var(--paper);
+}
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
 .tile { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
 .tile b { color: var(--gold); }
