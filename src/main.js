@@ -6,6 +6,7 @@ import {
   WONDERS,
   ORDERS,
   STUDIES,
+  JOIN_GRACE_MS,
   ageName,
   byId,
   defense,
@@ -186,11 +187,11 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. Settle acres, climb from Camp to Crown, and fill a purse. Eight humans. The wilds belong to the Grok agents until you scout them.</p>
+        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Seven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, climb from Camp to Crown, and fill a purse.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
-          <li><b>Match</b><span>Up to eight players, then the bell</span></li>
+          <li><b>Match</b><span>Starts now. Eight seats stay open for two minutes</span></li>
         </ul>
       </div>
     </section>
@@ -419,8 +420,7 @@ function paint() {
       veil.innerHTML = `<div class="veil-card"><h2>The age is over</h2><p>Two hours on the clock. Placement is already in the $UTOPIA purses.</p><ol>${standings.filter((row) => row.kind === "human").map((row, index) => `<li>${index + 1}. ${esc(row.ruler)} of ${esc(row.name)} · networth ${row.networth}</li>`).join("")}</ol><button class="btn primary" type="button" id="again">Find another realm</button></div>`;
     } else if (meta.status !== "live") {
       veil.hidden = false;
-      const wait = Math.max(0, (meta.fillUntil || nowServer()) - nowServer());
-      veil.innerHTML = `<div class="veil-card"><h2>Matchmaking</h2><p>${meta.humans || 1} of ${meta.maxHumans || 8} players on the open map. The two-hour age starts when a second ruler arrives, or in ${fmt(wait)}.</p></div>`;
+      veil.innerHTML = `<div class="veil-card"><h2>The age is opening</h2><p>${meta.humans || 1} of ${meta.maxHumans || 8} players. Seats stay open, and the hours already on the clock belong to whoever is here.</p></div>`;
     } else veil.hidden = true;
   }
   if (card) card.innerHTML = cardFor(p, byId(world, selectedId) || p);
@@ -472,7 +472,7 @@ function cardFor(actor, selected) {
   const head = `<h2>${esc(selected.name)}</h2>
     <p class="muted">${esc(selected.ruler)} · ${esc(f.name)} · ${selected.kind === "agent" ? "Grok agent" : "human"}</p>
     <p>${selected.line ? esc(selected.line) : ""}</p>
-    <p class="muted">${esc(ageName(selected))} age · ${studyCount(selected)} studies · land ${selected.land} · empty ${freeLand(selected)} · people ${self || fresh ? population(selected) : "—"} · networth ${self || fresh ? networth(selected) : "—"}</p>
+    <p class="muted">${esc(ageName(selected))} age · ${studyCount(selected)} studies${Number.isFinite(selected.seatedHour) ? ` · seated at hour ${selected.seatedHour}` : ""} · land ${selected.land} · empty ${freeLand(selected)} · people ${self || fresh ? population(selected) : "—"} · networth ${self || fresh ? networth(selected) : "—"}</p>
     <p>Offense ${self ? offense(actor) : fresh ? fresh.offense : "—"} · defense ${knownDef}. ${esc(band)}</p>
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -865,7 +865,9 @@ function clockLabel() {
   if (meta.status !== "live") return { time: fmt((meta.fillUntil || now) - now), note: "until the age starts" };
   const left = (meta.endsAt || now) - now;
   const tick = (meta.nextTickAt || now) - now;
-  return { time: fmt(left), note: `left · hour in ${fmt(tick)}` };
+  const seats = meta.startedAt ? meta.startedAt + JOIN_GRACE_MS - now : 0;
+  const open = seats > 0 && (meta.humans || 0) < (meta.maxHumans || 8) ? ` · seats ${fmt(seats)}` : "";
+  return { time: fmt(left), note: `left · hour in ${fmt(tick)}${open}` };
 }
 
 function takeState(msg) {

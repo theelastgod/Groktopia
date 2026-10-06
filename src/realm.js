@@ -104,11 +104,9 @@ export class RealmRoom {
     });
     if (!claimed.ok) return Response.json(claimed, { status: 409 });
     data.tokens[token] = seatId;
-    if (!data.fillUntil) data.fillUntil = now + FILL_MS;
-    if (humanCount(data.world) >= 2 && data.status === "filling") this.begin(data, now);
+    if (data.status === "filling") this.begin(data, now);
     await this.save(data);
     if (data.status === "live") await this.ctx.storage.setAlarm(data.nextTickAt);
-    else await this.ctx.storage.setAlarm(data.fillUntil);
     this.push(data, now);
     return Response.json({
       ok: true,
@@ -125,7 +123,7 @@ export class RealmRoom {
     data.startedAt = now;
     data.endsAt = now + MATCH_MS;
     data.nextTickAt = now + TICK_MS;
-    data.world.log.unshift({ hour: data.world.hour, text: "The age clock starts. Two hours until the realm closes." });
+    data.world.log.unshift({ hour: data.world.hour, text: "The age clock starts now. Two hours until the realm closes. Other rulers may sit for two minutes, and the hours already played stay with the early seats." });
   }
 
   async connect(request) {

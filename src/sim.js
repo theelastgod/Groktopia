@@ -984,8 +984,8 @@ export function intelFresh(actor, targetId, hour) {
 }
 
 export const MATCH_MS = 2 * 60 * 60 * 1000;
-export const FILL_MS = 90 * 1000;
-export const JOIN_GRACE_MS = 10 * 60 * 1000;
+export const FILL_MS = 0;
+export const JOIN_GRACE_MS = 2 * 60 * 1000;
 export const TICK_MS = 60 * 1000;
 export const MAX_HUMANS = 8;
 
@@ -1081,9 +1081,11 @@ export function claimSeat(world, opts) {
     x: spot[0],
     y: spot[1],
   });
+  province.seatedHour = world.hour || 0;
   world.provinces.push(province);
   if (!world.seat) world.seat = province.id;
-  log(world, `${province.ruler} claims ${province.name} on the open map. ${humanCount(world)} of ${MAX_HUMANS} human seats filled.`);
+  const behind = province.seatedHour > 0 ? ` The age is already at hour ${province.seatedHour}.` : "";
+  log(world, `${province.ruler} claims ${province.name} on the open map. ${humanCount(world)} of ${MAX_HUMANS} human seats filled.${behind}`);
   return { ok: true, message: "Seat claimed.", province };
 }
 

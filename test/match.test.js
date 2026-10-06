@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  JOIN_GRACE_MS,
   MATCH_MS,
   MAX_HUMANS,
   buildingCount,
@@ -34,12 +35,13 @@ test("matchmaking fills eight human seats and then refuses", () => {
   assert.equal(full.ok, false);
 });
 
-test("the age clock is two hours and late entry closes after the grace", () => {
+test("the age clock is two hours and seats stay open for two minutes", () => {
   assert.equal(MATCH_MS, 2 * 60 * 60 * 1000);
+  assert.equal(JOIN_GRACE_MS, 2 * 60 * 1000);
   const start = 1_000_000;
-  assert.equal(realmJoinable({ status: "filling", humans: 1, startedAt: null, ended: false }, start), true);
-  assert.equal(realmJoinable({ status: "live", humans: 3, startedAt: start, ended: false }, start + 5 * 60 * 1000), true);
-  assert.equal(realmJoinable({ status: "live", humans: 3, startedAt: start, ended: false }, start + 11 * 60 * 1000), false);
+  assert.equal(realmJoinable({ status: "live", humans: 1, startedAt: start, ended: false }, start), true);
+  assert.equal(realmJoinable({ status: "live", humans: 3, startedAt: start, ended: false }, start + 90 * 1000), true);
+  assert.equal(realmJoinable({ status: "live", humans: 3, startedAt: start, ended: false }, start + JOIN_GRACE_MS + 1000), false);
   assert.equal(realmJoinable({ status: "ended", humans: 1, ended: true }, start), false);
 });
 
