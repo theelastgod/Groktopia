@@ -28,6 +28,7 @@ import {
   stallQuote,
   feastLive,
   bountyOn,
+  leveeUp,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -749,6 +750,64 @@ test("a grain seal halves what a sack can carry", () => {
   advanceHour(aged);
   assert.equal(aged.hour, 5);
   assert.equal(seat.sealUntil, 0);
+});
+
+test("a levee soaks one raze and waters the fields", () => {
+  const w = newWorld({ seed: 45 });
+  const you = byId(w, "you");
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "levee" }).ok, true);
+  assert.equal(you.gold, gold - 150);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.leveeUntil, 6);
+  assert.equal(you.ledger.levee, EARN.levee);
+  assert.equal(you.utopia, purse + EARN.levee);
+  assert.equal(leveeUp(you, w.hour), true);
+  assert.equal(applyAction(w, "you", { type: "levee" }).ok, false);
+  const poor = newWorld({ seed: 46 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "levee" }).ok, false);
+
+  const open = newWorld({ seed: 47 });
+  const banked = newWorld({ seed: 47 });
+  for (const realm of [open, banked]) {
+    const camp = byId(realm, "harrow");
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+  }
+  byId(banked, "harrow").leveeUntil = banked.hour + 6;
+  const openBefore = buildingCount(byId(open, "harrow"));
+  const bankedBefore = buildingCount(byId(banked, "harrow"));
+  assert.equal(applyAction(open, "you", { type: "attack", target: "harrow", mode: "raze" }).win, true);
+  assert.equal(applyAction(banked, "you", { type: "attack", target: "harrow", mode: "raze" }).win, true);
+  const openLost = openBefore - buildingCount(byId(open, "harrow"));
+  const bankedLost = bankedBefore - buildingCount(byId(banked, "harrow"));
+  assert.ok(openLost > 1);
+  assert.equal(bankedLost, openLost - 1);
+
+  function grainGain(withLevee) {
+    const realm = newWorld({ seed: 48 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    seat.grain = 50000;
+    if (withLevee) seat.leveeUntil = 6;
+    const before = seat.grain;
+    advanceHour(realm);
+    return seat.grain - before;
+  }
+  assert.ok(grainGain(true) > grainGain(false));
+
+  const aged = newWorld({ seed: 49 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 5;
+  seat.leveeUntil = 6;
+  advanceHour(aged);
+  assert.equal(aged.hour, 6);
+  assert.equal(seat.leveeUntil, 0);
+  assert.equal(leveeUp(seat, aged.hour), false);
 });
 
 test("save and load keep the hour and the random stream", () => {

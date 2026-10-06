@@ -30,6 +30,7 @@ export const EARN = {
   relief: 38,
   smith: 33,
   seal: 30,
+  levee: 31,
 };
 
 export const FACTIONS = {
@@ -244,6 +245,7 @@ export function blankProvince(partial) {
     reliefs: {},
     smithUntil: 0,
     sealUntil: 0,
+    leveeUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -528,6 +530,7 @@ export const AMBITIONS = [
   { id: "relief", name: "Send relief", purse: 40, blurb: "Cart grain to a hungry camp.", match: (action) => action.type === "relief" },
   { id: "smith", name: "Bank the forge", purse: 35, blurb: "Arm the host at the smith.", match: (action) => action.type === "smith" },
   { id: "seal", name: "Seal the bins", purse: 35, blurb: "Seal the grain.", match: (action) => action.type === "seal" },
+  { id: "levee", name: "Raise the bank", purse: 35, blurb: "Throw up a levee.", match: (action) => action.type === "levee" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -573,6 +576,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "relief") result = doRelief(world, actor, action.target);
   else if (action.type === "smith") result = doSmith(world, actor);
   else if (action.type === "seal") result = doSeal(world, actor);
+  else if (action.type === "levee") result = doLevee(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1001,6 +1005,40 @@ function settleSeal(p, hour) {
   p.sealUntil = 0;
 }
 
+export function leveeUp(p, hour) {
+  return Boolean(p && (p.leveeUntil || 0) > (hour || 0));
+}
+
+function settleLevee(p, hour) {
+  if (!p || !(p.leveeUntil > 0)) return;
+  if (p.leveeUntil > (hour || 0)) return;
+  p.leveeUntil = 0;
+}
+
+function doLevee(world, actor) {
+  if (leveeUp(actor, world.hour)) return fail(`The levee already holds through hour ${actor.leveeUntil - 1}.`);
+  settleLevee(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 150) return fail("A levee wants 150 gold.");
+  actor.gold -= 150;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.leveeUntil = (world.hour || 0) + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.levee;
+    notePurse(actor, "levee", EARN.levee);
+    purse = ` Purse +${formatUtopia(EARN.levee)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a levee through hour ${actor.leveeUntil - 1}. It takes one building blow, and the ditch waters the near fields.${purse}`);
+  return { ok: true, message: `Levee raised through hour ${actor.leveeUntil - 1}.${purse}` };
+}
+
+function soakedHits(target, hour, hits) {
+  if (!leveeUp(target, hour) || hits < 1) return hits;
+  return Math.max(0, hits - 1);
+}
+
 function doSeal(world, actor) {
   if ((actor.sealUntil || 0) > (world.hour || 0)) return fail(`The bins are already sealed through hour ${actor.sealUntil - 1}.`);
   settleSeal(actor, world.hour || 0);
@@ -1242,7 +1280,8 @@ function doAttack(world, actor, action) {
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
-    const hits = Math.max(1, Math.floor(buildingCount(target) * 0.06 * Math.max(scale, 0.35)));
+    const rawHits = Math.max(1, Math.floor(buildingCount(target) * 0.06 * Math.max(scale, 0.35)));
+    const hits = soakedHits(target, world.hour, rawHits);
     let n = 0;
     for (let i = 0; i < hits; i++) {
       const keys = Object.keys(target.buildings).filter((k) => target.buildings[k] > 0);
@@ -1251,7 +1290,8 @@ function doAttack(world, actor, action) {
       target.buildings[k] -= 1;
       n += 1;
     }
-    detail = `razed ${n} buildings`;
+    detail = n < 1 && leveeUp(target, world.hour) ? "meets the levee and razes nothing" : `razed ${n} buildings`;
+    if (n > 0 && hits < rawHits) detail += ". The levee took one blow";
   } else {
     detail = "was thrown back";
   }
@@ -1307,7 +1347,7 @@ function doSpell(world, actor, action) {
       log(world, `${actor.name} hurls a meteor at ${target.name}. The spires hold.`);
       return { ok: true, message: "The spires held.", win: false };
     }
-    const hits = Math.max(1, Math.floor(buildingCount(target) * 0.04 * Math.max(scale, 0.4)));
+    const hits = soakedHits(target, world.hour, Math.max(1, Math.floor(buildingCount(target) * 0.04 * Math.max(scale, 0.4))));
     for (let i = 0; i < hits; i++) {
       const keys = Object.keys(target.buildings).filter((k) => target.buildings[k] > 0);
       if (!keys.length) break;
@@ -1382,7 +1422,7 @@ function doThief(world, actor, action) {
     }
     const keys = Object.keys(target.buildings).filter((k) => target.buildings[k] > 0);
     let n = 0;
-    const hits = Math.max(1, Math.floor(2 * Math.max(scale, 0.4)));
+    const hits = soakedHits(target, world.hour, Math.max(1, Math.floor(2 * Math.max(scale, 0.4))));
     for (let i = 0; i < hits && keys.length; i++) {
       const live = Object.keys(target.buildings).filter((k) => target.buildings[k] > 0);
       if (!live.length) break;
@@ -1414,6 +1454,7 @@ function economy(p, hour) {
   if (feastLive(p, hour)) goldIn = Math.floor(goldIn * 1.05);
   if (p.vein === "salt") goldIn = Math.floor(goldIn * 1.06);
   if (p.vein === "spring") foodIn = Math.floor(foodIn * 1.06);
+  if (leveeUp(p, hour)) foodIn = Math.floor(foodIn * 1.04);
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -1463,6 +1504,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleVein(p, world.hour);
   for (const p of world.provinces) settleSmith(p, world.hour);
   for (const p of world.provinces) settleSeal(p, world.hour);
+  for (const p of world.provinces) settleLevee(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -1595,6 +1637,9 @@ export function chooseAction(world, agent) {
     }
     if (!feastLive(agent, world.hour) && agent.grain >= 3500 && agent.gold >= 300 && agent.orders >= 1 && rng.next() < 0.16) {
       return { type: "feast" };
+    }
+    if (!leveeUp(agent, world.hour) && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
+      return { type: "levee" };
     }
     const hungry = world.provinces.find((p) => p.id !== agent.id && p.grain < foodNeed(p) && !(agent.reliefs && agent.reliefs[p.id] > (world.hour || 0)));
     if (hungry && agent.grain >= 1200 && agent.orders >= 1 && rng.next() < 0.22) return { type: "relief", target: hungry.id };

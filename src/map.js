@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, bountyOn, captiveCount, feastLive, intelFresh, seasonName } from "./sim.js";
+import { beaconLit, bountyOn, captiveCount, feastLive, intelFresh, leveeUp, seasonName } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1122,6 +1122,37 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (p.vein) drawVein(ctx, g, time, p.vein);
   if ((p.smithUntil || 0) > (hour || 0)) drawSmith(ctx, g, time);
   if ((p.sealUntil || 0) > (hour || 0)) drawSeal(ctx, g);
+  if (leveeUp(p, hour)) drawLevee(ctx, g, time);
+}
+
+function drawLevee(ctx, g, time) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(g.x, g.y, g.r * 1.16, 0, Math.PI * 2);
+  ctx.strokeStyle = "#6e97a4";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(g.x, g.y, g.r * 1.28, 0, Math.PI * 2);
+  ctx.strokeStyle = "#c4b08a";
+  ctx.lineWidth = 2.2;
+  ctx.setLineDash([5, 4]);
+  ctx.lineDashOffset = -time * 10;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const gateX = g.x + g.r * 1.02;
+  const gateY = g.y - 5;
+  ctx.fillStyle = "#5c4632";
+  ctx.fillRect(gateX, gateY, 16, 10);
+  ctx.fillStyle = "#3d5630";
+  ctx.fillRect(gateX + 6, gateY - 7, 3, 8);
+  ctx.globalAlpha = 0.45 + 0.25 * Math.sin(time * 2.4);
+  ctx.fillStyle = "#d5eef5";
+  ctx.beginPath();
+  ctx.arc(g.x - g.r * 0.82, g.y + g.r * 0.72, 3.2, 0, Math.PI * 2);
+  ctx.arc(g.x + g.r * 0.2, g.y - g.r * 1.05, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawSeal(ctx, g) {

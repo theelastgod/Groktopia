@@ -14,6 +14,7 @@ import {
   beaconLit,
   bountyOn,
   feastLive,
+  leveeUp,
   seasonName,
   seasonMod,
   stallQuote,
@@ -563,6 +564,7 @@ function cardFor(actor, selected) {
     ${selected.vein && VEINS[selected.vein] && selected.veinUntil > world.hour ? `<p class="muted">${esc(VEINS[selected.vein].name)} through hour ${selected.veinUntil - 1}. ${esc(VEINS[selected.vein].line)}</p>` : ""}
     ${(selected.smithUntil || 0) > world.hour ? `<p class="muted">The forge is banked through hour ${selected.smithUntil - 1}. Soldiers hit harder while the smoke rises.</p>` : ""}
     ${(selected.sealUntil || 0) > world.hour ? `<p class="muted">The grain bins are sealed through hour ${selected.sealUntil - 1}. A sack takes half the grain.</p>` : ""}
+    ${leveeUp(selected, world.hour) ? `<p class="muted">A levee rings the holding through hour ${selected.leveeUntil - 1}. It takes one building blow, and the ditch waters the near fields.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
     const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
@@ -586,6 +588,8 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(leveeLine(actor))}</p>
+      <div class="row">${leveeButton(actor)}</div>
       <p class="muted">${esc(sealLine(actor))}</p>
       <div class="row">${sealButton(actor)}</div>
       <p class="muted">${esc(smithLine(actor))}</p>
@@ -697,6 +701,7 @@ function ledgerLine(actor) {
     ["relief", book.relief],
     ["smith", book.smith],
     ["seals", book.seal],
+    ["levees", book.levee],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -743,6 +748,16 @@ function bountyLine(selected) {
   if (!row) return "";
   const who = byId(world, row.poster);
   return `A bounty of ${row.gold} gold sits through hour ${row.until - 1}, posted by ${who ? who.name : "someone"}. A winning seize or sack by anyone else collects it.`;
+}
+
+function leveeLine(actor) {
+  if (leveeUp(actor, world.hour)) return `The levee holds through hour ${actor.leveeUntil - 1}. Raze, meteor, and arson each lose one building blow, and fields yield 4% more grain.`;
+  return "Raise a levee for 150 gold. For six hours the bank takes one building blow and the ditch waters the near fields. Key L throws it up.";
+}
+
+function leveeButton(actor) {
+  if (leveeUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Levee through hour ${actor.leveeUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-levee="1">Raise the levee · 150g · +${formatUtopia(EARN.levee)}</button>`;
 }
 
 function sealLine(actor) {
@@ -1000,6 +1015,7 @@ function bindMap(canvas) {
       if (event.key === "0" && world) order({ type: "prospect" }, "build");
       if (event.key.toLowerCase() === "s" && world) order({ type: "smith" }, "build");
       if (event.key.toLowerCase() === "y" && world) order({ type: "seal" }, "build");
+      if (event.key.toLowerCase() === "l" && world) order({ type: "levee" }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
       if (event.key === "4" && world) {
@@ -1110,6 +1126,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.seal) {
     order({ type: "seal" }, "build");
+    return;
+  }
+  if (node.dataset.levee) {
+    order({ type: "levee" }, "build");
     return;
   }
   if (node.dataset.doctrine) {
