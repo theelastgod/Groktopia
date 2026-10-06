@@ -1,0 +1,10 @@
+.git
+.wrangler
+.DS_Store
+test
+tools
+README.md
+package.json
+.gitignore
+.assetsignore
+wrangler.toml
