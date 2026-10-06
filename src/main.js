@@ -576,6 +576,8 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(musterLine(actor))}</p>
+      <div class="row">${musterButton(actor)}</div>
       <p class="muted">${esc(penLine(actor))}</p>
       <p class="muted">${esc(beaconLine(actor))}</p>
       <div class="row">${beaconButton(actor)}</div>
@@ -664,6 +666,7 @@ function ledgerLine(actor) {
     ["tribute", book.tribute],
     ["watch", book.beacon],
     ["ransoms", book.ransom],
+    ["musters", book.muster],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -703,6 +706,20 @@ function marchMode(mode) {
 function worldPointFrom(event, canvas) {
   const rect = canvas.getBoundingClientRect();
   return screenToWorld(event.clientX - rect.left, event.clientY - rect.top, cam, rect.width, rect.height);
+}
+
+function musterLine(actor) {
+  if ((actor.muster || 0) > 0 && actor.musterUntil > world.hour) {
+    return `Field host: ${actor.muster} stand through hour ${actor.musterUntil - 1}. They fight lighter than soldiers, then go home.`;
+  }
+  return "Ring the bell for 120 gold. Up to 36 peasants stand in the field host for 4 hours. Key 7 calls them.";
+}
+
+function musterButton(actor) {
+  if ((actor.muster || 0) > 0 && actor.musterUntil > world.hour) {
+    return `<button class="btn" type="button" disabled>Field host through hour ${actor.musterUntil - 1}</button>`;
+  }
+  return `<button class="btn primary" type="button" data-muster="1">Ring the bell · 120g · +${formatUtopia(EARN.muster)}</button>`;
 }
 
 function penLine(actor) {
@@ -886,6 +903,7 @@ function bindMap(canvas) {
       if (event.key === "3") marchMode("raze");
       if (event.key === "5" && world) order({ type: "beacon" }, "spell");
       if (event.key === "6" && world && selectedId && seat().pens && seat().pens[selectedId]) order({ type: "ransom", target: selectedId }, "coin");
+      if (event.key === "7" && world) order({ type: "muster" }, "build");
       if (event.key === "4" && world) {
         const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
         if (next) order({ type: "study", study: next.id }, "build");
@@ -962,6 +980,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.beacon) {
     order({ type: "beacon" }, "spell");
+    return;
+  }
+  if (node.dataset.muster) {
+    order({ type: "muster" }, "build");
     return;
   }
   if (node.dataset.doctrine) {

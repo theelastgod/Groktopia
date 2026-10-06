@@ -22,6 +22,7 @@ export const EARN = {
   tribute: 45,
   beacon: 32,
   ransom: 50,
+  muster: 36,
 };
 
 export const FACTIONS = {
@@ -227,6 +228,8 @@ export function blankProvince(partial) {
     demands: {},
     beaconUntil: 0,
     pens: {},
+    muster: 0,
+    musterUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -310,7 +313,7 @@ export function freeLand(p) {
 }
 
 export function population(p) {
-  return p.peasants + p.soldiers + p.elites + p.thieves + p.mystics;
+  return p.peasants + p.soldiers + p.elites + p.thieves + p.mystics + (p.muster || 0);
 }
 
 export function soldierCap(p) {
@@ -349,7 +352,7 @@ export function offense(p) {
   const oath = p.studies && p.studies.oath ? 1.05 : 1;
   const levy = p.doctrine === "levy" ? 1.05 : 1;
   const ash = p.relics && p.relics.barrow ? 1.04 : 1;
-  return Math.floor((p.soldiers * 3 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash);
+  return Math.floor((p.soldiers * 3 + (p.muster || 0) * 2 + p.elites * f.off) * wageFactor(p) * fury * oath * levy * ash);
 }
 
 export function defense(p) {
@@ -358,7 +361,7 @@ export function defense(p) {
   const pale = p.studies && p.studies.palisade ? 1.06 : 1;
   const bastion = p.marks && p.marks.bastion ? 1.08 : 1;
   const horn = p.relics && p.relics.stand ? 1.04 : 1;
-  return Math.floor((p.soldiers * 1 + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale * bastion * horn);
+  return Math.floor((p.soldiers * 1 + (p.muster || 0) + p.elites * f.def + p.buildings.keep * 10) * wageFactor(p) * bulwark * pale * bastion * horn);
 }
 
 export function networth(p) {
@@ -427,6 +430,7 @@ function casualties(p, frac, rng) {
   const hit = (n) => Math.max(0, n - Math.floor(n * frac * j));
   p.soldiers = hit(p.soldiers);
   p.elites = hit(p.elites);
+  p.muster = hit(p.muster || 0);
 }
 
 function grantEarn(actor, base, scale, bucket = "combat") {
@@ -498,6 +502,7 @@ export const AMBITIONS = [
   { id: "caravan", name: "Roll a caravan", purse: 45, blurb: "Send a caravan.", match: (action) => action.type === "trade" },
   { id: "beacon", name: "Light the watch", purse: 40, blurb: "Raise a watch fire.", match: (action) => action.type === "beacon" },
   { id: "ransom", name: "Ransom the pen", purse: 45, blurb: "Send penned people home for gold.", match: (action) => action.type === "ransom" },
+  { id: "muster", name: "Ring the bell", purse: 40, blurb: "Call a field host.", match: (action) => action.type === "muster" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -535,6 +540,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "beacon") result = doBeacon(world, actor);
   else if (action.type === "ransom") result = doRansom(world, actor, action.target);
   else if (action.type === "release") result = doRelease(world, actor, action.target);
+  else if (action.type === "muster") result = doMuster(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -890,6 +896,39 @@ function doRelease(world, actor, targetId) {
   return { ok: true, message: `Released ${n}.` };
 }
 
+function settleMuster(p, hour) {
+  if (!p || !(p.muster > 0)) return;
+  if (typeof p.musterUntil === "number" && p.musterUntil > (hour || 0)) return;
+  p.peasants += p.muster;
+  p.muster = 0;
+  p.musterUntil = 0;
+}
+
+function doMuster(world, actor) {
+  if ((actor.muster || 0) > 0 && actor.musterUntil > (world.hour || 0)) {
+    return fail(`The field host already stands through hour ${actor.musterUntil - 1}.`);
+  }
+  settleMuster(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 120) return fail("The muster bell wants 120 gold.");
+  const n = Math.min(36, actor.peasants - 24);
+  if (n < 12) return fail("Need at least 36 peasants to call a field host.");
+  actor.gold -= 120;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.peasants -= n;
+  actor.muster = n;
+  actor.musterUntil = (world.hour || 0) + 4;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.muster;
+    notePurse(actor, "muster", EARN.muster);
+    purse = ` Purse +${formatUtopia(EARN.muster)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} rings the bell and calls ${n} into the field host through hour ${actor.musterUntil - 1}.${purse}`);
+  return { ok: true, message: `Field host of ${n} stands through hour ${actor.musterUntil - 1}.${purse}` };
+}
+
 function onCooldown(actor, target, hour) {
   const last = actor.cooldown[target.id];
   return last != null && hour - last < COOLDOWN;
@@ -1158,6 +1197,7 @@ export function advanceHour(world) {
   }
   const prevSeason = seasonName(world.hour);
   world.hour += 1;
+  for (const p of world.provinces) settleMuster(p, world.hour);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
   for (const agent of agents) {
@@ -1217,6 +1257,9 @@ export function chooseAction(world, agent) {
     const held = byId(world, penned[0]);
     if (held && held.gold >= 20) return { type: "ransom", target: held.id };
     if (held) return { type: "release", target: held.id };
+  }
+  if (agent.persona === "harrow" && !(agent.muster > 0) && agent.peasants >= 60 && agent.gold >= 120 && agent.soldiers < 80 && agent.orders >= 1 && rng.next() < 0.22) {
+    return { type: "muster" };
   }
   if ((agent.persona === "sable" || agent.persona === "moss") && !beaconLit(agent, world.hour) && agent.orders >= 1 && agent.gold >= 160 && agent.grain >= 80 && rng.next() < 0.2) {
     return { type: "beacon" };

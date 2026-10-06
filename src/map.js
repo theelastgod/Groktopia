@@ -874,6 +874,7 @@ function drawFolk(ctx, x, y, ang, time, role) {
     smith: "#6a5344",
     farmer: "#c6a15a",
     hauler: "#8a5a32",
+    host: "#efe6d6",
   }[role] || "#c6a15a";
   ctx.fillStyle = tunic;
   ctx.fillRect(-2.3, -4.6, 4.6, 5.4);
@@ -881,7 +882,19 @@ function drawFolk(ctx, x, y, ang, time, role) {
   ctx.beginPath();
   ctx.arc(0, -6.4, 2.15, 0, Math.PI * 2);
   ctx.fill();
-  if (role === "farmer") {
+  if (role === "host") {
+    ctx.strokeStyle = "#5c4632";
+    ctx.beginPath();
+    ctx.moveTo(1.2, -2);
+    ctx.lineTo(1.6, -11);
+    ctx.stroke();
+    ctx.fillStyle = "#a14a3c";
+    ctx.beginPath();
+    ctx.moveTo(1.6, -11);
+    ctx.lineTo(3.4, -9);
+    ctx.lineTo(1.6, -8);
+    ctx.fill();
+  } else if (role === "farmer") {
     ctx.strokeStyle = "#5c4632";
     ctx.beginPath();
     ctx.moveTo(2, -1);
@@ -1103,6 +1116,16 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   }
   if (beaconLit(p, hour)) drawBeaconFire(ctx, g, time);
   drawPen(ctx, g, time, captiveCount(p));
+  drawMuster(ctx, g, time, p.muster || 0);
+}
+
+function drawMuster(ctx, g, time, n) {
+  if (!n) return;
+  const count = Math.min(6, Math.max(2, Math.round(n / 8)));
+  for (let i = 0; i < count; i++) {
+    const bob = Math.sin(time * 3 + i) * 1.2;
+    drawFolk(ctx, g.x - g.r * 0.58, g.y - g.r * 0.28 + i * 8 + bob, -0.5, time + i * 0.2, "host");
+  }
 }
 
 function drawPen(ctx, g, time, n) {

@@ -8,6 +8,7 @@ import {
   seasonMod,
   offense,
   defense,
+  foodNeed,
   advanceHour,
   applyAction,
   buildingCount,
@@ -412,6 +413,53 @@ test("a winning sack pens people and a ransom sends them home", () => {
   assert.equal(hidden.held, 3);
   assert.deepEqual(hidden.pens, {});
   assert.equal(captiveCount(hidden), 3);
+});
+
+test("the muster bell calls a field host and sends them home", () => {
+  const w = newWorld({ seed: 26 });
+  const you = byId(w, "you");
+  const peasants = you.peasants;
+  const gold = you.gold;
+  const purse = you.utopia;
+  const bareOff = offense(you);
+  const bareDef = defense(you);
+  const bareFood = foodNeed(you);
+  const called = applyAction(w, "you", { type: "muster" });
+  assert.equal(called.ok, true);
+  assert.equal(you.muster, 36);
+  assert.equal(you.peasants, peasants - 36);
+  assert.equal(you.gold, gold - 120);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.muster, EARN.muster);
+  assert.equal(you.utopia, purse + EARN.muster);
+  assert.equal(you.musterUntil, 4);
+  assert.ok(offense(you) > bareOff);
+  assert.ok(defense(you) > bareDef);
+  assert.ok(foodNeed(you) >= bareFood);
+  assert.equal(applyAction(w, "you", { type: "muster" }).ok, false);
+  const thin = newWorld({ seed: 27 });
+  byId(thin, "you").peasants = 20;
+  assert.equal(applyAction(thin, "you", { type: "muster" }).ok, false);
+
+  const harrow = byId(w, "harrow");
+  harrow.soldiers = 8;
+  harrow.elites = 0;
+  harrow.buildings.keep = 0;
+  const beforeHost = you.muster;
+  const march = applyAction(w, "you", { type: "attack", target: "harrow", mode: "seize" });
+  assert.equal(march.ok, true);
+  assert.equal(march.win, true);
+  assert.ok(you.muster < beforeHost);
+
+  w.provinces = [you];
+  you.muster = 36;
+  you.musterUntil = w.hour + 4;
+  const home = you.peasants;
+  for (let i = 0; i < 3; i++) advanceHour(w);
+  assert.equal(you.muster, 36);
+  advanceHour(w);
+  assert.equal(you.muster, 0);
+  assert.ok(you.peasants >= home + 36);
 });
 
 test("save and load keep the hour and the random stream", () => {
