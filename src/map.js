@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, studyCount, worldToAxial } from "./sim.js";
+import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, studyCount, weirLive, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -404,7 +404,55 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       drawFolk(ctx, cell.pos.x, cell.pos.y - 4, 0.4, time || 0, role, cell.kind);
     }
+    if (plot && plot.net && weirLive(cell.owner, world.hour)) drawSkiff(ctx, cell.q, cell.r, time);
   }
+}
+
+function wetBeside(q, r) {
+  const here = terrainAt(q, r);
+  if (here === "coast" || here === "river") return { q, r };
+  for (const [dq, dr] of HEX_DIRS) {
+    const kind = terrainAt(q + dq, r + dr);
+    if (kind === "river" || kind === "sea" || kind === "coast") return { q: q + dq, r: r + dr };
+  }
+  return null;
+}
+
+function drawSkiff(ctx, q, r, time) {
+  const wet = wetBeside(q, r);
+  if (!wet) return;
+  const pos = axialToWorld(wet.q, wet.r);
+  const bob = Math.sin(time * 2.1 + q + r) * 1.6;
+  ctx.save();
+  ctx.translate(pos.x, pos.y + bob);
+  ctx.strokeStyle = "rgba(214, 232, 236, 0.9)";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.arc(-6, 2, 9, 0.15, Math.PI - 0.15);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(7, 3, 7, 0.3, Math.PI - 0.3);
+  ctx.stroke();
+  ctx.fillStyle = "#6a4a32";
+  ctx.beginPath();
+  ctx.moveTo(-9, 5);
+  ctx.lineTo(11, 5);
+  ctx.lineTo(7, 0);
+  ctx.lineTo(-6, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#3a2a22";
+  ctx.beginPath();
+  ctx.moveTo(1, 2);
+  ctx.lineTo(1, -13);
+  ctx.stroke();
+  ctx.fillStyle = "#f3e6c8";
+  ctx.beginPath();
+  ctx.moveTo(1, -12);
+  ctx.lineTo(9, -3);
+  ctx.lineTo(1, -4);
+  ctx.fill();
+  ctx.restore();
 }
 
 function traceRiver(ctx) {
@@ -1395,6 +1443,31 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (curfewUp(p, hour)) drawCurfew(ctx, g, time);
   if (hospiceUp(p, hour)) drawHospice(ctx, g, time);
   if (innUp(p, hour)) drawInn(ctx, g, time);
+  if (weirLive(p, hour)) drawWeirMark(ctx, g, time);
+}
+
+function drawWeirMark(ctx, g, time) {
+  const x = g.x - g.r * 0.08;
+  const y = g.y + g.r * 0.78;
+  const bob = Math.sin(time * 2) * 1.3;
+  ctx.save();
+  ctx.fillStyle = "#5c4632";
+  ctx.fillRect(x - 16, y, 18, 4);
+  ctx.fillRect(x - 16, y - 6, 3, 10);
+  ctx.strokeStyle = "rgba(214, 232, 236, 0.9)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(x + 8, y + 2, 8, 0.2, Math.PI - 0.2);
+  ctx.stroke();
+  ctx.fillStyle = "#6a4a32";
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y + 6 + bob);
+  ctx.lineTo(x + 16, y + 6 + bob);
+  ctx.lineTo(x + 13, y + 2 + bob);
+  ctx.lineTo(x + 5, y + 2 + bob);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawInn(ctx, g, time) {

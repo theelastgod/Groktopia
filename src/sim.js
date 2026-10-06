@@ -38,6 +38,7 @@ export const EARN = {
   hospice: 34,
   hamlet: 36,
   inn: 33,
+  weir: 35,
 };
 
 export const FACTIONS = {
@@ -460,6 +461,8 @@ export function blankProvince(partial) {
     curfewUntil: 0,
     hospiceUntil: 0,
     innUntil: 0,
+    weir: 0,
+    weirUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -761,6 +764,7 @@ export const AMBITIONS = [
   { id: "curfew", name: "Hang the lanterns", purse: 35, blurb: "Call a night curfew.", match: (action) => action.type === "curfew" },
   { id: "hospice", name: "Pitch the tent", purse: 35, blurb: "Open a field hospice.", match: (action) => action.type === "hospice" },
   { id: "inn", name: "Open the inn", purse: 35, blurb: "Raise a wayside inn.", match: (action) => action.type === "inn" },
+  { id: "weir", name: "Set the nets", purse: 35, blurb: "Stake a weir on the water.", match: (action) => action.type === "weir" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -814,6 +818,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "hospice") result = doHospice(world, actor);
   else if (action.type === "hamlet") result = doHamlet(world, actor);
   else if (action.type === "inn") result = doInn(world, actor);
+  else if (action.type === "weir") result = doWeir(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1014,6 +1019,10 @@ function doTrade(world, actor, targetId) {
   if (innUp(actor, world.hour)) {
     haul = Math.floor(haul * 1.12);
     fed = " The inn feeds the drovers.";
+  }
+  if (weirLive(actor, world.hour)) {
+    haul = Math.floor(haul * 1.1);
+    fed += " Salted fish rides with the cart.";
   }
   actor.gold += haul;
   const earned = grantEarn(actor, EARN.trade, scale, "trade");
@@ -1505,6 +1514,79 @@ function doHamlet(world, actor) {
   return { ok: true, message: `Hamlet on the ${kind} tile.${purse}` };
 }
 
+export function waterTouch(tile) {
+  if (!tile) return false;
+  const kind = terrainKind(tile.q, tile.r);
+  if (kind === "coast" || kind === "river") return true;
+  for (const [dq, dr] of HEX_DIRS) {
+    const near = terrainKind(tile.q + dq, tile.r + dr);
+    if (near === "river" || near === "sea" || near === "coast") return true;
+  }
+  return false;
+}
+
+export function weirLive(p, hour) {
+  return Boolean(p && (p.weirUntil || 0) > (hour || 0) && (p.weir || 0) > 0);
+}
+
+export function weirYield(p, hour) {
+  if (!weirLive(p, hour)) return { gold: 0, grain: 0 };
+  const posts = Math.max(1, Math.min(3, p.weir || 1));
+  let grain = 22 * posts;
+  let gold = 8 * posts;
+  const name = seasonName(hour || 0);
+  if (name === "Frost") {
+    grain = Math.floor(grain * 0.5);
+    gold = Math.floor(gold * 0.5);
+  } else if (name === "High Sun") {
+    grain = Math.floor(grain * 1.2);
+    gold = Math.floor(gold * 1.15);
+  } else if (name === "Harvest") {
+    grain = Math.floor(grain * 1.1);
+  }
+  return { gold, grain };
+}
+
+function clearNets(p) {
+  if (!p) return;
+  p.weir = 0;
+  p.weirUntil = 0;
+  for (const tile of p.plots || []) tile.net = false;
+}
+
+function settleWeir(p, hour) {
+  if (!p || !(p.weirUntil > 0)) return;
+  if (p.weirUntil > (hour || 0)) return;
+  clearNets(p);
+}
+
+function doWeir(world, actor) {
+  ensurePlots(world);
+  if (weirLive(actor, world.hour)) return fail(`The nets already hold through hour ${actor.weirUntil - 1}.`);
+  settleWeir(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 160) return fail("Nets want 160 gold.");
+  if ((actor.peasants || 0) < 24) return fail("Need 24 peasants to crew the nets.");
+  const sites = (actor.plots || []).filter((tile) => waterTouch(tile));
+  if (!sites.length) return fail("The nets need a bought tile on the coast or beside the river.");
+  const posts = sites.slice(0, 3);
+  actor.gold -= 160;
+  actor.orders -= 1;
+  actor.acted = true;
+  for (const tile of actor.plots || []) tile.net = false;
+  for (const tile of posts) tile.net = true;
+  actor.weir = posts.length;
+  actor.weirUntil = (world.hour || 0) + 7;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.weir;
+    notePurse(actor, "weir", EARN.weir);
+    purse = ` Purse +${formatUtopia(EARN.weir)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} stakes ${actor.weir} nets through hour ${actor.weirUntil - 1}. The weir yields fish, and a sack tears it up.${purse}`);
+  return { ok: true, message: `${actor.weir} nets through hour ${actor.weirUntil - 1}.${purse}` };
+}
+
 function soakedHits(target, hour, hits) {
   if (!leveeUp(target, hour) || hits < 1) return hits;
   return Math.max(0, hits - 1);
@@ -1768,9 +1850,17 @@ function doAttack(world, actor, action) {
       target.innUntil = 0;
       burned = " and burned the inn";
     }
+    let torn = "";
+    if (weirLive(target, world.hour)) {
+      const catchGrain = Math.min(target.grain, 40);
+      target.grain -= catchGrain;
+      f += catchGrain;
+      clearNets(target);
+      torn = " and tore up the nets";
+    }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -1970,6 +2060,11 @@ function economy(p, hour) {
     p.grain += 48;
   }
   if (innUp(p, hour)) p.gold += innToll(p, hour);
+  if (weirLive(p, hour)) {
+    const catchTaken = weirYield(p, hour);
+    p.gold += catchTaken.gold;
+    p.grain += catchTaken.grain;
+  }
   if (p.grain < 0) {
     const die = Math.min(p.peasants, Math.max(1, Math.ceil(-p.grain / 4)));
     p.peasants -= die;
@@ -2025,6 +2120,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleCurfew(p, world.hour);
   for (const p of world.provinces) settleHospice(p, world.hour);
   for (const p of world.provinces) settleInn(p, world.hour);
+  for (const p of world.provinces) settleWeir(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -2143,6 +2239,9 @@ export function chooseAction(world, agent) {
   if (agent.persona === "brine") {
     if (!innUp(agent, world.hour) && agent.gold >= 700 && agent.grain >= 900 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "inn" };
+    }
+    if (!weirLive(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.gold >= 400 && agent.peasants >= 40 && agent.orders >= 1 && rng.next() < 0.16) {
+      return { type: "weir" };
     }
     if (!agent.vein && agent.gold >= 800 && agent.orders >= 1 && rng.next() < 0.14) return { type: "prospect" };
     if (!(agent.sealUntil > world.hour) && agent.grain >= 4000 && agent.gold >= 200 && agent.orders >= 1 && rng.next() < 0.12) return { type: "seal" };

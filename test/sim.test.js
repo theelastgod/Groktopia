@@ -36,6 +36,9 @@ import {
   hospiceUp,
   innUp,
   innToll,
+  waterTouch,
+  weirLive,
+  weirYield,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -1212,6 +1215,122 @@ test("a wayside inn tolls travelers, feeds a caravan, and burns in a sack", () =
   assert.equal(aged.hour, 6);
   assert.equal(seat.innUntil, 0);
   assert.equal(innUp(seat, aged.hour), false);
+});
+
+test("a weir needs water, yields with the season, and a sack tears it up", () => {
+  const w = newWorld({ seed: 96 });
+  const you = byId(w, "you");
+  const gold = you.gold;
+  const purse = you.utopia;
+  const posts = you.plots.filter((tile) => waterTouch(tile)).length;
+  assert.ok(posts >= 3);
+  assert.equal(applyAction(w, "you", { type: "weir" }).ok, true);
+  assert.equal(you.gold, gold - 160);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.weir, 3);
+  assert.equal(you.plots.filter((tile) => tile.net).length, 3);
+  assert.equal(you.weirUntil, 7);
+  assert.equal(weirLive(you, w.hour), true);
+  assert.equal(weirYield(you, 0).grain, 66);
+  assert.equal(weirYield(you, 0).gold, 24);
+  assert.equal(you.ledger.weir, EARN.weir);
+  assert.equal(you.utopia, purse + EARN.weir);
+  assert.equal(applyAction(w, "you", { type: "weir" }).ok, false);
+  assert.equal(applyAction(w, "harrow", { type: "weir" }).ok, false);
+  const poor = newWorld({ seed: 97 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "weir" }).ok, false);
+  const short = newWorld({ seed: 98 });
+  byId(short, "you").peasants = 8;
+  assert.equal(applyAction(short, "you", { type: "weir" }).ok, false);
+  const dry = newWorld({ seed: 99 });
+  const inland = byId(dry, "you");
+  inland.plots = inland.plots.filter((tile) => !waterTouch(tile));
+  assert.ok(inland.plots.length > 0);
+  assert.equal(applyAction(dry, "you", { type: "weir" }).ok, false);
+
+  function delta(hour, posts) {
+    const realm = newWorld({ seed: 100 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    realm.hour = hour;
+    const beforeGold = seat.gold;
+    const beforeGrain = seat.grain;
+    if (posts) {
+      seat.weir = posts;
+      seat.weirUntil = hour + 7;
+    }
+    advanceHour(realm);
+    return { gold: seat.gold - beforeGold, grain: seat.grain - beforeGrain };
+  }
+  const thaw = delta(0, 2);
+  const bare = delta(0, 0);
+  assert.equal(thaw.gold - bare.gold, 16);
+  assert.equal(thaw.grain - bare.grain, 44);
+  const sun = delta(30, 2);
+  const sunBare = delta(30, 0);
+  assert.equal(sun.grain - sunBare.grain, Math.floor(44 * 1.2));
+  assert.equal(sun.gold - sunBare.gold, Math.floor(16 * 1.15));
+  const harvest = delta(60, 2);
+  const harvestBare = delta(60, 0);
+  assert.equal(harvest.grain - harvestBare.grain, Math.floor(44 * 1.1));
+  assert.equal(harvest.gold - harvestBare.gold, 16);
+  const frost = delta(90, 2);
+  const frostBare = delta(90, 0);
+  assert.equal(frost.grain - frostBare.grain, Math.floor(44 * 0.5));
+  assert.equal(frost.gold - frostBare.gold, Math.floor(16 * 0.5));
+
+  function hauled(withWeir) {
+    const realm = newWorld({ seed: 101 });
+    const seat = byId(realm, "you");
+    seat.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+    if (withWeir) {
+      seat.weir = 1;
+      seat.weirUntil = 7;
+    }
+    const before = seat.gold;
+    assert.equal(applyAction(realm, "you", { type: "trade", target: "harrow" }).ok, true);
+    return seat.gold - before;
+  }
+  assert.ok(hauled(true) > hauled(false));
+
+  function sacked(withWeir) {
+    const realm = newWorld({ seed: 102 });
+    const seat = byId(realm, "you");
+    const camp = byId(realm, "harrow");
+    seat.soldiers = 200;
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+    camp.plots = [{ q: 1, r: 1, crew: "hand", net: true }];
+    if (withWeir) {
+      camp.weir = 1;
+      camp.weirUntil = 6;
+    }
+    const before = seat.grain;
+    const res = applyAction(realm, "you", { type: "attack", target: "harrow", mode: "sack" });
+    assert.equal(res.win, true);
+    return { grain: seat.grain - before, up: weirLive(camp, realm.hour), net: camp.plots.some((tile) => tile.net) };
+  }
+  const open = sacked(false);
+  const shut = sacked(true);
+  assert.equal(shut.grain, open.grain + 40);
+  assert.equal(shut.up, false);
+  assert.equal(shut.net, false);
+
+  const aged = newWorld({ seed: 103 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 6;
+  seat.weir = 2;
+  seat.weirUntil = 7;
+  seat.plots[0].net = true;
+  advanceHour(aged);
+  assert.equal(aged.hour, 7);
+  assert.equal(seat.weirUntil, 0);
+  assert.equal(seat.weir, 0);
+  assert.equal(weirLive(seat, aged.hour), false);
+  assert.equal(seat.plots.some((tile) => tile.net), false);
 });
 
 test("save and load keep the hour and the random stream", () => {
