@@ -37,6 +37,7 @@ export const EARN = {
   curfew: 29,
   hospice: 34,
   hamlet: 36,
+  inn: 33,
 };
 
 export const FACTIONS = {
@@ -458,6 +459,7 @@ export function blankProvince(partial) {
     foldUntil: 0,
     curfewUntil: 0,
     hospiceUntil: 0,
+    innUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -758,6 +760,7 @@ export const AMBITIONS = [
   { id: "fold", name: "Pen the flock", purse: 35, blurb: "Fold sheep on the acres.", match: (action) => action.type === "fold" },
   { id: "curfew", name: "Hang the lanterns", purse: 35, blurb: "Call a night curfew.", match: (action) => action.type === "curfew" },
   { id: "hospice", name: "Pitch the tent", purse: 35, blurb: "Open a field hospice.", match: (action) => action.type === "hospice" },
+  { id: "inn", name: "Open the inn", purse: 35, blurb: "Raise a wayside inn.", match: (action) => action.type === "inn" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -810,6 +813,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "curfew") result = doCurfew(world, actor);
   else if (action.type === "hospice") result = doHospice(world, actor);
   else if (action.type === "hamlet") result = doHamlet(world, actor);
+  else if (action.type === "inn") result = doInn(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1006,11 +1010,16 @@ function doTrade(world, actor, targetId) {
   let haul = 90 + Math.floor(Math.min(actor.land, target.land) * 0.35);
   if (pactLive(actor, target.id, world.hour)) haul = Math.floor(haul * 1.3);
   if (roadLive(actor, target.id, world.hour)) haul = Math.floor(haul * 1.25);
+  let fed = "";
+  if (innUp(actor, world.hour)) {
+    haul = Math.floor(haul * 1.12);
+    fed = " The inn feeds the drovers.";
+  }
   actor.gold += haul;
   const earned = grantEarn(actor, EARN.trade, scale, "trade");
   const purse = earned ? ` Purse +${formatUtopia(earned)} $UTOPIA.` : " Outside the fair band, so the purse stays shut.";
-  log(world, `${actor.name} rolls a caravan to ${target.name} and brings back ${haul} gold.${purse}`);
-  return { ok: true, message: `Caravan returned ${haul} gold.${purse}` };
+  log(world, `${actor.name} rolls a caravan to ${target.name} and brings back ${haul} gold.${fed}${purse}`);
+  return { ok: true, message: `Caravan returned ${haul} gold.${fed}${purse}` };
 }
 
 function pactLive(actor, id, hour) {
@@ -1423,6 +1432,56 @@ function doHospice(world, actor) {
   return { ok: true, message: `Hospice through hour ${actor.hospiceUntil - 1}.${purse}` };
 }
 
+export function innUp(p, hour) {
+  return Boolean(p && (p.innUntil || 0) > (hour || 0));
+}
+
+/** Taproom gold this hour. A live pact or causeway brings more travelers. Frost thins the road. */
+export function innToll(p, hour) {
+  if (!innUp(p, hour)) return 0;
+  let pacts = 0;
+  for (const until of Object.values(p.pacts || {})) {
+    if (typeof until === "number" && (hour || 0) <= until) pacts += 1;
+  }
+  let roads = 0;
+  for (const until of Object.values(p.roads || {})) {
+    if (typeof until === "number" && until > (hour || 0)) roads += 1;
+  }
+  let coin = 18 + pacts * 14 + roads * 10;
+  const name = seasonName(hour || 0);
+  if (name === "Frost") coin = Math.floor(coin * 0.7);
+  else if (name === "High Sun") coin = Math.floor(coin * 1.15);
+  else if (name === "Harvest") coin = Math.floor(coin * 1.08);
+  return coin;
+}
+
+function settleInn(p, hour) {
+  if (!p || !(p.innUntil > 0)) return;
+  if (p.innUntil > (hour || 0)) return;
+  p.innUntil = 0;
+}
+
+function doInn(world, actor) {
+  if (innUp(actor, world.hour)) return fail(`The inn already stands through hour ${actor.innUntil - 1}.`);
+  settleInn(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 175) return fail("An inn wants 175 gold.");
+  if (actor.grain < 220) return fail("An inn wants 220 grain.");
+  actor.gold -= 175;
+  actor.grain -= 220;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.innUntil = (world.hour || 0) + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.inn;
+    notePurse(actor, "inn", EARN.inn);
+    purse = ` Purse +${formatUtopia(EARN.inn)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} opens a wayside inn through hour ${actor.innUntil - 1}. Travelers pay the taproom, and caravans leave better fed. A sack burns it.${purse}`);
+  return { ok: true, message: `Inn open through hour ${actor.innUntil - 1}.${purse}` };
+}
+
 function doHamlet(world, actor) {
   ensurePlots(world);
   const held = (actor.plots || []).filter((tile) => tile.crew === "hamlet").length;
@@ -1687,7 +1746,7 @@ function doAttack(world, actor, action) {
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "sack") {
-    const g = Math.floor(target.gold * 0.14 * Math.max(scale, 0.35));
+    let g = Math.floor(target.gold * 0.14 * Math.max(scale, 0.35));
     let f = Math.floor(target.grain * 0.14 * Math.max(scale, 0.35));
     if ((target.sealUntil || 0) > (world.hour || 0)) f = Math.floor(f / 2);
     target.gold -= g;
@@ -1701,9 +1760,17 @@ function doAttack(world, actor, action) {
       target.foldUntil = 0;
       scattered = " and scattered the flock";
     }
+    let burned = "";
+    if (innUp(target, world.hour)) {
+      const tap = Math.min(target.gold, 70);
+      target.gold -= tap;
+      g += tap;
+      target.innUntil = 0;
+      burned = " and burned the inn";
+    }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -1902,6 +1969,7 @@ function economy(p, hour) {
     p.gold += 22;
     p.grain += 48;
   }
+  if (innUp(p, hour)) p.gold += innToll(p, hour);
   if (p.grain < 0) {
     const die = Math.min(p.peasants, Math.max(1, Math.ceil(-p.grain / 4)));
     p.peasants -= die;
@@ -1956,6 +2024,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleFold(p, world.hour);
   for (const p of world.provinces) settleCurfew(p, world.hour);
   for (const p of world.provinces) settleHospice(p, world.hour);
+  for (const p of world.provinces) settleInn(p, world.hour);
   expireBounties(world);
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
@@ -2072,6 +2141,9 @@ export function chooseAction(world, agent) {
     return trainBias(agent) || buildIf(agent, "den");
   }
   if (agent.persona === "brine") {
+    if (!innUp(agent, world.hour) && agent.gold >= 700 && agent.grain >= 900 && agent.orders >= 1 && rng.next() < 0.12) {
+      return { type: "inn" };
+    }
     if (!agent.vein && agent.gold >= 800 && agent.orders >= 1 && rng.next() < 0.14) return { type: "prospect" };
     if (!(agent.sealUntil > world.hour) && agent.grain >= 4000 && agent.gold >= 200 && agent.orders >= 1 && rng.next() < 0.12) return { type: "seal" };
     if (agent.gold >= 1400 && agent.orders >= 1 && rng.next() < 0.1) {

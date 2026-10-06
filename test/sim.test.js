@@ -34,6 +34,8 @@ import {
   foldLive,
   curfewUp,
   hospiceUp,
+  innUp,
+  innToll,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -1110,6 +1112,106 @@ test("a hamlet keeps a grass or wheat tile and feeds the holding", () => {
   assert.equal(applyAction(raised, "you", { type: "hamlet" }).ok, true);
   assert.equal(applyAction(raised, "you", { type: "hamlet" }).ok, true);
   assert.equal(applyAction(raised, "you", { type: "hamlet" }).ok, false);
+});
+
+test("a wayside inn tolls travelers, feeds a caravan, and burns in a sack", () => {
+  const w = newWorld({ seed: 88 });
+  const you = byId(w, "you");
+  const gold = you.gold;
+  const grain = you.grain;
+  const purse = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "inn" }).ok, true);
+  assert.equal(you.gold, gold - 175);
+  assert.equal(you.grain, grain - 220);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.innUntil, 6);
+  assert.equal(innUp(you, w.hour), true);
+  assert.equal(innToll(you, w.hour), 18);
+  assert.equal(you.ledger.inn, EARN.inn);
+  assert.equal(you.utopia, purse + EARN.inn);
+  assert.equal(applyAction(w, "you", { type: "inn" }).ok, false);
+  const poor = newWorld({ seed: 89 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "inn" }).ok, false);
+  const hungry = newWorld({ seed: 90 });
+  byId(hungry, "you").grain = 10;
+  assert.equal(applyAction(hungry, "you", { type: "inn" }).ok, false);
+  const quiet = newWorld({ seed: 91 });
+  byId(quiet, "you").orders = 0;
+  assert.equal(applyAction(quiet, "you", { type: "inn" }).ok, false);
+
+  function gain(hour, extra) {
+    const realm = newWorld({ seed: 92 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    realm.hour = hour;
+    seat.innUntil = hour + 6;
+    if (extra === "pact") seat.pacts = { harrow: hour + 4 };
+    if (extra === "road") seat.roads = { harrow: hour + 8 };
+    if (extra === "both") {
+      seat.pacts = { harrow: hour + 4 };
+      seat.roads = { harrow: hour + 8 };
+    }
+    const before = seat.gold;
+    advanceHour(realm);
+    return seat.gold - before;
+  }
+  function bare(hour) {
+    const realm = newWorld({ seed: 92 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    realm.hour = hour;
+    const before = seat.gold;
+    advanceHour(realm);
+    return seat.gold - before;
+  }
+  assert.equal(gain(0) - bare(0), 18);
+  assert.equal(gain(0, "pact") - bare(0), 32);
+  assert.equal(gain(0, "road") - bare(0), 28);
+  assert.equal(gain(0, "both") - bare(0), 42);
+  assert.equal(gain(30) - bare(30), Math.floor(18 * 1.15));
+  assert.equal(gain(60) - bare(60), Math.floor(18 * 1.08));
+  assert.equal(gain(90) - bare(90), Math.floor(18 * 0.7));
+
+  function hauled(withInn) {
+    const realm = newWorld({ seed: 93 });
+    const seat = byId(realm, "you");
+    seat.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+    if (withInn) seat.innUntil = 6;
+    const before = seat.gold;
+    assert.equal(applyAction(realm, "you", { type: "trade", target: "harrow" }).ok, true);
+    return seat.gold - before;
+  }
+  assert.ok(hauled(true) > hauled(false));
+
+  function sacked(withInn) {
+    const realm = newWorld({ seed: 94 });
+    const seat = byId(realm, "you");
+    const camp = byId(realm, "harrow");
+    seat.soldiers = 200;
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+    if (withInn) camp.innUntil = 6;
+    const before = seat.gold;
+    const res = applyAction(realm, "you", { type: "attack", target: "harrow", mode: "sack" });
+    assert.equal(res.win, true);
+    return { gold: seat.gold - before, up: innUp(camp, realm.hour) };
+  }
+  const open = sacked(false);
+  const shut = sacked(true);
+  assert.equal(shut.gold, open.gold + 70);
+  assert.equal(shut.up, false);
+
+  const aged = newWorld({ seed: 95 });
+  const seat = byId(aged, "you");
+  aged.provinces = [seat];
+  aged.hour = 5;
+  seat.innUntil = 6;
+  advanceHour(aged);
+  assert.equal(aged.hour, 6);
+  assert.equal(seat.innUntil, 0);
+  assert.equal(innUp(seat, aged.hour), false);
 });
 
 test("save and load keep the hour and the random stream", () => {

@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, worldToAxial } from "./sim.js";
+import { beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1189,6 +1189,58 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (foldLive(p, hour)) drawFold(ctx, g, time);
   if (curfewUp(p, hour)) drawCurfew(ctx, g, time);
   if (hospiceUp(p, hour)) drawHospice(ctx, g, time);
+  if (innUp(p, hour)) drawInn(ctx, g, time);
+}
+
+function drawInn(ctx, g, time) {
+  const x = g.x + g.r * 0.82;
+  const y = g.y + g.r * 0.62;
+  const swing = Math.sin(time * 1.4) * 0.35;
+  ctx.save();
+  ctx.fillStyle = "#5c4632";
+  ctx.fillRect(x - 16, y - 6, 32, 18);
+  ctx.fillStyle = "#8d734c";
+  ctx.beginPath();
+  ctx.moveTo(x - 20, y - 6);
+  ctx.lineTo(x, y - 20);
+  ctx.lineTo(x + 20, y - 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#3a2a22";
+  ctx.fillRect(x + 8, y - 18, 4, 8);
+  const puff = (time * 0.55) % 1;
+  ctx.globalAlpha = 0.45 * (1 - puff);
+  ctx.fillStyle = "#efe6d6";
+  ctx.beginPath();
+  ctx.arc(x + 10, y - 22 - puff * 12, 2.4 + puff * 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  const glow = 0.55 + Math.sin(time * 3) * 0.25;
+  ctx.fillStyle = `rgba(226, 192, 120, ${glow})`;
+  ctx.fillRect(x - 10, y - 1, 6, 6);
+  ctx.fillRect(x + 2, y - 1, 6, 6);
+  ctx.strokeStyle = "#2a241c";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y - 4);
+  ctx.lineTo(x - 18, y - 16);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(x - 18, y - 14);
+  ctx.rotate(swing);
+  ctx.fillStyle = "#a14a3c";
+  ctx.fillRect(0, 0, 10, 7);
+  ctx.fillStyle = "#f3e6c8";
+  ctx.fillRect(2, 2, 6, 1.4);
+  ctx.restore();
+  ctx.fillStyle = "#6a4a32";
+  ctx.fillRect(x + 16, y + 4, 3, 10);
+  ctx.strokeStyle = "#3a2a22";
+  ctx.beginPath();
+  ctx.moveTo(x + 14, y + 6);
+  ctx.quadraticCurveTo(x + 22, y + 2, x + 24, y + 8);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawHospice(ctx, g, time) {
@@ -1611,6 +1663,10 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
       ctx.fillStyle = "#e2c078";
       ctx.fillRect(sx + 3, sy - 5, 3, 3);
     }
+    if (innUp(p, world.hour)) {
+      ctx.fillStyle = "#a14a3c";
+      ctx.fillRect(sx - 2, sy + 4, 5, 3);
+    }
   }
   for (const site of world.sites || []) {
     const [sx, sy] = to(site.x, site.y);
@@ -1682,6 +1738,34 @@ function drawPacts(ctx, world, seatId, time) {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+function drawInnTraffic(ctx, world, time) {
+  const hour = world.hour || 0;
+  for (const from of world.provinces) {
+    if (!innUp(from, hour)) continue;
+    const a = provinceGeom(from);
+    const links = [];
+    for (const [id, until] of Object.entries(from.pacts || {})) {
+      if (typeof until === "number" && hour <= until) links.push(id);
+    }
+    for (const [id, until] of Object.entries(from.roads || {})) {
+      if (typeof until === "number" && until > hour) links.push(id);
+    }
+    const seen = new Set();
+    links.forEach((id, index) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      const other = world.provinces.find((row) => row.id === id);
+      if (!other) return;
+      const b = provinceGeom(other);
+      const t = ((time * 0.05) + index * 0.27) % 1;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      drawFolk(ctx, x, y, ang, time + index, "hauler");
+    });
+  }
 }
 
 function drawCauseways(ctx, world) {
@@ -1822,6 +1906,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   drawSites(ctx, world);
   drawPacts(ctx, world, seatId, time);
   drawCauseways(ctx, world);
+  drawInnTraffic(ctx, world, time);
   for (const g of geoms) {
     const p = world.provinces.find((row) => row.id === g.id);
     ctx.fillStyle = "rgba(0,0,0,0.22)";

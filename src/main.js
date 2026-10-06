@@ -17,6 +17,8 @@ import {
   foldLive,
   curfewUp,
   hospiceUp,
+  innUp,
+  innToll,
   leveeUp,
   roadLive,
   seasonName,
@@ -573,6 +575,7 @@ function cardFor(actor, selected) {
     ${foldLive(selected, world.hour) ? `<p class="muted">A flock of ${selected.fold} is penned through hour ${selected.foldUntil - 1}. Each hour the fold yields wool and milk. A sack scatters them.</p>` : ""}
     ${curfewUp(selected, world.hour) ? `<p class="muted">Curfew lanterns hang through hour ${selected.curfewUntil - 1}. A pilfer takes half the gold.</p>` : ""}
     ${hospiceUp(selected, world.hour) ? `<p class="muted">A hospice tent stands through hour ${selected.hospiceUntil - 1}. Battle losses are halved, and a few people arrive each hour.</p>` : ""}
+    ${innUp(selected, world.hour) ? `<p class="muted">A wayside inn stands through hour ${selected.innUntil - 1}. The taproom pays ${innToll(selected, world.hour)} gold this hour. A sack burns it.</p>` : ""}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -603,6 +606,8 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-hamlet="1">Raise a hamlet · 260g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="muted">${esc(innLine(actor))}</p>
+      <div class="row">${innButton(actor)}</div>
       <p class="muted">${esc(hospiceLine(actor))}</p>
       <div class="row">${hospiceButton(actor)}</div>
       <p class="muted">${esc(curfewLine(actor))}</p>
@@ -731,6 +736,7 @@ function ledgerLine(actor) {
     ["curfews", book.curfew],
     ["hospices", book.hospice],
     ["hamlets", book.hamlet],
+    ["inns", book.inn],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -777,6 +783,16 @@ function bountyLine(selected) {
   if (!row) return "";
   const who = byId(world, row.poster);
   return `A bounty of ${row.gold} gold sits through hour ${row.until - 1}, posted by ${who ? who.name : "someone"}. A winning seize or sack by anyone else collects it.`;
+}
+
+function innLine(actor) {
+  if (innUp(actor, world.hour)) return `The inn stands through hour ${actor.innUntil - 1}. This hour the taproom pays ${innToll(actor, world.hour)} gold. Caravans haul more while the sign is up. A sack burns it.`;
+  return "Open a wayside inn for 175 gold and 220 grain. For six hours travelers pay a toll, more with a pact or a causeway and less in Frost. Your caravans haul more. A sack burns the taproom. Key I opens it.";
+}
+
+function innButton(actor) {
+  if (innUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Inn through hour ${actor.innUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-inn="1">Open the inn · 175g · 220 grain · +${formatUtopia(EARN.inn)}</button>`;
 }
 
 function hospiceLine(actor) {
@@ -1085,6 +1101,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "n" && world) order({ type: "curfew" }, "build");
       if (event.key.toLowerCase() === "h" && world) order({ type: "hospice" }, "build");
       if (event.key.toLowerCase() === "j" && world) order({ type: "hamlet" }, "build");
+      if (event.key.toLowerCase() === "i" && world) order({ type: "inn" }, "build");
       if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
@@ -1216,6 +1233,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.hamlet) {
     order({ type: "hamlet" }, "build");
+    return;
+  }
+  if (node.dataset.inn) {
+    order({ type: "inn" }, "build");
     return;
   }
   if (node.dataset.road) {
