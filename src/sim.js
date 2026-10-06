@@ -1,6 +1,6 @@
 /** Groktopia realm rules. Original numbers. Earn unit is cents of $UTOPIA (100 = 1). */
 
-export const ORDERS = 4;
+export const ORDERS = 6;
 export const MIN_LAND = 40;
 export const COOLDOWN = 2;
 
@@ -440,21 +440,51 @@ function remember(actor, target, hour) {
   };
 }
 
+/** A fresh aim each time the last one is met. Matching the aim pays the purse. */
+export const AMBITIONS = [
+  { id: "acres", name: "Break ground", purse: 40, blurb: "Settle 10 acres.", match: (action) => action.type === "explore" },
+  { id: "study", name: "Open a study", purse: 50, blurb: "Complete any study.", match: (action) => action.type === "study" },
+  { id: "envoy", name: "Send an envoy", purse: 40, blurb: "Bind a pact.", match: (action) => action.type === "envoy" },
+  { id: "field", name: "Raise a field", purse: 35, blurb: "Build a field.", match: (action) => action.type === "build" && action.building === "field" },
+  { id: "host", name: "Drill the host", purse: 35, blurb: "Train soldiers.", match: (action) => action.type === "train" && action.unit === "soldier" },
+  { id: "caravan", name: "Roll a caravan", purse: 45, blurb: "Send a caravan.", match: (action) => action.type === "trade" },
+];
+
+function rollAmbition(actor, hour) {
+  const salt = [...(actor.id || "x")].reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const pick = AMBITIONS[(salt + (hour || 0)) % AMBITIONS.length];
+  actor.ambition = pick.id;
+}
+
+function meetAmbition(world, actor, action) {
+  if (!actor || actor.kind !== "human" || !actor.ambition) return;
+  const spec = AMBITIONS.find((row) => row.id === actor.ambition);
+  if (!spec || !spec.match(action)) return;
+  actor.utopia += spec.purse;
+  notePurse(actor, "ambition", spec.purse);
+  log(world, `${actor.name} meets ${spec.name}. Purse +${formatUtopia(spec.purse)} $UTOPIA.`);
+  const nextHour = (world.hour || 0) + 1;
+  rollAmbition(actor, nextHour);
+  if (actor.ambition === spec.id) rollAmbition(actor, nextHour + 3);
+}
+
 export function applyAction(world, actorId, action) {
   const actor = byId(world, actorId);
   if (!actor) return fail("No such province.");
-  if (action.type === "build") return doBuild(world, actor, action.building);
-  if (action.type === "train") return doTrain(world, actor, action);
-  if (action.type === "explore") return doExplore(world, actor);
-  if (action.type === "study") return doStudy(world, actor, action.study);
-  if (action.type === "doctrine") return doDoctrine(world, actor, action.doctrine);
-  if (action.type === "wonder") return doWonder(world, actor, action.wonder);
-  if (action.type === "trade") return doTrade(world, actor, action.target);
-  if (action.type === "envoy") return doEnvoy(world, actor, action.target);
-  if (action.type === "attack") return doAttack(world, actor, action);
-  if (action.type === "spell") return doSpell(world, actor, action);
-  if (action.type === "thief") return doThief(world, actor, action);
-  return fail("Unknown order.");
+  let result = fail("Unknown order.");
+  if (action.type === "build") result = doBuild(world, actor, action.building);
+  else if (action.type === "train") result = doTrain(world, actor, action);
+  else if (action.type === "explore") result = doExplore(world, actor);
+  else if (action.type === "study") result = doStudy(world, actor, action.study);
+  else if (action.type === "doctrine") result = doDoctrine(world, actor, action.doctrine);
+  else if (action.type === "wonder") result = doWonder(world, actor, action.wonder);
+  else if (action.type === "trade") result = doTrade(world, actor, action.target);
+  else if (action.type === "envoy") result = doEnvoy(world, actor, action.target);
+  else if (action.type === "attack") result = doAttack(world, actor, action);
+  else if (action.type === "spell") result = doSpell(world, actor, action);
+  else if (action.type === "thief") result = doThief(world, actor, action);
+  if (result.ok) meetAmbition(world, actor, action);
+  return result;
 }
 
 function doBuild(world, actor, key) {
@@ -1026,7 +1056,7 @@ export function intelFresh(actor, targetId, hour) {
 export const MATCH_MS = 2 * 60 * 60 * 1000;
 export const FILL_MS = 0;
 export const JOIN_GRACE_MS = 2 * 60 * 1000;
-export const TICK_MS = 60 * 1000;
+export const TICK_MS = 20 * 1000;
 export const MAX_HUMANS = 8;
 
 export const SPAWNS = [
@@ -1122,6 +1152,7 @@ export function claimSeat(world, opts) {
     y: spot[1],
   });
   province.seatedHour = world.hour || 0;
+  rollAmbition(province, world.hour || 0);
   world.provinces.push(province);
   if (!world.seat) world.seat = province.id;
   const behind = province.seatedHour > 0 ? ` The age is already at hour ${province.seatedHour}.` : "";

@@ -5,6 +5,7 @@ import {
   FACTIONS,
   WONDERS,
   ORDERS,
+  AMBITIONS,
   STUDIES,
   JOIN_GRACE_MS,
   ageName,
@@ -188,7 +189,7 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Seven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, climb from Camp to Crown, and fill a purse.</p>
+        <p class="lede">A two-hour realm, seen from above. A realm hour passes every 20 seconds, and each hour gives six orders. The age starts the moment you sit. Seven more rulers can join for two minutes, and every hour you play before they arrive is yours.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
@@ -439,6 +440,12 @@ function paint() {
   }
 }
 
+function ambitionLine(actor) {
+  const spec = AMBITIONS.find((row) => row.id === actor.ambition);
+  if (!spec) return "No ambition yet. The next seat you take will name one.";
+  return `Ambition: ${spec.name}. ${spec.blurb} It pays ${formatUtopia(spec.purse)} $UTOPIA.`;
+}
+
 function advisor(actor) {
   const next = STUDIES.find((row) => !(actor.studies || {})[row.id] && studyCount(actor) >= row.need);
   if (!next) return `${ageName(actor)} age. The crown is seated. Keep an hour active and the purse still grows until placement.`;
@@ -501,6 +508,7 @@ function cardFor(actor, selected) {
         <button class="btn primary" type="button" id="explore">Settle 10 acres · ${explore}g</button>
       </div>
       <div class="row">${spells}</div>
+      <p class="advisor">${esc(ambitionLine(actor))}</p>
       <p class="advisor">${esc(advisor(actor))}</p>
       <div class="row">${doctrineButtons(actor)}</div>
       <div class="row">${studyButtons(actor)}</div>
@@ -575,6 +583,7 @@ function ledgerLine(actor) {
     ["wonders", book.wonder],
     ["caravans", book.trade],
     ["pacts", book.pact],
+    ["ambitions", book.ambition],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;

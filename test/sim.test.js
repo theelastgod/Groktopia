@@ -204,6 +204,17 @@ test("an envoy needs a scout, pays once, and a march breaks the pact", () => {
   assert.equal(you.pacts.harrow, undefined);
 });
 
+test("meeting an ambition pays and names the next one", () => {
+  const w = newWorld({ seed: 16 });
+  const you = byId(w, "you");
+  you.ambition = "study";
+  const before = you.utopia;
+  assert.equal(applyAction(w, "you", { type: "study", study: "furrow" }).ok, true);
+  assert.equal(you.utopia, before + 40 + 50);
+  assert.equal(you.ledger.ambition, 50);
+  assert.notEqual(you.ambition, "study");
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
