@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, worldToAxial } from "./sim.js";
+import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, studyCount, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -664,19 +664,45 @@ function drawBanks(ctx, time) {
   }
 }
 
-function drawPalisade(ctx, g) {
+function eraOf(p) {
+  const n = studyCount(p);
+  if (n >= 8) return 3;
+  if (n >= 5) return 2;
+  if (n >= 2) return 1;
+  return 0;
+}
+
+function drawPalisade(ctx, g, era = 0) {
+  if (era >= 2) {
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, g.r * 0.9, 0, Math.PI * 2);
+    ctx.strokeStyle = era >= 3 ? "#e7dfd0" : "#8d8478";
+    ctx.lineWidth = era >= 3 ? 4.5 : 3;
+    ctx.stroke();
+    if (era >= 3) {
+      const merlons = Math.max(12, Math.round(g.r / 8));
+      for (let i = 0; i < merlons; i++) {
+        const a = (i / merlons) * Math.PI * 2;
+        const x = g.x + Math.cos(a) * (g.r * 0.9);
+        const y = g.y + Math.sin(a) * (g.r * 0.9);
+        ctx.fillStyle = "#f3eee4";
+        ctx.fillRect(x - 2.2, y - 3, 4.4, 5);
+      }
+    }
+  }
   const stakes = Math.max(16, Math.round(g.r / 6));
   for (let i = 0; i < stakes; i++) {
     const a = (i / stakes) * Math.PI * 2 + 0.2;
     const x = g.x + Math.cos(a) * (g.r * 0.9);
     const y = g.y + Math.sin(a) * (g.r * 0.9);
-    ctx.fillStyle = "#3d3224";
-    ctx.fillRect(x - 1.3, y - 8, 2.6, 11);
-    ctx.fillStyle = "#cbb892";
+    const tall = era >= 1 ? 13 : 11;
+    ctx.fillStyle = era >= 2 ? "#6e675f" : "#3d3224";
+    ctx.fillRect(x - 1.3, y - (tall - 3), 2.6, tall);
+    ctx.fillStyle = era >= 2 ? "#cfc6b8" : "#cbb892";
     ctx.beginPath();
-    ctx.moveTo(x - 2.2, y - 8);
-    ctx.lineTo(x, y - 12);
-    ctx.lineTo(x + 2.2, y - 8);
+    ctx.moveTo(x - 2.2, y - (tall - 3));
+    ctx.lineTo(x, y - (tall + 1));
+    ctx.lineTo(x + 2.2, y - (tall - 3));
     ctx.fill();
   }
 }
@@ -723,7 +749,39 @@ function roof(ctx, x, y, w, h, wall, cap) {
   ctx.fill();
 }
 
-function drawCottage(ctx, x, y) {
+function drawCottage(ctx, x, y, era = 0) {
+  if (era >= 3) {
+    roof(ctx, x, y, 22, 16, "#e4dccb", "#c6a15a");
+    ctx.fillStyle = "#e4dccb";
+    ctx.fillRect(x + 6, y - 16, 6, 14);
+    ctx.fillStyle = "#8d8478";
+    ctx.fillRect(x + 7, y - 19, 4, 3);
+    ctx.fillStyle = "#2a1c14";
+    ctx.fillRect(x - 2, y + 1, 4, 6);
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(x - 7, y - 1, 3, 4);
+    return;
+  }
+  if (era >= 2) {
+    roof(ctx, x, y, 18, 14, "#d9d3c4", "#6e675f");
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(x - 2, y + 1, 4, 5);
+    ctx.fillStyle = "#9ec4d4";
+    ctx.fillRect(x - 6, y - 1, 3, 3);
+    ctx.fillStyle = "#8d8478";
+    ctx.fillRect(x + 5, y - 10, 2, 7);
+    return;
+  }
+  if (era >= 1) {
+    roof(ctx, x, y, 18, 14, "#6a4632", "#8d4038");
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(x - 7, y - 2, 14, 2);
+    ctx.fillStyle = "#2a1c14";
+    ctx.fillRect(x - 2, y + 1, 4, 5);
+    ctx.fillStyle = "rgba(243,230,200,0.85)";
+    ctx.fillRect(x - 6, y, 3, 3);
+    return;
+  }
   roof(ctx, x, y, 16, 13, "#6a4632", "#a86848");
   ctx.fillStyle = "#2a1c14";
   ctx.fillRect(x - 2, y + 1, 4, 5);
@@ -733,22 +791,89 @@ function drawCottage(ctx, x, y) {
   ctx.fillRect(x + 4, y - 8, 2, 6);
 }
 
-function drawShed(ctx, x, y, time) {
+function drawShed(ctx, x, y, time, era = 0) {
+  const flick = 0.4 + Math.sin(time * 8 + x) * 0.28;
+  if (era >= 3) {
+    roof(ctx, x, y, 24, 14, "#d9d3c4", "#c6a15a");
+    ctx.fillStyle = "#6e675f";
+    ctx.fillRect(x - 6, y - 16, 3, 10);
+    ctx.fillRect(x + 5, y - 18, 3, 12);
+    ctx.fillStyle = `rgba(224,122,104,${flick})`;
+    ctx.fillRect(x - 1, y + 1, 5, 3);
+    return;
+  }
+  if (era >= 2) {
+    roof(ctx, x, y, 22, 13, "#8d8478", "#5c4a34");
+    ctx.fillStyle = "#6e675f";
+    ctx.beginPath();
+    ctx.arc(x - 6, y + 2, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(x + 4, y - 14, 3, 12);
+    ctx.fillStyle = `rgba(224,122,104,${flick})`;
+    ctx.fillRect(x + 1, y + 1, 4, 3);
+    return;
+  }
+  if (era >= 1) {
+    roof(ctx, x, y, 22, 13, "#4a3a28", "#8d5a32");
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(x - 9, y + 1, 6, 4);
+    ctx.fillStyle = `rgba(224,122,104,${flick})`;
+    ctx.fillRect(x + 3, y + 1, 5, 3);
+    ctx.fillStyle = "#5c4632";
+    ctx.fillRect(x + 5, y - 11, 2, 8);
+    return;
+  }
   roof(ctx, x, y, 20, 12, "#5c4a34", "#b8894e");
   ctx.fillStyle = "#3d3224";
   ctx.fillRect(x - 8, y + 1, 5, 4);
-  const flick = 0.4 + Math.sin(time * 8 + x) * 0.28;
   ctx.fillStyle = `rgba(224,122,104,${flick})`;
   ctx.fillRect(x + 3, y + 1, 4, 3);
   ctx.fillStyle = "#5c4632";
   ctx.fillRect(x + 4, y - 9, 2, 6);
 }
 
-function drawHall(ctx, x, y, time) {
+function drawHall(ctx, x, y, time, era = 0) {
+  const wave = Math.sin(time * 3 + y) * 1.4;
+  if (era >= 3) {
+    ctx.fillStyle = "#cfc6b8";
+    ctx.fillRect(x - 14, y - 6, 28, 12);
+    ctx.fillStyle = "#8d8478";
+    for (let k = -12; k <= 10; k += 4) ctx.fillRect(x + k, y - 10, 2.4, 4);
+    ctx.fillStyle = "#a14a3c";
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y - 10);
+    ctx.lineTo(x + 18, y - 7 + wave);
+    ctx.lineTo(x + 10, y - 4);
+    ctx.fill();
+    ctx.fillStyle = "#2a140f";
+    ctx.fillRect(x - 3, y + 1, 6, 5);
+    return;
+  }
+  if (era >= 2) {
+    roof(ctx, x, y, 26, 13, "#d9d3c4", "#6e675f");
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(x - 3, y + 1, 6, 5);
+    ctx.fillStyle = "#8d4038";
+    ctx.fillRect(x - 10, y - 2, 4, 6);
+    ctx.fillRect(x + 6, y - 2, 4, 6);
+    return;
+  }
+  if (era >= 1) {
+    roof(ctx, x, y, 26, 13, "#6a3030", "#5c241c");
+    ctx.fillStyle = "#2a140f";
+    ctx.fillRect(x - 3, y + 1, 6, 5);
+    ctx.fillStyle = "#a14a3c";
+    ctx.beginPath();
+    ctx.moveTo(x - 11, y - 8);
+    ctx.lineTo(x - 2, y - 5 + wave);
+    ctx.lineTo(x - 11, y - 2);
+    ctx.fill();
+    return;
+  }
   roof(ctx, x, y, 24, 11, "#6a3030", "#8d4038");
   ctx.fillStyle = "#2a140f";
   ctx.fillRect(x - 3, y + 1, 5, 4);
-  const wave = Math.sin(time * 3 + y) * 1.4;
   ctx.fillStyle = "#a14a3c";
   ctx.beginPath();
   ctx.moveTo(x - 9, y - 6);
@@ -757,13 +882,66 @@ function drawHall(ctx, x, y, time) {
   ctx.fill();
 }
 
-function drawDen(ctx, x, y) {
+function drawDen(ctx, x, y, era = 0) {
+  if (era >= 3) {
+    roof(ctx, x, y, 16, 12, "#3a3344", "#c6a15a");
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(x - 1, y - 8, 2, 6);
+    ctx.fillStyle = "#9a86c8";
+    ctx.fillRect(x - 4, y + 1, 8, 2);
+    return;
+  }
+  if (era >= 2) {
+    roof(ctx, x, y, 15, 11, "#4a4458", "#2a2438");
+    ctx.fillStyle = "#e2c078";
+    ctx.beginPath();
+    ctx.arc(x + 4, y - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#9a86c8";
+    ctx.fillRect(x - 3, y + 1, 5, 2);
+    return;
+  }
+  if (era >= 1) {
+    roof(ctx, x, y, 16, 11, "#241f28", "#1a1420");
+    ctx.fillStyle = "#9a86c8";
+    ctx.fillRect(x - 2, y + 1, 6, 2);
+    return;
+  }
   roof(ctx, x, y, 13, 9, "#241f28", "#3a3344");
   ctx.fillStyle = "#9a86c8";
   ctx.fillRect(x - 1, y + 1, 4, 2);
 }
 
-function drawChapel(ctx, x, y) {
+function drawChapel(ctx, x, y, era = 0) {
+  if (era >= 3) {
+    ctx.fillStyle = "#e7dfd0";
+    ctx.fillRect(x - 8, y - 2, 16, 10);
+    ctx.beginPath();
+    ctx.arc(x, y - 2, 8, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = "#c6a15a";
+    ctx.beginPath();
+    ctx.arc(x, y - 6, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(x - 1, y - 18, 2, 8);
+    return;
+  }
+  if (era >= 2) {
+    roof(ctx, x, y, 16, 16, "#d9d3c4", "#8d8478");
+    ctx.fillStyle = "#f4efe2";
+    ctx.fillRect(x - 1.5, y - 20, 3, 12);
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(x - 4, y - 16, 8, 1.6);
+    return;
+  }
+  if (era >= 1) {
+    roof(ctx, x, y, 16, 14, "#efe6d6", "#f4efe2");
+    ctx.fillStyle = "#5c4632";
+    ctx.fillRect(x - 1.2, y - 16, 2.4, 10);
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(x - 4, y - 14, 8, 1.6);
+    return;
+  }
   roof(ctx, x, y, 14, 12, "#d9d3c4", "#f4efe2");
   ctx.fillStyle = "#f4efe2";
   ctx.fillRect(x - 1.5, y - 14, 3, 9);
@@ -772,38 +950,58 @@ function drawChapel(ctx, x, y) {
   ctx.fillRect(x - 1, y - 15, 2, 6);
 }
 
-function drawKeep(ctx, x, y) {
+function drawKeep(ctx, x, y, era = 0) {
+  const wall = era >= 3 ? "#f3eee4" : era >= 2 ? "#d9d3c4" : era >= 1 ? "#8d734c" : "#cfc4b2";
+  const wide = era >= 3 ? 24 : era >= 1 ? 20 : 18;
+  const tall = era >= 3 ? 16 : 14;
   ctx.fillStyle = "rgba(0,0,0,0.25)";
-  ctx.fillRect(x - 7, y - 4, 18, 16);
-  ctx.fillStyle = "#cfc4b2";
-  ctx.fillRect(x - 9, y - 8, 18, 14);
-  ctx.fillStyle = "#8d8478";
-  for (let k = -8; k <= 6; k += 4) ctx.fillRect(x + k, y - 11, 2, 3);
+  ctx.fillRect(x - wide / 2 + 2, y - 4, wide + 2, tall + 2);
+  ctx.fillStyle = wall;
+  ctx.fillRect(x - wide / 2, y - 8, wide, tall);
+  ctx.fillStyle = era >= 3 ? "#e2c078" : "#8d8478";
+  const step = era >= 3 ? 3 : 4;
+  for (let k = -wide / 2 + 1; k <= wide / 2 - 3; k += step) ctx.fillRect(x + k, y - 12, 2, 4);
+  if (era >= 2) {
+    ctx.fillStyle = wall;
+    ctx.fillRect(x - wide / 2 - 3, y - 14, 6, 12);
+    ctx.fillRect(x + wide / 2 - 3, y - 14, 6, 12);
+    ctx.fillStyle = era >= 3 ? "#e2c078" : "#8d8478";
+    ctx.fillRect(x - wide / 2 - 2, y - 17, 4, 3);
+    ctx.fillRect(x + wide / 2 - 2, y - 17, 4, 3);
+  }
   ctx.fillStyle = "#3d3224";
   ctx.fillRect(x - 2, y + 1, 5, 5);
-  ctx.fillStyle = "#e2c078";
-  ctx.fillRect(x + 5, y - 16, 1.4, 6);
-  ctx.beginPath();
-  ctx.moveTo(x + 6.4, y - 16);
-  ctx.lineTo(x + 11, y - 14);
-  ctx.lineTo(x + 6.4, y - 12);
-  ctx.fill();
+  if (era < 2) {
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(x + 5, y - 16, 1.4, 6);
+    ctx.beginPath();
+    ctx.moveTo(x + 6.4, y - 16);
+    ctx.lineTo(x + 11, y - 14);
+    ctx.lineTo(x + 6.4, y - 12);
+    ctx.fill();
+  }
 }
 
-function drawSpire(ctx, x, y) {
-  const glow = ctx.createRadialGradient(x, y, 1, x, y, 14);
-  glow.addColorStop(0, "rgba(226,192,120,0.9)");
+function drawSpire(ctx, x, y, era = 0) {
+  const reach = era >= 3 ? 22 : era >= 2 ? 18 : 14;
+  const glow = ctx.createRadialGradient(x, y, 1, x, y, reach);
+  glow.addColorStop(0, era >= 3 ? "rgba(226,192,120,0.95)" : "rgba(226,192,120,0.9)");
   glow.addColorStop(1, "rgba(226,192,120,0)");
   ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(x, y, 14, 0, Math.PI * 2);
+  ctx.arc(x, y, reach, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#8d8478";
-  ctx.fillRect(x - 2, y - 2, 4, 10);
-  ctx.fillStyle = "#f3e6c8";
+  ctx.fillStyle = era >= 2 ? "#d9d3c4" : "#8d8478";
+  ctx.fillRect(x - (era >= 1 ? 2.4 : 2), y - (era >= 2 ? 8 : 2), era >= 1 ? 4.8 : 4, era >= 2 ? 16 : 10);
+  ctx.fillStyle = era >= 3 ? "#e2c078" : "#f3e6c8";
   ctx.beginPath();
-  ctx.arc(x, y - 4, 3, 0, Math.PI * 2);
+  ctx.arc(x, y - (era >= 2 ? 10 : 4), era >= 3 ? 4.2 : 3, 0, Math.PI * 2);
   ctx.fill();
+  if (era >= 3) {
+    ctx.beginPath();
+    ctx.arc(x, y - 16, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawCivic(ctx, p, g, time) {
@@ -1060,26 +1258,33 @@ function drawHoldings(ctx, p, g, time, known, hour) {
       if ((hash(p.id + dx) % 3) === 0) ctx.drawImage(sheet.bloom, g.x + dx + 6, g.y + dy - 4, 12, 10);
     }
   }
+  const era = known ? eraOf(p) : 0;
   const fields = known ? Math.min(7, Math.max(2, Math.round((p.buildings.field || 0) / 7))) : 2;
   const plotX = g.x - g.r * 0.58;
   const plotY = g.y - g.r * 0.44;
   const plotW = g.r * 0.96;
   for (let i = 0; i < fields; i++) {
     const y = plotY + 2 + i * 7;
-    ctx.fillStyle = i % 2 ? "#c6a15a" : "#8ea84a";
+    ctx.fillStyle = era >= 2 ? (i % 2 ? "#d2b15a" : "#9bb85a") : (i % 2 ? "#c6a15a" : "#8ea84a");
     ctx.fillRect(plotX + 3, y, plotW - 6, 4);
+    if (era >= 3 && i % 2 === 0) {
+      ctx.fillStyle = "#2f6a34";
+      ctx.beginPath();
+      ctx.arc(plotX + 12 + ((i * 11) % Math.max(8, plotW - 24)), y + 2, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.strokeStyle = "rgba(92, 70, 50, 0.85)";
   ctx.lineWidth = 1.2;
   ctx.strokeRect(plotX, plotY, plotW, fields * 7 + 4);
   const specs = {
-    hearth: (x, y) => drawCottage(ctx, x, y),
-    workshop: (x, y) => drawShed(ctx, x, y, time),
-    barracks: (x, y) => drawHall(ctx, x, y, time),
-    den: (x, y) => drawDen(ctx, x, y),
-    chapel: (x, y) => drawChapel(ctx, x, y),
-    keep: (x, y) => drawKeep(ctx, x, y),
-    spire: (x, y) => drawSpire(ctx, x, y),
+    hearth: (x, y) => drawCottage(ctx, x, y, era),
+    workshop: (x, y) => drawShed(ctx, x, y, time, era),
+    barracks: (x, y) => drawHall(ctx, x, y, time, era),
+    den: (x, y) => drawDen(ctx, x, y, era),
+    chapel: (x, y) => drawChapel(ctx, x, y, era),
+    keep: (x, y) => drawKeep(ctx, x, y, era),
+    spire: (x, y) => drawSpire(ctx, x, y, era),
   };
   if (known) {
     const spots = [];
@@ -1155,7 +1360,7 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.restore();
-  if (known && p.studies && p.studies.palisade) drawPalisade(ctx, g);
+  if (known && p.studies && p.studies.palisade) drawPalisade(ctx, g, eraOf(p));
   const banner = { marcher: "#a14a3c", warden: "#7d9a72", veil: "#9a86c8", cutpurse: "#c6a15a", hearth: "#f3e6c8" }[p.faction] || "#e2c078";
   ctx.fillStyle = "#5c4632";
   ctx.fillRect(g.x - 1, g.y - g.r * 0.55, 2, 16);
@@ -2006,7 +2211,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
     const sx = viewW / 2 + (g.x - cam.x) * cam.z;
     const sy = viewH / 2 + (g.y - g.r - 12 - cam.y) * cam.z;
     if (sx < -40 || sy < -20 || sx > viewW + 40 || sy > viewH + 20) continue;
-    const label = p.name;
+    const label = !p.name || p.name === "Unscouted" ? p.name : `${p.name} · ${ageName(p)}`;
     const width = ctx.measureText(label).width + 16;
     ctx.fillStyle = "rgba(16, 12, 8, 0.78)";
     ctx.beginPath();
