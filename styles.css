@@ -18,6 +18,11 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { margin: 0; min-height: 100vh; background: #141910; }
+body:not(.playing) {
+  background:
+    radial-gradient(900px 420px at 50% -10%, rgba(226, 192, 120, 0.14), transparent 62%),
+    #141910;
+}
 body.playing { overflow: hidden; height: 100%; }
 .play { position: fixed; inset: 0; }
 #realm { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; background: #141910; }
@@ -98,24 +103,84 @@ button { cursor: pointer; }
 img { max-width: 100%; display: block; }
 
 .gate {
-  max-width: 920px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 28px 18px 64px;
+  padding: 18px 18px 72px;
 }
-.gate img, .banner {
+.gate-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.gate-wallet { margin-top: 0; }
+.hero {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 22px;
+  align-items: center;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(226, 192, 120, 0.35);
+  background:
+    radial-gradient(600px 240px at 20% 0%, rgba(226, 192, 120, 0.16), transparent 70%),
+    rgba(16, 13, 10, 0.72);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+.hero-art {
   width: 100%;
-  height: 280px;
+  height: min(460px, 62vh);
   object-fit: cover;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(226, 192, 120, 0.28);
+}
+.hero-copy { padding: 8px 8px 8px 4px; }
+.eyebrow {
+  margin: 12px 0 0;
+  color: var(--gold);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 12px;
 }
 .gate h1, .brand {
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-.gate h1 { font-size: 42px; margin: 18px 0 8px; color: var(--gold); }
-.lede { color: var(--muted); max-width: 62ch; line-height: 1.45; }
+.gate h1 { font-size: clamp(40px, 6vw, 64px); margin: 6px 0 8px; color: var(--gold); }
+.lede { color: var(--paper); max-width: 46ch; line-height: 1.5; }
+.pillars {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.pillars li {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(226, 192, 120, 0.2);
+}
+.pillars b { display: block; color: var(--gold); }
+.pillars span { color: var(--muted); font-size: 14px; }
+.wallet-line { margin: 0 0 8px; color: var(--paper); }
+.found { margin-top: 18px; }
+.found-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.2fr;
+  gap: 10px;
+}
+.gate img.coin-hero, .coin-hero {
+  width: 96px;
+  height: 96px;
+  margin: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 0 6px rgba(226, 192, 120, 0.15);
+}
 .card, .panel, .side, header.app {
   background: rgba(26, 22, 18, 0.88);
   border: 1px solid var(--line);
@@ -227,5 +292,7 @@ canvas.sky { width: 100%; height: 90px; background: #120e0b; border-radius: 6px;
 @media (max-width: 860px) {
   header.app { grid-template-columns: 1fr 1fr; }
   .layout { grid-template-columns: 1fr; }
-  .gate img, .banner { height: 180px; }
+  .hero, .found-grid { grid-template-columns: 1fr; }
+  .hero-art { height: 220px; }
+  .gate-bar { align-items: flex-start; }
 }

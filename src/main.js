@@ -152,23 +152,52 @@ function order(action, sound) {
   act(action, sound);
 }
 
+function shortWallet() {
+  if (!wallet) return "";
+  return `${wallet.slice(0, 4)}…${wallet.slice(-4)}`;
+}
+
 function gate() {
   const saved = localStorage.getItem(SESSION);
   const options = Object.values(FACTIONS).map((f) => `<option value="${f.id}">${esc(f.name)} — ${esc(f.blurb)}</option>`).join("");
+  const linked = wallet
+    ? `Phantom ${esc(shortWallet())}${chainBalance ? ` · ${esc(chainBalance)}` : ""}`
+    : "Connect Phantom. This page never asks for a seed phrase.";
   return `<main class="gate">
-    <img src="/public/art/banner.jpg" alt="A walled riverside province at dusk">
-    <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
-    <h1>Groktopia</h1>
-    <p class="lede">An open realm, seen from above. You earn <b>$UTOPIA</b> by playing: settle acres, complete studies, march inside the fair band, and keep an hour active. The age runs from Camp to Crown. After two hours, placement pays the purse. Matchmaking seats up to eight humans. The Grok agents hold the wilds, and a camp stays dark until you scout it.</p>
-    <form class="card" id="found">
-      <label>Ruler <input name="ruler" required maxlength="32" value="Ada"></label>
-      <label>Province <input name="province" required maxlength="32" value="First Acre"></label>
-      <label>Faction <select name="faction">${options}</select></label>
+    <header class="gate-bar">
+      <div class="brand-row"><img class="coin-mark" src="/public/art/coin.jpg" alt=""><span class="brand">Groktopia</span></div>
+      <div class="row gate-wallet">
+        <button class="btn primary" id="phantom" type="button">${wallet ? esc(shortWallet()) : "Connect Phantom"}</button>
+        ${wallet ? `<button class="btn" id="phantom-off" type="button">Disconnect</button>` : ""}
+      </div>
+    </header>
+    <section class="hero">
+      <img class="hero-art" src="/public/art/banner.jpg" alt="A walled riverside province at dusk">
+      <div class="hero-copy">
+        <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
+        <p class="eyebrow">Play to earn $UTOPIA</p>
+        <h1>Groktopia</h1>
+        <p class="lede">A two-hour realm, seen from above. Settle acres, climb from Camp to Crown, and fill a purse. Eight humans. The wilds belong to the Grok agents until you scout them.</p>
+        <ul class="pillars">
+          <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
+          <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
+          <li><b>Match</b><span>Up to eight players, then the bell</span></li>
+        </ul>
+      </div>
+    </section>
+    <form class="card found" id="found">
+      <p class="wallet-line">${linked}</p>
+      <div class="found-grid">
+        <label>Ruler <input name="ruler" required maxlength="32" value="Ada" autocomplete="nickname"></label>
+        <label>Province <input name="province" required maxlength="32" value="First Acre"></label>
+        <label>Faction <select name="faction">${options}</select></label>
+      </div>
       <div class="row">
         <button class="btn primary" type="submit">Find a realm</button>
         ${saved ? `<button class="btn" type="button" id="resume">Rejoin</button>` : ""}
       </div>
     </form>
+    ${toast ? `<div class="toast">${esc(toast)}</div>` : ""}
   </main>`;
 }
 
@@ -182,6 +211,7 @@ function shell() {
       <div class="hud-chip"><b id="clock">2:00:00</b><span id="clock-note">age clock</span></div>
       <div class="hud-chip" id="hud-purse"></div>
       <button class="btn" id="home" type="button">My acres</button>
+      <button class="btn" id="hud-phantom" type="button">${wallet ? esc(shortWallet()) : "Phantom"}</button>
       <button class="btn" id="fit" type="button">Whole realm</button>
       <button class="btn" id="sound" type="button">${soundOn ? "Sound on" : "Sound off"}</button>
     </header>
@@ -339,6 +369,8 @@ function paint() {
   const age = document.querySelector("#hud-age");
   if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/8 studies</span>`;
   if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)} $UTOPIA</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
+  const hudWallet = document.querySelector("#hud-phantom");
+  if (hudWallet) hudWallet.textContent = wallet ? shortWallet() : "Phantom";
   if (log) {
     const board = standings.slice(0, 6).map((row, index) => `${index + 1}. ${row.name} ${formatUtopia(row.utopia || 0)}`).join(" · ");
     log.innerHTML = `<li><b>Board</b> ${esc(board)}</li>` + world.log.slice(0, 7).map((row) => `<li><b>${row.hour}</b> ${esc(row.text)}</li>`).join("");
@@ -725,8 +757,16 @@ app.addEventListener("click", async (event) => {
     order({ type: "thief", op: node.dataset.thief, target: selectedId }, "spell");
     return;
   }
-  if (node.id === "phantom") {
+  if (node.id === "phantom" || node.id === "hud-phantom") {
     await connectPhantom();
+    return;
+  }
+  if (node.id === "phantom-off") {
+    try { await window.solana?.disconnect(); } catch { /* already closed */ }
+    wallet = "";
+    chainBalance = null;
+    note("Phantom disconnected.");
+    render();
     return;
   }
   if (node.id === "receipt") {
@@ -888,9 +928,11 @@ async function connectPhantom() {
     wallet = res.publicKey.toString();
     await refreshChain();
     play("coin");
-    note(wallet.slice(0, 4) + "…" + wallet.slice(-4));
+    note(shortWallet());
+    render();
   } catch (error) {
     note(error?.message || "Phantom closed.");
+    render();
   }
 }
 
@@ -914,4 +956,16 @@ async function loadMint() {
   }
 }
 
-loadMint().then(render);
+loadMint().then(async () => {
+  render();
+  const provider = window.solana;
+  if (!provider?.isPhantom) return;
+  try {
+    const res = await provider.connect({ onlyIfTrusted: true });
+    wallet = res.publicKey.toString();
+    await refreshChain();
+    render();
+  } catch {
+    /* the player has not approved Phantom yet */
+  }
+});
