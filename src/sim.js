@@ -69,6 +69,7 @@ export const EARN = {
   armory: 63,
   dues: 64,
   lamp: 65,
+  chain: 66,
 };
 
 export const FACTIONS = {
@@ -924,6 +925,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "quay") result = doQuay(world, actor, action.colony);
   else if (action.type === "dues") result = doDues(world, actor, action.colony);
   else if (action.type === "lamp") result = doLamp(world, actor, action.colony);
+  else if (action.type === "chain") result = doChain(world, actor, action.colony);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2881,6 +2883,28 @@ function doLamp(world, actor, colonyId) {
   return { ok: true, message: `Lamp raised at ${colony.name} through hour ${colony.lampUntil - 1}.${purse}` };
 }
 
+function doChain(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A harbor chain needs a port.");
+  const hour = world.hour || 0;
+  if ((colony.chainUntil || 0) > hour) return fail(`${colony.name} already holds a chain.`);
+  if (actor.gold < 240) return fail("A harbor chain wants 240 gold.");
+  actor.gold -= 240;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.chainUntil = hour + 7;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.chain;
+    notePurse(actor, "chain", EARN.chain);
+    purse = ` Purse +${formatUtopia(EARN.chain)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} stretches a chain at ${colony.name} through hour ${colony.chainUntil - 1}. An enemy hull within one hex does not sail and pays 16 gold.${purse}`);
+  return { ok: true, message: `Chain stretched at ${colony.name} through hour ${colony.chainUntil - 1}.${purse}` };
+}
+
 function doMole(world, actor, colonyId) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   const colony = (actor.colonies || []).find((row) => row.id === colonyId);
@@ -3160,6 +3184,17 @@ function landRaid(world, realm, ship) {
     purse = ` Purse +${formatUtopia(EARN.raid)} $UTOPIA.`;
   }
   log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${purse}`);
+}
+
+function chainHold(world, realm, ship, hour) {
+  for (const other of world.provinces || []) {
+    if (!other || other.id === realm.id) continue;
+    for (const colony of other.colonies || []) {
+      if (!colony.port || (colony.chainUntil || 0) <= (hour || 0)) continue;
+      if (hexDist(ship.q, ship.r, colony.q, colony.r) <= 1) return { realm: other, colony };
+    }
+  }
+  return null;
 }
 
 function lampNear(world, realm, ship, hour) {
@@ -3512,6 +3547,17 @@ function sailHour(world) {
         ship.destR = ship.r;
         const caught = NAVY[ship.kind];
         log(world, `${holder.name}'s nets hold ${realm.name}'s ${caught ? caught.name : "hull"}${skim ? ` and take ${skim} gold` : ""}.`);
+        continue;
+      }
+      const chained = chainHold(world, realm, ship, world.hour || 0);
+      if (chained) {
+        const skim = Math.min(realm.gold || 0, 16);
+        realm.gold -= skim;
+        chained.realm.gold += skim;
+        ship.destQ = ship.q;
+        ship.destR = ship.r;
+        const caught = NAVY[ship.kind];
+        log(world, `${chained.realm.name}'s chain at ${chained.colony.name} holds ${realm.name}'s ${caught ? caught.name : "hull"}${skim ? ` and takes ${skim} gold` : ""}.`);
         continue;
       }
       if (ship.destQ == null) continue;
@@ -4376,6 +4422,8 @@ export function chooseAction(world, agent) {
     if (duesPort && agent.orders >= 1 && rng.next() < 0.12) return { type: "dues", colony: duesPort.id };
     const lampPort = (agent.colonies || []).find((colony) => colony.port && (colony.lampUntil || 0) <= (world.hour || 0) && agent.gold >= 500 && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hullTeeth(ship.kind) >= WAR_TEETH && hexDist(ship.q, ship.r, colony.q, colony.r) <= 8)));
     if (lampPort && agent.orders >= 1 && rng.next() < 0.12) return { type: "lamp", colony: lampPort.id };
+    const chainPort = (agent.colonies || []).find((colony) => colony.port && (colony.chainUntil || 0) <= (world.hour || 0) && agent.gold >= 520 && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 2)));
+    if (chainPort && agent.orders >= 1 && rng.next() < 0.14) return { type: "chain", colony: chainPort.id };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };

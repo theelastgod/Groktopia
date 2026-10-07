@@ -3636,6 +3636,113 @@ test("a harbor lamp slows an enemy hull and not your own", () => {
   assert.ok(w.log.some((row) => row.text.includes("raises a lamp") && row.text.includes("Salt Step")));
 });
 
+test("a harbor chain holds an enemy hull and lets your own sail", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.chain, 66);
+  const hexDist = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  let cursor = { ...spot };
+  const path = [{ ...cursor }];
+  for (let n = 0; n < 4; n++) {
+    let best = null;
+    let bestD = hexDist(cursor.q, cursor.r, spot.q, spot.r);
+    for (const [dq, dr] of dirs) {
+      const nq = cursor.q + dq;
+      const nr = cursor.r + dr;
+      const kind = terrainKind(nq, nr);
+      if (kind !== "sea" && kind !== "coast" && kind !== "river") continue;
+      const dist = hexDist(nq, nr, spot.q, spot.r);
+      if (dist > bestD) {
+        bestD = dist;
+        best = { q: nq, r: nr };
+      }
+    }
+    assert.ok(best);
+    cursor = best;
+    path.push({ ...cursor });
+  }
+  const mid = path[2];
+  const far = path[4];
+  assert.equal(hexDist(mid.q, mid.r, spot.q, spot.r), 2);
+  assert.equal(hexDist(far.q, far.r, spot.q, spot.r), 4);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.nets = [];
+    seat.buoys = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const w = newWorld({ seed: 9 });
+  w.bands = [];
+  const you = hush(w, "you");
+  const foe = hush(w, "brine");
+  w.provinces = [you, foe];
+  foe.name = "Salt Ledger";
+  you.colonies = [{ id: "home", name: "Salt Step", q: spot.q, r: spot.r, port: false }];
+  assert.equal(applyAction(w, "you", { type: "chain", colony: "home" }).ok, false);
+  you.colonies[0].port = true;
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "chain", colony: "home" }).ok, false);
+  you.gold = 1000;
+  foe.ships = [
+    { id: "held", kind: "galley", q: spot.q, r: spot.r, destQ: far.q, destR: far.r },
+    { id: "outer", kind: "galley", q: mid.q, r: mid.r, destQ: far.q, destR: far.r },
+  ];
+  you.ships = [{ id: "own", kind: "galley", q: spot.q, r: spot.r, destQ: far.q, destR: far.r }];
+  const raised = applyAction(w, "you", { type: "chain", colony: "home" });
+  assert.equal(raised.ok, true);
+  assert.equal(you.gold, 760);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.colonies[0].chainUntil, w.hour + 7);
+  assert.equal(you.ledger.chain, EARN.chain);
+  assert.equal(applyAction(w, "you", { type: "chain", colony: "home" }).ok, false);
+  advanceHour(w);
+  const held = foe.ships.find((row) => row.id === "held");
+  const outer = foe.ships.find((row) => row.id === "outer");
+  assert.equal(hexDist(held.q, held.r, spot.q, spot.r), 0);
+  assert.ok(hexDist(outer.q, outer.r, spot.q, spot.r) > 2);
+  assert.equal(hexDist(you.ships[0].q, you.ships[0].r, spot.q, spot.r), 3);
+  assert.equal(you.gold, 780);
+  assert.equal(foe.gold, 992);
+  assert.equal(you.utopia, EARN.chain + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("stretches a chain") && row.text.includes("Salt Step")));
+  assert.ok(w.log.some((row) => row.text.includes("chain") && row.text.includes("Salt Ledger") && row.text.includes("holds")));
+  held.q = spot.q;
+  held.r = spot.r;
+  held.destQ = far.q;
+  held.destR = far.r;
+  you.colonies[0].chainUntil = w.hour;
+  advanceHour(w);
+  assert.equal(hexDist(held.q, held.r, spot.q, spot.r), 3);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

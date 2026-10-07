@@ -2879,6 +2879,26 @@ function drawLee(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawChain(ctx, x, y, time) {
+  const sag = Math.sin(time * 2.2) * 1.6;
+  ctx.save();
+  ctx.translate(x - 26, y + 18);
+  ctx.fillStyle = "#2a2620";
+  ctx.fillRect(-2, -8, 4, 14);
+  ctx.fillRect(28, -8, 4, 14);
+  ctx.strokeStyle = "#6a5a42";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -4);
+  ctx.quadraticCurveTo(15, 8 + sag, 30, -4);
+  ctx.stroke();
+  ctx.fillStyle = "#cbb892";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("CHAIN", 15, 20);
+  ctx.restore();
+}
+
 function drawLamp(ctx, x, y, time) {
   ctx.save();
   ctx.translate(x, y - 16);
@@ -3165,6 +3185,7 @@ function drawColonies(ctx, world, time) {
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.lampUntil || 0) > (world.hour || 0)) drawLamp(ctx, pos.x, pos.y, time);
+      if (colony.port && (colony.chainUntil || 0) > (world.hour || 0)) drawChain(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.leeUntil || 0) > (world.hour || 0)) drawLee(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.slipUntil || 0) > (world.hour || 0)) drawSlip(ctx, pos.x, pos.y, time);
