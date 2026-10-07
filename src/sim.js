@@ -64,6 +64,7 @@ export const EARN = {
   cargo: 58,
   cut: 59,
   tile: 60,
+  raid: 61,
 };
 
 export const FACTIONS = {
@@ -902,6 +903,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "buoy") result = doBuoy(world, actor, action.ship);
   else if (action.type === "cargo") result = doCargo(world, actor, action);
   else if (action.type === "cut") result = doCut(world, actor, action);
+  else if (action.type === "raid") result = doRaid(world, actor, action);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2407,6 +2409,7 @@ function doDirect(world, actor, action) {
     ship.tow = null;
     ship.cargo = null;
     ship.cut = null;
+    ship.raid = null;
     ship.destQ = q;
     ship.destR = r;
   } else {
@@ -2478,6 +2481,7 @@ function doGrapple(world, actor, action) {
   own.tow = null;
   own.cargo = null;
   own.cut = null;
+  own.raid = null;
   own.prey = { owner: prey.realm.id, id: prey.ship.id };
   own.destQ = prey.ship.q;
   own.destR = prey.ship.r;
@@ -2513,6 +2517,7 @@ function doBlockade(world, actor, action) {
   own.tow = null;
   own.cargo = null;
   own.cut = null;
+  own.raid = null;
   own.block = { owner: mark.realm.id, id: mark.colony.id };
   own.destQ = berth.q;
   own.destR = berth.r;
@@ -2580,6 +2585,7 @@ function doSalvage(world, actor, action) {
   own.tow = null;
   own.cargo = null;
   own.cut = null;
+  own.raid = null;
   own.salvage = { q, r };
   own.destQ = q;
   own.destR = r;
@@ -2626,6 +2632,7 @@ function doTow(world, actor, action) {
   own.escort = null;
   own.cargo = null;
   own.cut = null;
+  own.raid = null;
   own.tow = { q, r };
   own.destQ = q;
   own.destR = r;
@@ -2657,6 +2664,7 @@ function doConvoy(world, actor, action) {
   own.tow = null;
   own.cargo = null;
   own.cut = null;
+  own.raid = null;
   own.escort = trader.id;
   own.destQ = trader.q;
   own.destR = trader.r;
@@ -2880,6 +2888,7 @@ function doCargo(world, actor, action) {
   own.escort = null;
   own.tow = null;
   own.cut = null;
+  own.raid = null;
   own.cargo = colony.id;
   own.destQ = berth.q;
   own.destR = berth.r;
@@ -2922,6 +2931,7 @@ function doCut(world, actor, action) {
   own.escort = null;
   own.tow = null;
   own.cargo = null;
+  own.raid = null;
   own.cut = { owner: prey.realm.id, id: prey.ship.id };
   own.destQ = prey.ship.q;
   own.destR = prey.ship.r;
@@ -2931,6 +2941,89 @@ function doCut(world, actor, action) {
   const theirs = NAVY[prey.ship.kind];
   log(world, `${actor.name} sends the ${spec ? spec.name : "hull"} to cut out ${prey.realm.name}'s ${theirs ? theirs.name : "hull"}.`);
   return { ok: true, message: `${spec ? spec.name : "Hull"} is cutting out the ${theirs ? theirs.name : "hull"}.` };
+}
+
+function doRaid(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === action.ship);
+  if (!own) return fail("That hull is not yours.");
+  if (hullTeeth(own.kind) < WAR_TEETH) return fail("A skiff, fisher, or cog will not land a company. Lay a galley, dromon, or hulk.");
+  if (!sailKind(terrainKind(own.q, own.r))) return fail("The company boards from the water.");
+  const mark = colonyOf(world, action.owner, action.colony);
+  if (!mark || !mark.colony.port) return fail("Name a port.");
+  const berth = sailKind(terrainKind(mark.colony.q, mark.colony.r)) ? { q: mark.colony.q, r: mark.colony.r } : waterBeside(mark.colony.q, mark.colony.r);
+  if (!berth) return fail("That port has no water.");
+  const home = mark.realm.id === actor.id;
+  if ((own.marines || 0) < 6) {
+    if (home) return fail("The company is already ashore.");
+    const quay = (actor.colonies || []).find((row) => row.port && hexDist(own.q, own.r, row.q, row.r) <= 2);
+    if (!quay) return fail("Board the company at one of your ports.");
+    if ((actor.soldiers || 0) < 6) return fail("Need 6 soldiers to land a company.");
+    actor.soldiers -= 6;
+    own.marines = 6;
+  }
+  own.prey = null;
+  own.block = null;
+  own.salvage = null;
+  own.escort = null;
+  own.tow = null;
+  own.cargo = null;
+  own.cut = null;
+  own.raid = { owner: mark.realm.id, id: mark.colony.id };
+  own.destQ = berth.q;
+  own.destR = berth.r;
+  actor.orders -= 1;
+  actor.acted = true;
+  const spec = NAVY[own.kind];
+  if (home) {
+    log(world, `${actor.name} sends the ${spec ? spec.name : "hull"} home so the company can step ashore at ${mark.colony.name}.`);
+    return { ok: true, message: `The company is bound for ${mark.colony.name}.` };
+  }
+  log(world, `${actor.name} sends the ${spec ? spec.name : "hull"} to raid ${mark.realm.name}'s ${mark.colony.name}.`);
+  return { ok: true, message: `${spec ? spec.name : "Hull"} is carrying a company to ${mark.colony.name}.` };
+}
+
+function landRaid(world, realm, ship) {
+  if (!ship.raid || (ship.marines || 0) < 4) return;
+  const mark = colonyOf(world, ship.raid.owner, ship.raid.id);
+  if (!mark || !mark.colony.port) {
+    ship.raid = null;
+    return;
+  }
+  if (hexDist(ship.q, ship.r, mark.colony.q, mark.colony.r) > 1) return;
+  const company = ship.marines || 0;
+  if (mark.realm.id === realm.id) {
+    realm.soldiers += company;
+    ship.marines = 0;
+    ship.raid = null;
+    log(world, `${realm.name} lands the company at ${mark.colony.name}.`);
+    return;
+  }
+  const hour = world.hour || 0;
+  if ((mark.colony.moleUntil || 0) > hour) {
+    const lost = Math.min(company, 2);
+    ship.marines = company - lost;
+    ship.raid = null;
+    shoveOff(ship, mark.colony.q, mark.colony.r, 1);
+    log(world, `${mark.colony.name}'s mole breaks ${realm.name}'s landing. ${lost} soldiers are lost.`);
+    return;
+  }
+  const gold = Math.min(mark.realm.gold || 0, 36);
+  const grain = Math.min(mark.realm.grain || 0, 20);
+  mark.realm.gold -= gold;
+  mark.realm.grain -= grain;
+  realm.gold += gold;
+  realm.grain += grain;
+  realm.soldiers += company;
+  ship.marines = 0;
+  ship.raid = null;
+  let purse = "";
+  if (realm.kind === "human" && (gold > 0 || grain > 0)) {
+    realm.utopia += EARN.raid;
+    notePurse(realm, "raid", EARN.raid);
+    purse = ` Purse +${formatUtopia(EARN.raid)} $UTOPIA.`;
+  }
+  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${purse}`);
 }
 
 function buoyLit(realm, ship, hour) {
@@ -2996,6 +3089,7 @@ function pressMoles(world) {
           ship.tow = null;
           ship.cargo = null;
           ship.cut = null;
+          ship.raid = null;
           const spec = NAVY[ship.kind];
           shoveOff(ship, colony.q, colony.r, onBlock ? 2 : 1);
           const skim = Math.min(other.gold || 0, 14);
@@ -3046,6 +3140,7 @@ function payPrize(world, winner, loser, sunk) {
   }
   const spec = NAVY[sunk.kind];
   log(world, `${winner.name} grapples ${loser.name}'s ${spec ? spec.name : "hull"} and takes ${take} gold. The hull goes under.${purse}`);
+  if ((sunk.marines || 0) > 0) log(world, `${sunk.marines} soldiers go under with the hull.`);
   dropWreck(world, sunk);
 }
 
@@ -3244,6 +3339,14 @@ function sailHour(world) {
           ship.destQ = trader.q;
           ship.destR = trader.r;
         }
+      } else if (ship.raid) {
+        const mark = colonyOf(world, ship.raid.owner, ship.raid.id);
+        const berth = mark && mark.colony.port ? (sailKind(terrainKind(mark.colony.q, mark.colony.r)) ? { q: mark.colony.q, r: mark.colony.r } : waterBeside(mark.colony.q, mark.colony.r)) : null;
+        if (!berth) ship.raid = null;
+        else {
+          ship.destQ = berth.q;
+          ship.destR = berth.r;
+        }
       } else if (ship.cargo) {
         const colony = (realm.colonies || []).find((row) => row.id === ship.cargo);
         const berth = colony && colony.port ? (sailKind(terrainKind(colony.q, colony.r)) ? { q: colony.q, r: colony.r } : waterBeside(colony.q, colony.r)) : null;
@@ -3275,6 +3378,7 @@ function sailHour(world) {
         left -= 1;
       }
       landCargo(world, realm, ship);
+      landRaid(world, realm, ship);
     }
   }
   resolveCuts(world);
@@ -4139,7 +4243,26 @@ export function chooseAction(world, agent) {
     if (salvor && wreck && agent.orders >= 1 && rng.next() < 0.22) {
       return { type: "salvage", ship: salvor.id, q: wreck.q, r: wreck.r };
     }
-    const hunter = (agent.ships || []).find((row) => hullTeeth(row.kind) >= WAR_TEETH && !row.prey && !row.block && !row.escort && !row.cut);
+    const hunter = (agent.ships || []).find((row) => hullTeeth(row.kind) >= WAR_TEETH && !row.prey && !row.block && !row.escort && !row.cut && !row.raid);
+    if (hunter && !hunter.raid && agent.orders >= 1 && ((hunter.marines || 0) >= 6 || (agent.soldiers || 0) >= 6) && rng.next() < 0.16) {
+      const boarded = (hunter.marines || 0) >= 6 || (agent.colonies || []).some((colony) => colony.port && hexDist(hunter.q, hunter.r, colony.q, colony.r) <= 2);
+      let port = null;
+      let portD = 14;
+      if (boarded) {
+        for (const other of world.provinces) {
+          if (other.id === agent.id) continue;
+          for (const colony of other.colonies || []) {
+            if (!colony.port) continue;
+            const dist = hexDist(hunter.q, hunter.r, colony.q, colony.r);
+            if (dist < portD) {
+              portD = dist;
+              port = { owner: other.id, id: colony.id };
+            }
+          }
+        }
+      }
+      if (port) return { type: "raid", ship: hunter.id, owner: port.owner, colony: port.id };
+    }
     if (hunter && !hunter.block && agent.orders >= 1 && rng.next() < 0.18) {
       let port = null;
       let portD = 14;

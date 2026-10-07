@@ -2711,6 +2711,25 @@ function drawHull(ctx, x, y, kind, time, hunting) {
   ctx.restore();
 }
 
+function drawCompany(ctx, x, y, time) {
+  const bob = Math.sin(time * 4) * 1.2;
+  ctx.save();
+  ctx.translate(x - 14, y - 12 + bob);
+  ctx.strokeStyle = "#cbb892";
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 4, 6);
+    ctx.lineTo(i * 4 + 2, -6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#a14a3c";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("COMPANY", 6, 16);
+  ctx.restore();
+}
+
 function drawPrize(ctx, x, y, time) {
   const wave = Math.sin(time * 3) * 2;
   ctx.save();
@@ -2983,6 +3002,27 @@ function drawColonies(ctx, world, time) {
       ctx.fillText("CUT", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
     }
     for (const ship of realm.ships || []) {
+      if (!ship.raid) continue;
+      const foe = (world.provinces || []).find((row) => row.id === ship.raid.owner);
+      const colony = foe && (foe.colonies || []).find((row) => row.id === ship.raid.id);
+      if (!colony) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(colony.q, colony.r);
+      ctx.strokeStyle = "rgba(161, 74, 60, 0.95)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([2, 4]);
+      ctx.lineDashOffset = -time * 18;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#a14a3c";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("RAID", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
+    }
+    for (const ship of realm.ships || []) {
       if (!ship.escort) continue;
       const trader = (realm.ships || []).find((row) => row.id === ship.escort);
       if (!trader) continue;
@@ -3025,6 +3065,7 @@ function drawColonies(ctx, world, time) {
       const pos = axialToWorld(ship.q, ship.r);
       drawHull(ctx, pos.x, pos.y, ship.kind, time, Boolean(ship.prey));
       if ((ship.prizeUntil || 0) > (world.hour || 0)) drawPrize(ctx, pos.x, pos.y, time);
+      if ((ship.marines || 0) >= 6) drawCompany(ctx, pos.x, pos.y, time);
     }
   }
   for (const realm of world.provinces || []) {

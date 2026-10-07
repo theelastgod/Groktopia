@@ -3194,6 +3194,151 @@ test("a war hull cuts out a lighter hull", () => {
   assert.ok(w.log.some((row) => row.text.includes("turns") && row.text.includes("cut aside")));
 });
 
+test("a war hull lands a company on an enemy quay", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.raid, 61);
+  const hexDist = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.nets = [];
+    seat.buoys = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const water = (q, r) => {
+    const kind = terrainKind(q, r);
+    return kind === "sea" || kind === "coast" || kind === "river";
+  };
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  const stepAway = (from, origin, steps) => {
+    let far = { ...from };
+    for (let n = 0; n < steps; n++) {
+      let best = null;
+      let bestD = hexDist(far.q, far.r, origin.q, origin.r);
+      for (const [dq, dr] of dirs) {
+        const nq = far.q + dq;
+        const nr = far.r + dr;
+        if (!water(nq, nr)) continue;
+        const dist = hexDist(nq, nr, origin.q, origin.r);
+        if (dist > bestD) {
+          bestD = dist;
+          best = { q: nq, r: nr };
+        }
+      }
+      if (!best) break;
+      far = best;
+    }
+    return far;
+  };
+  const near = dirs.map(([dq, dr]) => ({ q: spot.q + dq, r: spot.r + dr })).find((cell) => water(cell.q, cell.r));
+  assert.ok(near);
+  const away = stepAway(spot, spot, 4);
+  const offshore = stepAway(near, near, 3);
+  assert.ok(hexDist(away.q, away.r, spot.q, spot.r) > 2);
+  assert.equal(hexDist(offshore.q, offshore.r, near.q, near.r), 3);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = hush(w, "you");
+  const foe = hush(w, "brine");
+  w.provinces = [you, foe];
+  foe.name = "Salt Ledger";
+  you.colonies = [{ id: "home", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  foe.colonies = [{ id: "c", name: "Reed Haven", q: near.q, r: near.r, port: true }];
+  you.soldiers = 6;
+  you.ships = [{ id: "skiff", kind: "skiff", q: spot.q, r: spot.r, destQ: null, destR: null }];
+  assert.equal(applyAction(w, "you", { type: "raid", ship: "skiff", owner: "brine", colony: "c" }).ok, false);
+  you.ships = [{ id: "galley", kind: "galley", q: away.q, r: away.r, destQ: null, destR: null }];
+  assert.equal(applyAction(w, "you", { type: "raid", ship: "galley", owner: "brine", colony: "c" }).ok, false);
+  you.ships[0].q = spot.q;
+  you.ships[0].r = spot.r;
+  you.soldiers = 5;
+  assert.equal(applyAction(w, "you", { type: "raid", ship: "galley", owner: "brine", colony: "c" }).ok, false);
+  you.soldiers = 6;
+  const sent = applyAction(w, "you", { type: "raid", ship: "galley", owner: "brine", colony: "c" });
+  assert.equal(sent.ok, true);
+  assert.equal(you.soldiers, 0);
+  assert.equal(you.ships[0].marines, 6);
+  assert.equal(you.ships[0].raid.id, "c");
+  assert.equal(you.ledger.raid || 0, 0);
+  you.orders = 2;
+  assert.equal(applyAction(w, "you", { type: "direct", unit: "ship", id: "galley", q: spot.q, r: spot.r }).ok, true);
+  assert.equal(you.ships[0].raid, null);
+  assert.equal(you.ships[0].marines, 6);
+  assert.equal(applyAction(w, "you", { type: "raid", ship: "galley", owner: "brine", colony: "c" }).ok, true);
+  assert.equal(you.soldiers, 0);
+  const youGold = you.gold;
+  const foeGold = foe.gold;
+  const youGrain = you.grain;
+  const foeGrain = foe.grain;
+  advanceHour(w);
+  assert.equal(you.ships[0].raid, null);
+  assert.equal(you.ships[0].marines, 0);
+  assert.equal(you.soldiers, 6);
+  assert.equal(foe.gold, foeGold - 36);
+  assert.equal(you.gold, youGold + 4 + 36);
+  assert.equal(foe.grain, foeGrain + 12 - 20);
+  assert.equal(you.grain, youGrain + 12 + 20);
+  assert.equal(you.ledger.raid, EARN.raid);
+  assert.equal(you.utopia, EARN.raid + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("lands a company") && row.text.includes("Reed Haven")));
+  you.ships = [{ id: "galley", kind: "galley", q: offshore.q, r: offshore.r, destQ: null, destR: null, marines: 6 }];
+  foe.colonies[0].moleUntil = 9;
+  you.soldiers = 0;
+  you.orders = ORDERS;
+  you.acted = false;
+  you.ledger = {};
+  you.utopia = 0;
+  assert.equal(applyAction(w, "you", { type: "raid", ship: "galley", owner: "brine", colony: "c" }).ok, true);
+  advanceHour(w);
+  assert.equal(you.ships[0].marines, 4);
+  assert.equal(you.soldiers, 0);
+  assert.equal(you.ships[0].raid, null);
+  assert.equal(you.ledger.raid || 0, 0);
+  assert.ok(w.log.some((row) => row.text.includes("breaks") && row.text.includes("landing")));
+  foe.colonies[0].moleUntil = 0;
+  you.ships = [{ id: "galley", kind: "galley", q: spot.q, r: spot.r, destQ: null, destR: null, marines: 6 }];
+  you.soldiers = 0;
+  you.orders = ORDERS;
+  you.acted = false;
+  you.ledger = {};
+  assert.equal(applyAction(w, "you", { type: "raid", ship: "galley", owner: "you", colony: "home" }).ok, true);
+  advanceHour(w);
+  assert.equal(you.soldiers, 6);
+  assert.equal(you.ships[0].marines, 0);
+  assert.equal(you.ledger.raid || 0, 0);
+  assert.ok(w.log.some((row) => row.text.includes("lands the company") && row.text.includes("Salt Step")));
+  you.ships[0].marines = 0;
+  you.orders = ORDERS;
+  assert.equal(applyAction(w, "you", { type: "raid", ship: "galley", owner: "you", colony: "home" }).ok, false);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
