@@ -2697,6 +2697,82 @@ test("a lee shelters a hull and turns a heavier grapple aside", () => {
   assert.ok(w.log.some((row) => row.text.includes("lee") && row.text.includes("turns")));
 });
 
+test("nets hold an enemy hull and take gold", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.net, 55);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.nets = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  const away = dirs.map(([dq, dr]) => ({ q: spot.q + dq, r: spot.r + dr })).find((tile) => {
+    const kind = terrainKind(tile.q, tile.r);
+    return kind === "sea" || kind === "coast" || kind === "river";
+  });
+  assert.ok(away);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = hush(w, "you");
+  const foe = hush(w, "brine");
+  w.provinces = [you, foe];
+  you.ships = [{ id: "gal", kind: "galley", q: spot.q, r: spot.r, destQ: null, destR: null }];
+  assert.equal(applyAction(w, "you", { type: "net", ship: "gal" }).ok, false);
+  you.ships = [{ id: "fish", kind: "fisher", q: spot.q, r: spot.r, destQ: null, destR: null }];
+  const laid = applyAction(w, "you", { type: "net", ship: "fish" });
+  assert.equal(laid.ok, true);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.net, EARN.net);
+  assert.equal(you.nets.length, 1);
+  assert.equal(you.nets[0].until, 5);
+  assert.equal(applyAction(w, "you", { type: "net", ship: "fish" }).ok, false);
+  you.nets = [
+    { q: spot.q + 3, r: spot.r, until: 9 },
+    { q: spot.q + 4, r: spot.r, until: 9 },
+    { q: spot.q + 5, r: spot.r, until: 9 },
+  ];
+  you.orders = 1;
+  assert.equal(applyAction(w, "you", { type: "net", ship: "fish" }).ok, false);
+  you.nets = [{ q: spot.q, r: spot.r, until: 5 }];
+  foe.ships = [{ id: "war", kind: "galley", q: spot.q, r: spot.r, destQ: away.q, destR: away.r }];
+  advanceHour(w);
+  assert.equal(foe.ships[0].q, spot.q);
+  assert.equal(foe.ships[0].r, spot.r);
+  assert.equal(you.gold, 1010);
+  assert.equal(foe.gold, 1000 - 10 + NAVY.galley.haul);
+  assert.equal(you.utopia, EARN.net + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("nets hold")));
+  assert.equal(you.nets.length, 1);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

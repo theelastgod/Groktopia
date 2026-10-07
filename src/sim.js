@@ -58,6 +58,7 @@ export const EARN = {
   mole: 52,
   tow: 53,
   lee: 54,
+  net: 55,
 };
 
 export const FACTIONS = {
@@ -516,6 +517,7 @@ export function blankProvince(partial) {
   p.founders = partial && Array.isArray(partial.founders) ? partial.founders.map((row) => ({ ...row })) : [];
   p.ships = partial && Array.isArray(partial.ships) ? partial.ships.map((row) => ({ ...row })) : [];
   p.colonies = partial && Array.isArray(partial.colonies) ? partial.colonies.map((row) => ({ ...row })) : [];
+  p.nets = partial && Array.isArray(partial.nets) ? partial.nets.map((row) => ({ ...row })) : [];
   return p;
 }
 
@@ -888,6 +890,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "refit") result = doRefit(world, actor, action);
   else if (action.type === "mole") result = doMole(world, actor, action.colony);
   else if (action.type === "lee") result = doLee(world, actor, action.colony);
+  else if (action.type === "net") result = doNet(world, actor, action.ship);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2705,6 +2708,41 @@ function doLee(world, actor, colonyId) {
   return { ok: true, message: `Lee raised at ${colony.name}.${purse}` };
 }
 
+function doNet(world, actor, shipId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === shipId);
+  if (!own) return fail("That hull is not yours.");
+  if (hullTeeth(own.kind) >= WAR_TEETH) return fail("A galley, dromon, or hulk will not stop to lay nets.");
+  if (!sailKind(terrainKind(own.q, own.r))) return fail("Lay nets on sea, coast, or river.");
+  const hour = world.hour || 0;
+  actor.nets = (actor.nets || []).filter((row) => (row.until || 0) > hour);
+  if (actor.nets.length >= 3) return fail("Three nets are already in the water.");
+  if (actor.nets.some((row) => row.q === own.q && row.r === own.r)) return fail("Nets already ride that water.");
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.nets.push({ q: own.q, r: own.r, until: hour + 5 });
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.net;
+    notePurse(actor, "net", EARN.net);
+    purse = ` Purse +${formatUtopia(EARN.net)} $UTOPIA.`;
+  }
+  const spec = NAVY[own.kind];
+  log(world, `${actor.name} lays nets from the ${spec ? spec.name : "hull"}. For four hours an enemy hull on that water does not sail.${purse}`);
+  return { ok: true, message: `Nets laid at ${own.q},${own.r}.${purse}` };
+}
+
+function netHolder(world, realm, ship, hour) {
+  for (const other of world.provinces || []) {
+    if (!other || other.id === realm.id) continue;
+    for (const net of other.nets || []) {
+      if ((net.until || 0) <= hour) continue;
+      if (net.q === ship.q && net.r === ship.r) return other;
+    }
+  }
+  return null;
+}
+
 function leeCover(realm, ship, hour) {
   if (!realm || !ship) return false;
   return (realm.colonies || []).some((colony) => colony.port && (colony.leeUntil || 0) > (hour || 0) && hexDist(ship.q, ship.r, colony.q, colony.r) <= 2);
@@ -2923,6 +2961,17 @@ function sailHour(world) {
           ship.destR = trader.r;
         }
       }
+      const holder = netHolder(world, realm, ship, world.hour || 0);
+      if (holder) {
+        const skim = Math.min(realm.gold || 0, 10);
+        realm.gold -= skim;
+        holder.gold += skim;
+        ship.destQ = ship.q;
+        ship.destR = ship.r;
+        const caught = NAVY[ship.kind];
+        log(world, `${holder.name}'s nets hold ${realm.name}'s ${caught ? caught.name : "hull"}${skim ? ` and take ${skim} gold` : ""}.`);
+        continue;
+      }
       if (ship.destQ == null) continue;
       const spec = NAVY[ship.kind];
       let left = spec ? spec.speed : 1;
@@ -2939,6 +2988,9 @@ function sailHour(world) {
   resolveSalvage(world);
   const hour = world.hour || 0;
   world.wrecks = (world.wrecks || []).filter((row) => (row.until || 0) > hour);
+  for (const realm of world.provinces || []) {
+    realm.nets = (realm.nets || []).filter((row) => (row.until || 0) > hour);
+  }
 }
 
 export function keelUp(p, hour) {
@@ -3763,6 +3815,13 @@ export function chooseAction(world, agent) {
     if (tower && towWreck && agent.orders >= 1 && rng.next() < 0.14) {
       return { type: "tow", ship: tower.id, q: towWreck.q, r: towWreck.r };
     }
+    const layer = (agent.ships || []).find((row) => hullTeeth(row.kind) < WAR_TEETH && !row.tow && !row.salvage && sailKind(terrainKind(row.q, row.r)));
+    const liveNets = (agent.nets || []).filter((row) => (row.until || 0) > (world.hour || 0));
+    const nearFoe = layer && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, layer.q, layer.r) <= 3));
+    const netHere = layer && liveNets.some((row) => row.q === layer.q && row.r === layer.r);
+    if (layer && nearFoe && !netHere && liveNets.length < 3 && agent.orders >= 1 && rng.next() < 0.15) {
+      return { type: "net", ship: layer.id };
+    }
     const salvor = (agent.ships || []).find((row) => !row.prey && !row.block && !row.salvage && !row.escort && !row.tow);
     const wreck = salvor && (world.wrecks || []).find((row) => (row.until || 0) > (world.hour || 0) && hexDist(salvor.q, salvor.r, row.q, row.r) <= 12);
     if (salvor && wreck && agent.orders >= 1 && rng.next() < 0.22) {
@@ -3891,6 +3950,7 @@ export function hydrate(raw) {
     if (!Array.isArray(realm.founders)) realm.founders = [];
     if (!Array.isArray(realm.ships)) realm.ships = [];
     if (!Array.isArray(realm.colonies)) realm.colonies = [];
+    if (!Array.isArray(realm.nets)) realm.nets = [];
   }
   if (!Array.isArray(world.wrecks)) world.wrecks = [];
   const cap = world.orderCap || 4;

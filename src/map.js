@@ -2655,6 +2655,25 @@ function drawHull(ctx, x, y, kind, time, hunting) {
   ctx.restore();
 }
 
+function drawNet(ctx, x, y, time) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "rgba(47, 92, 110, 0.9)";
+  ctx.lineWidth = 1.2;
+  for (let i = -2; i <= 2; i++) {
+    const sway = Math.sin(time * 2 + i) * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-16, i * 4 + sway);
+    ctx.lineTo(16, i * 4 - sway);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#7fb0b8";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("NET", 0, -16);
+  ctx.restore();
+}
+
 function drawWreck(ctx, x, y, time) {
   const rock = Math.sin(time * 1.3 + x) * 0.7;
   ctx.save();
@@ -2867,6 +2886,13 @@ function drawColonies(ctx, world, time) {
     for (const ship of realm.ships || []) {
       const pos = axialToWorld(ship.q, ship.r);
       drawHull(ctx, pos.x, pos.y, ship.kind, time, Boolean(ship.prey));
+    }
+  }
+  for (const realm of world.provinces || []) {
+    for (const net of realm.nets || []) {
+      if ((net.until || 0) <= (world.hour || 0)) continue;
+      const pos = axialToWorld(net.q, net.r);
+      drawNet(ctx, pos.x, pos.y, time);
     }
   }
   for (const wreck of world.wrecks || []) {
