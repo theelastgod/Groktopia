@@ -2583,7 +2583,7 @@ function drawFounder(ctx, x, y, time) {
   ctx.fillRect(x - 3, y - 3 + bob, 6, 8);
 }
 
-function drawHull(ctx, x, y, kind, time) {
+function drawHull(ctx, x, y, kind, time, hunting) {
   const rock = Math.sin(time * 2 + x) * 1.2;
   ctx.save();
   ctx.translate(x, y + rock);
@@ -2616,10 +2616,61 @@ function drawHull(ctx, x, y, kind, time) {
       ctx.stroke();
     }
   }
+  if (hunting) {
+    ctx.fillStyle = "#a33b32";
+    ctx.beginPath();
+    ctx.moveTo(6, -4);
+    ctx.lineTo(16, -12);
+    ctx.lineTo(6, -8);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawWreck(ctx, x, y, time) {
+  const rock = Math.sin(time * 1.3 + x) * 0.7;
+  ctx.save();
+  ctx.translate(x, y + rock);
+  ctx.rotate(-0.45);
+  ctx.fillStyle = "rgba(36, 28, 22, 0.35)";
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 16, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#3a2a22";
+  ctx.fillRect(-12, -3, 22, 6);
+  ctx.strokeStyle = "#8d4038";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-2, 0);
+  ctx.lineTo(6, -12);
+  ctx.stroke();
   ctx.restore();
 }
 
 function drawColonies(ctx, world, time) {
+  for (const realm of world.provinces || []) {
+    for (const ship of realm.ships || []) {
+      if (!ship.prey) continue;
+      const foe = (world.provinces || []).find((row) => row.id === ship.prey.owner);
+      const prey = foe && (foe.ships || []).find((row) => row.id === ship.prey.id);
+      if (!prey) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(prey.q, prey.r);
+      ctx.strokeStyle = "rgba(176, 64, 48, 0.9)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 6]);
+      ctx.lineDashOffset = -time * 20;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#a33b32";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("CLOSING", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
+    }
+  }
   for (const realm of world.provinces || []) {
     for (const colony of realm.colonies || []) {
       const pos = axialToWorld(colony.q, colony.r);
@@ -2635,8 +2686,13 @@ function drawColonies(ctx, world, time) {
     }
     for (const ship of realm.ships || []) {
       const pos = axialToWorld(ship.q, ship.r);
-      drawHull(ctx, pos.x, pos.y, ship.kind, time);
+      drawHull(ctx, pos.x, pos.y, ship.kind, time, Boolean(ship.prey));
     }
+  }
+  for (const wreck of world.wrecks || []) {
+    if ((wreck.until || 0) <= (world.hour || 0)) continue;
+    const pos = axialToWorld(wreck.q, wreck.r);
+    drawWreck(ctx, pos.x, pos.y, time);
   }
 }
 

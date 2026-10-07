@@ -49,6 +49,7 @@ export const EARN = {
   founder: 40,
   colony: 44,
   hull: 43,
+  prize: 46,
 };
 
 export const FACTIONS = {
@@ -563,6 +564,7 @@ export function newWorld(opts = {}) {
     bounties: {},
     sites: freshSites(),
     bands: freshBands(),
+    wrecks: [],
     rng: makeRng(seed),
   };
   ensurePlots(world);
@@ -869,6 +871,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "founder") result = doFounder(world, actor);
   else if (action.type === "direct") result = doDirect(world, actor, action);
   else if (action.type === "hull") result = doHull(world, actor, action.hull);
+  else if (action.type === "grapple") result = doGrapple(world, actor, action);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2141,13 +2144,15 @@ function doPatrol(world, actor) {
 }
 
 export const NAVY = {
-  skiff: { name: "Skiff", gold: 140, speed: 3, fish: 4, haul: 0 },
-  fisher: { name: "Fisher", gold: 220, speed: 2, fish: 12, haul: 0 },
-  cog: { name: "Cog", gold: 320, speed: 2, fish: 0, haul: 8 },
-  galley: { name: "Galley", gold: 440, speed: 3, fish: 0, haul: 4 },
-  dromon: { name: "Dromon", gold: 580, speed: 2, fish: 6, haul: 6 },
-  hulk: { name: "Hulk", gold: 680, speed: 1, fish: 8, haul: 12 },
+  skiff: { name: "Skiff", gold: 140, speed: 3, fish: 4, haul: 0, teeth: 1 },
+  fisher: { name: "Fisher", gold: 220, speed: 2, fish: 12, haul: 0, teeth: 2 },
+  cog: { name: "Cog", gold: 320, speed: 2, fish: 0, haul: 8, teeth: 3 },
+  galley: { name: "Galley", gold: 440, speed: 3, fish: 0, haul: 4, teeth: 6 },
+  dromon: { name: "Dromon", gold: 580, speed: 2, fish: 6, haul: 6, teeth: 8 },
+  hulk: { name: "Hulk", gold: 680, speed: 1, fish: 8, haul: 12, teeth: 5 },
 };
+
+const WAR_TEETH = 5;
 
 const COLONY_NAMES = ["Salt Step", "Reed Haven", "Grey Landing", "Low Quay", "Millwater", "Ash Dock", "Far Acre", "Pale Reach"];
 
@@ -2305,6 +2310,7 @@ function doDirect(world, actor, action) {
     const ship = (actor.ships || []).find((row) => row.id === action.id);
     if (!ship) return fail("That hull is not yours.");
     if (!sailKind(kind)) return fail("A hull only takes sea, coast, or river.");
+    ship.prey = null;
     ship.destQ = q;
     ship.destR = r;
   } else {
@@ -2349,6 +2355,100 @@ function doHull(world, actor, hull) {
   return { ok: true, message: `${spec.name} launched from ${port.name}.${purse}` };
 }
 
+function hullTeeth(kind) {
+  const spec = NAVY[kind];
+  return spec && spec.teeth ? spec.teeth : 0;
+}
+
+function findHull(world, ownerId, shipId) {
+  const realm = byId(world, ownerId);
+  if (!realm) return null;
+  const ship = (realm.ships || []).find((row) => row.id === shipId);
+  if (!ship) return null;
+  return { realm, ship };
+}
+
+function doGrapple(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === action.ship);
+  if (!own) return fail("That hull is not yours.");
+  if (hullTeeth(own.kind) < WAR_TEETH) return fail("A skiff, fisher, or cog will not close. Lay a galley, dromon, or hulk.");
+  const prey = findHull(world, action.owner, action.hull);
+  if (!prey || prey.realm.id === actor.id) return fail("Name another ruler's hull.");
+  if (!sailKind(terrainKind(prey.ship.q, prey.ship.r))) return fail("That hull is not on the water.");
+  own.prey = { owner: prey.realm.id, id: prey.ship.id };
+  own.destQ = prey.ship.q;
+  own.destR = prey.ship.r;
+  actor.orders -= 1;
+  actor.acted = true;
+  const spec = NAVY[own.kind];
+  const theirs = NAVY[prey.ship.kind];
+  log(world, `${actor.name} sends the ${spec.name} to close on ${prey.realm.name}'s ${theirs ? theirs.name : "hull"}.`);
+  return { ok: true, message: `${spec.name} is closing on the ${theirs ? theirs.name : "hull"}.` };
+}
+
+function dropWreck(world, ship) {
+  world.wrecks = world.wrecks || [];
+  world.wrecks.push({
+    q: ship.q,
+    r: ship.r,
+    kind: ship.kind,
+    until: (world.hour || 0) + 4,
+  });
+}
+
+function payPrize(world, winner, loser, sunk) {
+  const take = Math.min(loser.gold || 0, 48 + hullTeeth(sunk.kind) * 16);
+  loser.gold -= take;
+  winner.gold += take;
+  let purse = "";
+  if (winner.kind === "human") {
+    winner.utopia += EARN.prize;
+    notePurse(winner, "prize", EARN.prize);
+    purse = ` Purse +${formatUtopia(EARN.prize)} $UTOPIA.`;
+  }
+  const spec = NAVY[sunk.kind];
+  log(world, `${winner.name} grapples ${loser.name}'s ${spec ? spec.name : "hull"} and takes ${take} gold. The hull goes under.${purse}`);
+  dropWreck(world, sunk);
+}
+
+function resolveGrapples(world) {
+  const sunk = new Set();
+  for (const realm of world.provinces || []) {
+    for (const ship of realm.ships || []) {
+      if (!ship.prey || sunk.has(ship)) continue;
+      const prey = findHull(world, ship.prey.owner, ship.prey.id);
+      if (!prey || sunk.has(prey.ship)) {
+        ship.prey = null;
+        continue;
+      }
+      if (hexDist(ship.q, ship.r, prey.ship.q, prey.ship.r) > 1) continue;
+      const teeth = hullTeeth(ship.kind);
+      const theirs = hullTeeth(prey.ship.kind);
+      if (teeth > theirs) {
+        payPrize(world, realm, prey.realm, prey.ship);
+        sunk.add(prey.ship);
+        ship.prey = null;
+      } else if (teeth < theirs) {
+        payPrize(world, prey.realm, realm, ship);
+        sunk.add(ship);
+      } else {
+        ship.prey = null;
+        prey.ship.prey = null;
+        log(world, `${realm.name} and ${prey.realm.name} lock hulls and fall apart. Neither goes under.`);
+      }
+    }
+  }
+  for (const realm of world.provinces || []) {
+    realm.ships = (realm.ships || []).filter((ship) => !sunk.has(ship));
+    for (const ship of realm.ships) {
+      if (ship.prey && !findHull(world, ship.prey.owner, ship.prey.id)) ship.prey = null;
+    }
+  }
+  const hour = world.hour || 0;
+  world.wrecks = (world.wrecks || []).filter((row) => (row.until || 0) > hour);
+}
+
 function sailHour(world) {
   for (const realm of world.provinces || []) {
     for (const founder of realm.founders || []) {
@@ -2365,6 +2465,13 @@ function sailHour(world) {
     }
     realm.founders = (realm.founders || []).filter((row) => !row.spent);
     for (const ship of realm.ships || []) {
+      if (ship.prey) {
+        const prey = findHull(world, ship.prey.owner, ship.prey.id);
+        if (prey && sailKind(terrainKind(prey.ship.q, prey.ship.r))) {
+          ship.destQ = prey.ship.q;
+          ship.destR = prey.ship.r;
+        }
+      }
       if (ship.destQ == null) continue;
       const spec = NAVY[ship.kind];
       let left = spec ? spec.speed : 1;
@@ -2377,6 +2484,7 @@ function sailHour(world) {
       }
     }
   }
+  resolveGrapples(world);
 }
 
 export function keelUp(p, hour) {
@@ -3166,6 +3274,25 @@ export function chooseAction(world, agent) {
     if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "keel" };
     }
+    const hunter = (agent.ships || []).find((row) => hullTeeth(row.kind) >= WAR_TEETH && !row.prey);
+    if (hunter && agent.orders >= 1 && rng.next() < 0.28) {
+      let best = null;
+      let bestD = 18;
+      for (const other of world.provinces) {
+        if (other.id === agent.id) continue;
+        for (const ship of other.ships || []) {
+          const dist = hexDist(hunter.q, hunter.r, ship.q, ship.r);
+          if (dist < bestD) {
+            bestD = dist;
+            best = { owner: other.id, id: ship.id };
+          }
+        }
+      }
+      if (best) return { type: "grapple", ship: hunter.id, owner: best.owner, hull: best.id };
+    }
+    if ((agent.colonies || []).some((row) => row.port) && !(agent.ships || []).some((row) => hullTeeth(row.kind) >= WAR_TEETH) && agent.gold >= NAVY.galley.gold + 600 && agent.orders >= 1 && rng.next() < 0.1) {
+      return { type: "hull", hull: "galley" };
+    }
     if (!agent.vein && agent.gold >= 800 && agent.orders >= 1 && rng.next() < 0.14) return { type: "prospect" };
     if (!(agent.sealUntil > world.hour) && agent.grain >= 4000 && agent.gold >= 200 && agent.orders >= 1 && rng.next() < 0.12) return { type: "seal" };
     if (agent.gold >= 1400 && agent.orders >= 1 && rng.next() < 0.1) {
@@ -3255,6 +3382,7 @@ export function hydrate(raw) {
     if (!Array.isArray(realm.ships)) realm.ships = [];
     if (!Array.isArray(realm.colonies)) realm.colonies = [];
   }
+  if (!Array.isArray(world.wrecks)) world.wrecks = [];
   const cap = world.orderCap || 4;
   if (cap < ORDERS) {
     const grant = ORDERS - cap;
@@ -3394,6 +3522,7 @@ export function createOpenRealm(seed = 1) {
     bounties: {},
     sites: freshSites(),
     bands: freshBands(),
+    wrecks: [],
     rng: makeRng(seed),
   };
   ensurePlots(world);

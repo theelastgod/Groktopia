@@ -36,6 +36,7 @@ import {
   stallQuote,
   byId,
   worldToAxial,
+  axialToWorld,
   defense,
   foodNeed,
   formatUtopia,
@@ -259,7 +260,7 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean.</p>
+        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull and take it.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
@@ -823,6 +824,7 @@ function ledgerLine(actor) {
     ["founders", book.founder],
     ["colonies", book.colony],
     ["hulls", book.hull],
+    ["prizes", book.prize],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1048,7 +1050,17 @@ function fleetLine(actor) {
   }
   for (const ship of ships) {
     const spec = NAVY[ship.kind];
-    rows.push(`<button class="btn" type="button" data-direct="ship" data-id="${esc(ship.id)}">Direct ${esc(spec ? spec.name : ship.kind)} · ${ship.q},${ship.r}</button>`);
+    let course = `${ship.q},${ship.r}`;
+    if (ship.prey) {
+      const foe = byId(world, ship.prey.owner);
+      const prey = foe && (foe.ships || []).find((row) => row.id === ship.prey.id);
+      const preyName = prey && NAVY[prey.kind] ? NAVY[prey.kind].name : "hull";
+      course = `closing on ${foe ? foe.name : "them"}'s ${preyName}`;
+    }
+    rows.push(`<button class="btn" type="button" data-direct="ship" data-id="${esc(ship.id)}">Direct ${esc(spec ? spec.name : ship.kind)} · ${course}</button>`);
+    if (spec && spec.teeth >= 5) {
+      rows.push(`<button class="btn danger" type="button" data-grapple="${esc(ship.id)}">Close the ${esc(spec.name)} · click a hull</button>`);
+    }
   }
   if (ports.length && ships.length < 6) {
     for (const [id, spec] of Object.entries(NAVY)) {
@@ -1058,7 +1070,10 @@ function fleetLine(actor) {
       rows.push(`<button class="btn" type="button" data-hull="${id}">Lay a ${esc(spec.name)} · ${spec.gold}g · ${yieldLine}</button>`);
     }
   }
-  if (aim) rows.push(`<p class="muted">Click the map to send the ${esc(aim.unit)}.</p>`);
+  if (aim) {
+    rows.push(`<p class="muted">${aim.unit === "grapple" ? "Click an enemy hull to close." : `Click the map to send the ${esc(aim.unit)}.`}</p>`);
+  }
+  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. A skiff, fisher, or cog will not close. Key X picks a war hull.</p>`);
   return rows.join("");
 }
 
@@ -1115,6 +1130,22 @@ function setSheet(open) {
   document.body.classList.toggle("sheet-open", open);
   const handle = document.querySelector("#sheet");
   if (handle) handle.textContent = open ? "Map" : "Orders";
+}
+
+function shipAt(x, y) {
+  let best = null;
+  let bestD = 52;
+  for (const realm of world.provinces || []) {
+    for (const ship of realm.ships || []) {
+      const pos = axialToWorld(ship.q, ship.r);
+      const dist = Math.hypot(pos.x - x, pos.y - y);
+      if (dist < bestD) {
+        bestD = dist;
+        best = { owner: realm.id, id: ship.id };
+      }
+    }
+  }
+  return best;
 }
 
 function bindMap(canvas) {
@@ -1174,10 +1205,21 @@ function bindMap(canvas) {
     if (moved || !world) return;
     const point = worldPointFrom(event, canvas);
     if (aim && seat()) {
-      const axial = worldToAxial(point.x, point.y);
       const course = aim;
       aim = null;
-      order({ type: "direct", unit: course.unit, id: course.id, q: axial.q, r: axial.r }, "build");
+      if (course.unit === "grapple") {
+        const hit = shipAt(point.x, point.y);
+        if (!hit || hit.owner === seat().id) {
+          aim = course;
+          note(hit ? "Close on another ruler's hull." : "Click an enemy hull.");
+          paint();
+          return;
+        }
+        order({ type: "grapple", ship: course.id, owner: hit.owner, hull: hit.id }, "battle");
+      } else {
+        const axial = worldToAxial(point.x, point.y);
+        order({ type: "direct", unit: course.unit, id: course.id, q: axial.q, r: axial.r }, "build");
+      }
       paint();
       return;
     }
@@ -1281,6 +1323,15 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "t" && world) order({ type: "timber" }, "build");
       if (event.key.toLowerCase() === "k" && world) order({ type: "quarry" }, "build");
       if (event.key.toLowerCase() === "u" && world) order({ type: "founder" }, "build");
+      if (event.key.toLowerCase() === "x" && world && seat()) {
+        const fleet = seat().ships || [];
+        const war = fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5 && !row.prey)
+          || fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5);
+        if (war) {
+          aim = { unit: "grapple", id: war.id };
+          paint();
+        }
+      }
       if (event.key.toLowerCase() === "o" && world) order({ type: "patrol" }, "march");
       if (event.key.toLowerCase() === "p" && world) order({ type: "keel" }, "march");
       if (event.key.toLowerCase() === "z" && world && selectedId && selectedId !== seat().id) order({ type: "siege", target: selectedId }, "battle");
@@ -1444,6 +1495,11 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.direct) {
     aim = { unit: node.dataset.direct, id: node.dataset.id };
+    paint();
+    return;
+  }
+  if (node.dataset.grapple) {
+    aim = { unit: "grapple", id: node.dataset.grapple };
     paint();
     return;
   }

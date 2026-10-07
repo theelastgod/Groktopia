@@ -2057,6 +2057,127 @@ test("a founder plants a port, and a directed fisher works the ocean", () => {
   assert.equal(captain.ships[0].r, -18);
 });
 
+test("a war hull grapples a lighter ship and the heavier teeth take the prize", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(NAVY.skiff.teeth, 1);
+  assert.equal(NAVY.fisher.teeth, 2);
+  assert.equal(NAVY.cog.teeth, 3);
+  assert.equal(NAVY.hulk.teeth, 5);
+  assert.equal(NAVY.galley.teeth, 6);
+  assert.equal(NAVY.dromon.teeth, 8);
+  assert.equal(NAVY.galley.gold, 440);
+  assert.equal(EARN.prize, 46);
+
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const sea = (seed = 4) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const you = hush(realm, "you");
+    const foe = hush(realm, "brine");
+    realm.provinces = [you, foe];
+    return realm;
+  };
+
+  const w = sea();
+  const you = w.provinces[0];
+  const foe = w.provinces[1];
+  you.ships = [{ id: "gal", kind: "galley", q: 36, r: -17, destQ: null, destR: null }];
+  foe.ships = [{ id: "fish", kind: "fisher", q: 36, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(w, "you", { type: "grapple", ship: "gal", owner: "brine", hull: "missing" }).ok, false);
+  you.ships[0].kind = "fisher";
+  assert.equal(applyAction(w, "you", { type: "grapple", ship: "gal", owner: "brine", hull: "fish" }).ok, false);
+  assert.equal(you.orders, ORDERS);
+  you.ships[0].kind = "galley";
+  const closed = applyAction(w, "you", { type: "grapple", ship: "gal", owner: "brine", hull: "fish" });
+  assert.equal(closed.ok, true);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ships[0].prey.owner, "brine");
+  assert.equal(you.ships[0].prey.id, "fish");
+  advanceHour(w);
+  const prize = 48 + NAVY.fisher.teeth * 16;
+  assert.equal(foe.ships.length, 0);
+  assert.equal(you.ships.length, 1);
+  assert.equal(you.ships[0].prey, null);
+  assert.equal(you.gold, 1000 + NAVY.galley.haul + prize);
+  assert.equal(foe.gold, 1000 - prize);
+  assert.equal(you.ledger.prize, EARN.prize);
+  assert.equal(you.utopia, EARN.hourActive + EARN.prize);
+  assert.equal(w.wrecks.length, 1);
+  assert.equal(w.wrecks[0].kind, "fisher");
+  assert.ok(w.log.some((row) => row.text.includes("goes under")));
+
+  const chase = sea(5);
+  const hunter = chase.provinces[0];
+  const merchant = chase.provinces[1];
+  hunter.ships = [{ id: "gal", kind: "galley", q: 36, r: -18, destQ: null, destR: null }];
+  merchant.ships = [{ id: "cog", kind: "cog", q: 42, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(chase, "you", { type: "grapple", ship: "gal", owner: "brine", hull: "cog" }).ok, true);
+  advanceHour(chase);
+  assert.equal(merchant.ships.length, 1);
+  assert.equal(hunter.ships[0].q, 39);
+  assert.equal(hunter.ships[0].prey.id, "cog");
+  advanceHour(chase);
+  assert.equal(merchant.ships.length, 0);
+  assert.equal(hunter.ships[0].q, 42);
+  assert.equal(hunter.ledger.prize, EARN.prize);
+
+  const lock = sea(6);
+  const left = lock.provinces[0];
+  const right = lock.provinces[1];
+  left.ships = [{ id: "a", kind: "galley", q: 36, r: -18, destQ: null, destR: null }];
+  right.ships = [{ id: "b", kind: "galley", q: 37, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(lock, "you", { type: "grapple", ship: "a", owner: "brine", hull: "b" }).ok, true);
+  advanceHour(lock);
+  assert.equal(left.ships.length, 1);
+  assert.equal(right.ships.length, 1);
+  assert.equal(left.ships[0].prey, null);
+  assert.equal(left.ledger.prize, undefined);
+  assert.ok(lock.log.some((row) => row.text.includes("fall apart")));
+
+  const lost = sea(7);
+  const light = lost.provinces[0];
+  const heavy = lost.provinces[1];
+  light.ships = [{ id: "gal", kind: "galley", q: 36, r: -17, destQ: null, destR: null }];
+  heavy.ships = [{ id: "war", kind: "dromon", q: 36, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(lost, "you", { type: "grapple", ship: "gal", owner: "brine", hull: "war" }).ok, true);
+  advanceHour(lost);
+  assert.equal(light.ships.length, 0);
+  assert.equal(heavy.ships.length, 1);
+  const lostPrize = 48 + NAVY.galley.teeth * 16;
+  assert.equal(light.gold, 1000 + NAVY.galley.haul - lostPrize);
+  assert.equal(heavy.gold, 1000 + NAVY.dromon.haul + lostPrize);
+  assert.equal(heavy.ledger.prize, EARN.prize);
+  assert.equal(light.ledger.prize, undefined);
+
+  const broken = sea(8);
+  const captain = broken.provinces[0];
+  captain.ships = [{ id: "gal", kind: "galley", q: 36, r: -18, destQ: null, destR: null, prey: { owner: "brine", id: "fish" } }];
+  assert.equal(applyAction(broken, "you", { type: "direct", unit: "ship", id: "gal", q: 40, r: -20 }).ok, true);
+  assert.equal(captain.ships[0].prey, null);
+  assert.equal(captain.ships[0].destQ, 40);
+});
+
 test("wild holdings push their fences when the gold holds", () => {
   const w = newWorld({ seed: 2 });
   const moss = byId(w, "moss");
