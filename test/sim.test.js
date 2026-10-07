@@ -4095,6 +4095,128 @@ test("a palisade stakes the edge and a sack breaks one", () => {
   assert.ok(raid.log.some((row) => row.text.includes("broke a palisade stake")));
 });
 
+test("a ropewalk pays gold and lets a hull sail one hex farther", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.rope, 74);
+  assert.equal(EARN.grove, 73);
+  const hexDist = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  let far = { ...spot };
+  for (let i = 0; i < 5; i++) {
+    let best = null;
+    let bestD = hexDist(far.q, far.r, spot.q, spot.r);
+    for (const [dq, dr] of dirs) {
+      const nq = far.q + dq;
+      const nr = far.r + dr;
+      const kind = terrainKind(nq, nr);
+      if (kind !== "sea" && kind !== "coast" && kind !== "river") continue;
+      const dist = hexDist(nq, nr, spot.q, spot.r);
+      if (dist > bestD) {
+        bestD = dist;
+        best = { q: nq, r: nr };
+      }
+    }
+    if (!best) break;
+    far = best;
+  }
+  const start = hexDist(spot.q, spot.r, far.q, far.r);
+  assert.ok(start >= 4);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const dry = hush(4);
+  dry.seat.colonies = [{ id: "c1", name: "Inland", q: 0, r: 0, port: false }];
+  assert.equal(applyAction(dry.realm, "you", { type: "rope", colony: "c1" }).ok, false);
+  const raised = hush(5);
+  raised.seat.colonies = [{ id: "c1", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  raised.seat.gold = 100;
+  assert.equal(applyAction(raised.realm, "you", { type: "rope", colony: "c1" }).ok, false);
+  raised.seat.gold = 1000;
+  const purse = raised.seat.utopia;
+  const built = applyAction(raised.realm, "you", { type: "rope", colony: "c1" });
+  assert.equal(built.ok, true, built.message);
+  assert.equal(raised.seat.colonies[0].rope, true);
+  assert.equal(raised.seat.gold, 810);
+  assert.equal(raised.seat.orders, ORDERS - 1);
+  assert.equal(raised.seat.ledger.rope, EARN.rope);
+  assert.equal(raised.seat.utopia, purse + EARN.rope);
+  assert.equal(applyAction(raised.realm, "you", { type: "rope", colony: "c1" }).ok, false);
+  const delta = (rope) => {
+    const row = hush(6);
+    row.seat.colonies = [{ id: "c1", name: "Salt Step", q: spot.q, r: spot.r, port: true, rope }];
+    const gold = row.seat.gold;
+    const grain = row.seat.grain;
+    advanceHour(row.realm);
+    return { gold: row.seat.gold - gold, grain: row.seat.grain - grain };
+  };
+  const bare = delta(false);
+  const walked = delta(true);
+  assert.equal(walked.gold - bare.gold, 6);
+  assert.equal(walked.grain, bare.grain);
+  const sail = (rope) => {
+    const row = hush(7);
+    row.seat.colonies = [{ id: "c1", name: "Salt Step", q: spot.q, r: spot.r, port: true, rope }];
+    row.seat.ships = [{ id: "h", kind: "hulk", q: spot.q, r: spot.r, destQ: far.q, destR: far.r }];
+    advanceHour(row.realm);
+    return start - hexDist(row.seat.ships[0].q, row.seat.ships[0].r, far.q, far.r);
+  };
+  assert.equal(sail(true), sail(false) + 1);
+
+  const raid = newWorld({ seed: 9 });
+  raid.bands = [];
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "brine");
+  raid.provinces = [atk, vic];
+  atk.kind = "human";
+  vic.kind = "human";
+  atk.ships = [{ id: "s1", kind: "galley", q: spot.q, r: spot.r, destQ: spot.q, destR: spot.r, marines: 6, raid: { owner: "brine", id: "port" } }];
+  vic.ships = [];
+  atk.gold = 400;
+  atk.grain = 400;
+  vic.gold = 80;
+  vic.grain = 40;
+  vic.colonies = [{ id: "port", name: "Brine Quay", q: spot.q, r: spot.r, port: true, rope: true }];
+  advanceHour(raid);
+  assert.equal(vic.colonies[0].rope, false);
+  assert.ok(raid.log.some((row) => row.text.includes("ropewalk is cut")));
+});
+
 test("a grove pays from a field and a sack burns one", () => {
   assert.equal(ORDERS, 10);
   assert.equal(TICK_MS, 60 * 1000);

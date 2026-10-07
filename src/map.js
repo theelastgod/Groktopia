@@ -3223,6 +3223,26 @@ function drawCooper(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawRope(ctx, x, y, time) {
+  const spin = Math.sin(time * 1.8) * 0.2;
+  ctx.save();
+  ctx.translate(x + 22, y + 8);
+  ctx.rotate(spin);
+  ctx.strokeStyle = "#c4a15a";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 7, 0, Math.PI * 1.7);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 3.5, 0.5, Math.PI * 1.8);
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "#c4a15a";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("ROPE", x + 22, y + 26);
+}
+
 function drawColonies(ctx, world, time) {
   for (const realm of world.provinces || []) {
     for (const ship of realm.ships || []) {
@@ -3392,6 +3412,7 @@ function drawColonies(ctx, world, time) {
       drawTown(ctx, pos.x, pos.y, colony.port);
       if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
       if (colony.port && colony.cooper) drawCooper(ctx, pos.x, pos.y, time);
+      if (colony.port && colony.rope) drawRope(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);
