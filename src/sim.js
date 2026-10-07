@@ -43,6 +43,7 @@ export const EARN = {
   quarry: 37,
   siege: 39,
   sally: 41,
+  ride: 42,
 };
 
 export const FACTIONS = {
@@ -538,6 +539,7 @@ export function newWorld(opts = {}) {
     wonders: {},
     bounties: {},
     sites: freshSites(),
+    bands: freshBands(),
     rng: makeRng(seed),
   };
   ensurePlots(world);
@@ -775,6 +777,7 @@ export const AMBITIONS = [
   { id: "timber", name: "Cut a yard", purse: 35, blurb: "Raise a timber yard on a wood tile.", match: (action) => action.type === "timber" },
   { id: "quarry", name: "Open a pit", purse: 35, blurb: "Cut a quarry into a hill tile.", match: (action) => action.type === "quarry" },
   { id: "sally", name: "Sally the works", purse: 40, blurb: "Break a siege camp.", match: (action) => action.type === "sally" && action.win },
+  { id: "ride", name: "Ride the band", purse: 40, blurb: "Break a wild camp.", match: (action) => action.type === "ride" && action.win },
 ];
 
 function rollAmbition(actor, hour) {
@@ -833,6 +836,8 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "quarry") result = doQuarry(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
+  else if (action.type === "ride") result = doRide(world, actor, action.band);
+  else if (action.type === "bribe") result = doBribe(world, actor, action.band);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2028,6 +2033,143 @@ function doSally(world, actor, besiegerId) {
   return { ok: true, win: false, message: `The sally fails. ${lost} soldiers fall. The works still stand.` };
 }
 
+export const BANDS = [
+  { id: "drifters", name: "Ash Drifters", x: 1280, y: -360, men: 28, hoard: 180 },
+  { id: "yoke", name: "Broken Yoke", x: -520, y: 980, men: 22, hoard: 140 },
+  { id: "herd", name: "Night Herd", x: -980, y: -1100, men: 26, hoard: 160 },
+];
+
+export function freshBands() {
+  return BANDS.map((band) => ({ ...band, raid: null, truce: {}, downUntil: 0 }));
+}
+
+export function bandUp(band, hour) {
+  return Boolean(band && (band.men || 0) >= 8 && (band.downUntil || 0) <= (hour || 0));
+}
+
+function quietBand(world, band, hour, text) {
+  band.men = 0;
+  band.downUntil = (hour || 0) + 6;
+  band.raid = null;
+  if (text) log(world, text);
+}
+
+function bandTarget(world, band) {
+  const hour = world.hour || 0;
+  const rows = [];
+  for (const province of world.provinces || []) {
+    const truce = band.truce && band.truce[province.id];
+    if (typeof truce === "number" && truce > hour) continue;
+    const [x, y] = seatPoint(province);
+    const dist = Math.hypot(x - band.x, y - band.y);
+    if (dist <= 1700) rows.push({ province, dist });
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => a.dist - b.dist);
+  const human = rows.find((row) => row.province.kind === "human");
+  return (human || rows[0]).province;
+}
+
+function strikeBand(world, band, target) {
+  const hour = world.hour || 0;
+  band.raid = { target: target.id, hour };
+  const bite = band.men * 9;
+  if (defense(target) >= bite) {
+    const lost = Math.min(band.men, 3 + Math.floor(defense(target) / 120));
+    band.men -= lost;
+    log(world, `${band.name} rides at ${target.name} and breaks on the wall. ${lost} riders do not return.`);
+    if (band.men < 8) quietBand(world, band, hour, `${band.name} scatters. The camp is ash for six hours.`);
+    return;
+  }
+  const gold = Math.min(target.gold, 36 + band.men);
+  const grain = Math.min(target.grain, 50 + band.men * 2);
+  target.gold -= gold;
+  target.grain -= grain;
+  band.hoard = (band.hoard || 0) + Math.floor(gold / 2);
+  const folk = Math.min(target.peasants, 6 + Math.floor(band.men / 8));
+  target.peasants -= folk;
+  target.soldiers = Math.max(0, (target.soldiers || 0) - Math.min(target.soldiers || 0, 2));
+  log(world, `${band.name} rides through ${target.name}, taking ${gold} gold and ${grain} grain. ${folk} people fall.`);
+}
+
+export function pressBands(world) {
+  const hour = world.hour || 0;
+  const bands = world.bands || [];
+  for (const band of bands) {
+    if ((band.downUntil || 0) > 0 && hour >= band.downUntil) {
+      band.men = 16;
+      band.hoard = (band.hoard || 0) + 70;
+      band.downUntil = 0;
+      log(world, `${band.name} lights the camp again.`);
+    } else if (bandUp(band, hour) && band.men < 34 && hour % 4 === 0) {
+      band.men += 1;
+    }
+  }
+  const live = bands.filter((band) => bandUp(band, hour));
+  if (!live.length) return;
+  const rider = live[hour % live.length];
+  const target = bandTarget(world, rider);
+  if (!target) {
+    rider.raid = null;
+    return;
+  }
+  strikeBand(world, rider, target);
+}
+
+function findBand(world, bandId) {
+  return (world.bands || []).find((band) => band.id === bandId) || null;
+}
+
+function doRide(world, actor, bandId) {
+  const band = findBand(world, bandId);
+  if (!band) return fail("That camp is not on the map.");
+  if (!bandUp(band, world.hour)) return fail(`${band.name} is already ash.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if ((actor.soldiers || 0) < 12) return fail("Need 12 soldiers to ride them down.");
+  actor.orders -= 1;
+  actor.acted = true;
+  if (offense(actor) >= band.men * 12) {
+    const loot = band.hoard || 0;
+    band.hoard = 0;
+    actor.gold += loot;
+    actor.pelts = (actor.pelts || 0) + 1;
+    quietBand(world, band, world.hour, null);
+    let purse = "";
+    if (actor.kind === "human") {
+      actor.utopia += EARN.ride;
+      notePurse(actor, "ride", EARN.ride);
+      purse = ` Purse +${formatUtopia(EARN.ride)} $UTOPIA.`;
+    }
+    log(world, `${actor.name} rides down ${band.name}, takes ${loot} gold, and hangs a hide. The camp is ash for six hours.${purse}`);
+    return { ok: true, win: true, message: `${band.name} breaks. ${loot} gold and a hide.${purse}` };
+  }
+  const lost = Math.min(actor.soldiers, 5);
+  actor.soldiers -= lost;
+  band.men = Math.max(0, band.men - 4);
+  if (band.men < 8) {
+    quietBand(world, band, world.hour, `${actor.name} rides at ${band.name}, loses ${lost} soldiers, and the camp still scatters.`);
+    return { ok: true, win: false, message: `The ride fails. ${lost} soldiers fall, and the camp scatters.` };
+  }
+  log(world, `${actor.name} rides at ${band.name} and loses ${lost} soldiers. The camp still stands.`);
+  return { ok: true, win: false, message: `The ride fails. ${lost} soldiers fall. ${band.men} riders remain.` };
+}
+
+function doBribe(world, actor, bandId) {
+  const band = findBand(world, bandId);
+  if (!band) return fail("That camp is not on the map.");
+  if (!bandUp(band, world.hour)) return fail(`${band.name} is already ash.`);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  band.truce = band.truce || {};
+  if ((band.truce[actor.id] || 0) > (world.hour || 0)) return fail(`${band.name} is already paid off through hour ${band.truce[actor.id] - 1}.`);
+  if (actor.gold < 160) return fail("Buying them off wants 160 gold.");
+  actor.gold -= 160;
+  actor.orders -= 1;
+  actor.acted = true;
+  band.truce[actor.id] = (world.hour || 0) + 5;
+  log(world, `${actor.name} buys off ${band.name} through hour ${band.truce[actor.id] - 1}.`);
+  return { ok: true, message: `${band.name} stays quiet through hour ${band.truce[actor.id] - 1}.` };
+}
+
 export function growRival(world, agent) {
   if (!agent || agent.kind !== "agent") return false;
   if (agent.gold < 350 || agent.peasants < 30) return false;
@@ -2421,6 +2563,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleWeir(p, world.hour);
   for (const p of world.provinces) settleSiege(p, world.hour);
   expireBounties(world);
+  pressBands(world);
   if (world.hour % 3 === 0) {
     let grown = 0;
     for (const p of world.provinces) {
@@ -2506,6 +2649,11 @@ export function chooseAction(world, agent) {
   }
   const site = nearestOpenSite(world, agent);
   if (site && rng.next() < 0.18) return { type: "clear", site: site.id };
+  if (agent.persona === "harrow" && agent.orders >= 1) {
+    const [ax, ay] = seatPoint(agent);
+    const camp = (world.bands || []).find((band) => bandUp(band, world.hour) && Math.hypot(ax - band.x, ay - band.y) < 1400 && offense(agent) >= band.men * 12);
+    if (camp && rng.next() < 0.2) return { type: "ride", band: camp.id };
+  }
   if (agent.persona === "harrow") {
     if (siegeLive(agent, world.hour)) return trainBias(agent) || buildIf(agent, "barracks") || buildIf(agent, "field");
     const marked = weakestWin(world, agent, (p) => bountyOn(world, p.id, world.hour) && defense(p) < offense(agent) * 1.05);
@@ -2648,6 +2796,7 @@ export function hydrate(raw) {
   delete data.rngState;
   data.wonders = data.wonders || {};
   data.sites = data.sites && data.sites.length ? data.sites : freshSites();
+  data.bands = data.bands && data.bands.length ? data.bands : freshBands();
   const world = { ...data, rng: makeRng(rngState) };
   ensurePlots(world);
   const cap = world.orderCap || 4;
@@ -2784,6 +2933,7 @@ export function createOpenRealm(seed = 1) {
     wonders: {},
     bounties: {},
     sites: freshSites(),
+    bands: freshBands(),
     rng: makeRng(seed),
   };
   ensurePlots(world);

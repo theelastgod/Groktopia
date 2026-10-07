@@ -11,6 +11,7 @@ import {
   foodNeed,
   advanceHour,
   applyAction,
+  pressBands,
   buildingCount,
   byId,
   formatUtopia,
@@ -1673,6 +1674,82 @@ test("a sally breaks the siege works and hangs the banner", () => {
   assert.equal(seat.soldiers, before - 6);
   assert.equal(seat.ledger.sally, undefined);
   assert.equal(seat.standards || 0, 0);
+});
+
+test("a wild band raids a soft holding, and a ride or a bribe answers it", () => {
+  const w = newWorld({ seed: 3 });
+  assert.equal(w.bands.length, 3);
+  const you = byId(w, "you");
+  const band = w.bands[0];
+  you.x = band.x + 80;
+  you.y = band.y;
+  you.soldiers = 4;
+  you.elites = 0;
+  you.buildings.keep = 0;
+  you.muster = 0;
+  you.plots = [];
+  you.gold = 1000;
+  you.grain = 1000;
+  you.peasants = 200;
+  pressBands(w);
+  assert.equal(band.raid.target, "you");
+  assert.ok(you.gold < 1000);
+  assert.ok(you.grain < 1000);
+  assert.ok(you.peasants < 200);
+  you.soldiers = 100;
+  you.elites = 24;
+  you.buildings.keep = 12;
+  const purse = you.utopia;
+  const hoard = band.hoard;
+  const afterRaid = you.gold;
+  const res = applyAction(w, "you", { type: "ride", band: band.id });
+  assert.equal(res.ok, true);
+  assert.equal(res.win, true);
+  assert.equal(band.men, 0);
+  assert.equal(band.downUntil, w.hour + 6);
+  assert.equal(you.pelts, 1);
+  assert.equal(you.gold, afterRaid + hoard);
+  assert.equal(you.ledger.ride, EARN.ride);
+  assert.equal(you.utopia, purse + EARN.ride);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(applyAction(w, "you", { type: "ride", band: band.id }).ok, false);
+
+  const weak = newWorld({ seed: 8 });
+  const seat = byId(weak, "you");
+  const foe = weak.bands[0];
+  seat.soldiers = 12;
+  seat.elites = 0;
+  seat.buildings.keep = 0;
+  seat.muster = 0;
+  seat.plots = [];
+  seat.spells.fury = 0;
+  const before = seat.soldiers;
+  const lost = applyAction(weak, "you", { type: "ride", band: foe.id });
+  assert.equal(lost.ok, true);
+  assert.equal(lost.win, false);
+  assert.equal(seat.soldiers, before - 5);
+  assert.equal(foe.men, 24);
+  assert.equal(seat.ledger.ride, undefined);
+
+  const paid = newWorld({ seed: 4 });
+  const buyer = byId(paid, "you");
+  const camp = paid.bands[1];
+  buyer.x = camp.x + 40;
+  buyer.y = camp.y;
+  const gold = buyer.gold;
+  const bribe = applyAction(paid, "you", { type: "bribe", band: camp.id });
+  assert.equal(bribe.ok, true);
+  assert.equal(buyer.gold, gold - 160);
+  assert.equal(camp.truce.you, 5);
+  buyer.soldiers = 4;
+  buyer.elites = 0;
+  buyer.buildings.keep = 0;
+  buyer.plots = [];
+  buyer.gold = 400;
+  buyer.grain = 400;
+  pressBands(paid);
+  assert.equal(buyer.gold, 400);
+  assert.notEqual(camp.raid && camp.raid.target, "you");
 });
 
 test("wild holdings push their fences when the gold holds", () => {

@@ -163,8 +163,10 @@ export class RealmRoom {
     }
     const action = body.action || {};
     const site = action.type === "clear" ? (data.world.sites || []).find((row) => row.id === action.site) : null;
+    const band = action.type === "ride" || action.type === "bribe" ? (data.world.bands || []).find((row) => row.id === action.band) : null;
     const moving = action.target && action.target !== seatId && (action.type === "attack" || action.type === "siege" || action.type === "sally" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.type === "bounty" || action.type === "relief" || action.type === "road" || action.spell === "meteor");
     if (site) this.pushRaw({ type: "march", from: seatId, to: site.id, kind: "clear", x: site.x, y: site.y });
+    else if (band) this.pushRaw({ type: "march", from: seatId, to: band.id, kind: action.type === "bribe" ? "bribe" : "ride", x: band.x, y: band.y });
     else if (moving && byId(data.world, action.target)) {
       const kind = action.type === "trade" ? "trade" : action.type === "envoy" ? "envoy" : action.type === "tribute" ? "tribute" : action.type === "ransom" ? "ransom" : action.type === "release" ? "release" : action.type === "bounty" ? "bounty" : action.type === "relief" ? "relief" : action.type === "road" ? "road" : action.type === "siege" ? "siege" : action.type === "sally" ? "sally" : "host";
       this.pushRaw({ type: "march", from: seatId, to: action.target, kind });

@@ -31,6 +31,19 @@ export function hitSite(sites, x, y) {
   return best;
 }
 
+export function hitBand(bands, x, y) {
+  let best = null;
+  let bestD = Infinity;
+  for (const band of bands || []) {
+    const d = Math.hypot(x - band.x, y - band.y);
+    if (d <= 48 && d < bestD) {
+      best = band.id;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
 export function hitProvince(provinces, x, y) {
   let best = null;
   let bestD = Infinity;
@@ -1483,6 +1496,28 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (quarryPits(p) > 0) drawCairn(ctx, g, quarryPits(p));
   if (siegeLive(p, hour)) drawSiegePennant(ctx, g, time);
   if ((p.standards || 0) > 0) drawStandards(ctx, g, p.standards, time);
+  if ((p.pelts || 0) > 0) drawPelt(ctx, g, p.pelts);
+}
+
+function drawPelt(ctx, g, n) {
+  const x = g.x + g.r * 0.42;
+  const y = g.y - g.r * 0.2;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.4);
+  ctx.fillStyle = "#6a3a28";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(-1, -12, 2, 8);
+  if (n > 1) {
+    ctx.fillStyle = "#f3e6c8";
+    ctx.font = "700 10px Palatino, Georgia, serif";
+    ctx.textAlign = "left";
+    ctx.fillText(String(Math.min(9, n)), 8, 3);
+  }
+  ctx.restore();
 }
 
 function drawStandards(ctx, g, n, time) {
@@ -2107,6 +2142,14 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
     ctx.fillStyle = site.clearedBy ? "#5c5344" : "#e2c078";
     ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
   }
+  for (const band of world.bands || []) {
+    const [sx, sy] = to(band.x, band.y);
+    const live = (band.men || 0) >= 8 && (band.downUntil || 0) <= (world.hour || 0);
+    ctx.fillStyle = live ? "#a14a3c" : "#5c5344";
+    ctx.beginPath();
+    ctx.arc(sx, sy, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
   const [cx, cy] = to(cam.x, cam.y);
   ctx.strokeStyle = "#e2c078";
   ctx.lineWidth = 1;
@@ -2148,6 +2191,71 @@ function drawSites(ctx, world) {
     ctx.font = "700 13px Palatino, Georgia, serif";
     ctx.textAlign = "center";
     ctx.fillText(site.name, site.x, site.y + 32);
+  }
+}
+
+function drawBands(ctx, world, time) {
+  const hour = world.hour || 0;
+  for (const band of world.bands || []) {
+    const live = (band.men || 0) >= 8 && (band.downUntil || 0) <= hour;
+    ctx.save();
+    ctx.translate(band.x, band.y);
+    ctx.fillStyle = live ? "rgba(90, 42, 28, 0.38)" : "rgba(50, 44, 36, 0.4)";
+    ctx.beginPath();
+    ctx.ellipse(0, 8, 30, 13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const tents = live ? 3 : 1;
+    for (let i = 0; i < tents; i++) {
+      const ox = (i - (tents - 1) / 2) * 16;
+      ctx.fillStyle = !live ? "#4a4038" : i === 1 ? "#a14a3c" : "#6d5344";
+      ctx.beginPath();
+      ctx.moveTo(ox - 8, 6);
+      ctx.lineTo(ox, -14);
+      ctx.lineTo(ox + 8, 6);
+      ctx.fill();
+    }
+    if (live) {
+      const flick = 5 + Math.sin(time * 7) * 2;
+      ctx.fillStyle = "#e2c078";
+      ctx.beginPath();
+      ctx.moveTo(20, 5);
+      ctx.lineTo(24, 5 - flick);
+      ctx.lineTo(28, 5);
+      ctx.fill();
+      ctx.fillStyle = "#e07a68";
+      ctx.beginPath();
+      ctx.arc(24, 6, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 0; i < 3; i++) {
+        const ang = time * 0.85 + i * 2.1;
+        const rx = Math.cos(ang) * 36;
+        const ry = Math.sin(ang) * 16;
+        ctx.fillStyle = "#24180f";
+        ctx.fillRect(rx - 5, ry - 2, 10, 4);
+        ctx.fillStyle = "#c45a48";
+        ctx.fillRect(rx + 3, ry - 7, 3, 6);
+      }
+    }
+    ctx.fillStyle = live ? "#f3e6c8" : "#8a8070";
+    ctx.font = "700 13px Palatino, Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.fillText(live ? `${band.name} · ${band.men}` : `${band.name} · ash`, 0, 38);
+    ctx.restore();
+    if (live && band.raid && band.raid.hour === hour && band.raid.target) {
+      const target = (world.provinces || []).find((row) => row.id === band.raid.target);
+      if (!target) continue;
+      const [tx, ty] = seatPoint(target);
+      ctx.save();
+      ctx.strokeStyle = "rgba(196, 90, 72, 0.8)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 8]);
+      ctx.lineDashOffset = -time * 22;
+      ctx.beginPath();
+      ctx.moveTo(band.x, band.y);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 }
 
@@ -2289,6 +2397,9 @@ const MARCH_INK = {
   road: "#c4b08a",
   siege: "#e07a68",
   sally: "#f3e6c8",
+  ride: "#f3e6c8",
+  bribe: "#e2c078",
+  band: "#c45a48",
   ransom: "#e2c078",
   release: "#f3e6c8",
   trade: "#e2c078",
@@ -2367,7 +2478,7 @@ function drawMarch(ctx, march, time) {
   ctx.font = "700 11px Palatino, Georgia, serif";
   ctx.fillStyle = color;
   ctx.textAlign = "center";
-  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE", bounty: "BOUNTY", relief: "RELIEF", road: "CAUSEWAY" }[kind] || "MARCH";
+  const title = { trade: "CARAVAN", seize: "SEIZE", sack: "SACK", raze: "RAZE", thief: "THIEF", meteor: "METEOR", host: "MARCH", clear: "OPEN", tribute: "TRIBUTE", ransom: "RANSOM", release: "RELEASE", bounty: "BOUNTY", relief: "RELIEF", road: "CAUSEWAY", ride: "RIDE", bribe: "PARLEY", band: "BAND", siege: "SIEGE", sally: "SALLY" }[kind] || "MARCH";
   ctx.fillText(title, lead.x, lead.y - 18);
 }
 
@@ -2385,6 +2496,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   const geoms = world.provinces.map(provinceGeom).sort((a, b) => a.y - b.y);
   drawRoads(ctx, geoms);
   drawSites(ctx, world);
+  drawBands(ctx, world, time);
   drawPacts(ctx, world, seatId, time);
   drawCauseways(ctx, world);
   drawSieges(ctx, world, time);

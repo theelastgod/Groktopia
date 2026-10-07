@@ -47,7 +47,7 @@ import {
   thiefCap,
   eliteCap,
 } from "./sim.js";
-import { drawMini, drawRealm, fitCamera, hitProvince, hitSite, provinceGeom, screenToWorld } from "./map.js";
+import { drawMini, drawRealm, fitCamera, hitBand, hitProvince, hitSite, provinceGeom, screenToWorld } from "./map.js";
 
 const SESSION = "groktopia.session";
 const app = document.querySelector("#app");
@@ -62,6 +62,7 @@ let skew = 0;
 let toast = "";
 let selectedId = "";
 let selectedSite = null;
+let selectedBand = null;
 let stake = 100;
 let soundOn = true;
 let wallet = "";
@@ -202,6 +203,15 @@ function order(action, sound) {
     if (fromP && site) {
       const from = provinceGeom(fromP);
       pushParty(from.x, from.y, site.x, site.y, "clear");
+      bed("battle");
+    }
+  }
+  if (action.type === "ride" || action.type === "bribe") {
+    const fromP = seat();
+    const band = (world.bands || []).find((row) => row.id === action.band);
+    if (fromP && band) {
+      const from = provinceGeom(fromP);
+      pushParty(from.x, from.y, band.x, band.y, action.type === "bribe" ? "bribe" : "ride");
       bed("battle");
     }
   }
@@ -467,6 +477,13 @@ function spawnFromLog(text) {
     .filter((p) => p.name && p.name !== "Unscouted" && text.includes(p.name))
     .sort((a, b) => b.name.length - a.name.length);
   const site = (world.sites || []).find((row) => text.includes(row.name));
+  const band = (world.bands || []).find((row) => text.includes(row.name));
+  if (band && named[0]) {
+    const hold = provinceGeom(named[0]);
+    if (/rides through|rides at|breaks on the wall|scatters/i.test(text)) pushParty(band.x, band.y, hold.x, hold.y, "band");
+    else pushParty(hold.x, hold.y, band.x, band.y, "ride");
+    return;
+  }
   if (named.length < 2 && site && named[0]) {
     const from = provinceGeom(named[0]);
     pushParty(from.x, from.y, site.x, site.y, "clear");
@@ -517,7 +534,7 @@ function paint() {
       veil.innerHTML = `<div class="veil-card"><h2>The age is opening</h2><p>${meta.humans || 1} of ${meta.maxHumans || 8} players. Seats stay open, and the hours already on the clock belong to whoever is here.</p></div>`;
     } else veil.hidden = true;
   }
-  if (card) card.innerHTML = selectedSite ? siteCard(p, selectedSite) : cardFor(p, byId(world, selectedId) || p);
+  if (card) card.innerHTML = selectedBand ? bandCard(p, selectedBand) : selectedSite ? siteCard(p, selectedSite) : cardFor(p, byId(world, selectedId) || p);
   let toastNode = document.querySelector(".toast");
   if (toast) {
     if (!toastNode) {
@@ -645,6 +662,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-quarry="1">Open a quarry · 190g · +${formatUtopia(EARN.quarry)}</button>
       </div>
       <div class="row">${sallyButtons(actor)}</div>
+      ${bandAlert(actor)}
       <div class="row">${spells}</div>
       <p class="muted">${esc(weirLine(actor))}</p>
       <div class="row">${weirButton(actor)}</div>
@@ -787,6 +805,7 @@ function ledgerLine(actor) {
     ["quarries", book.quarry],
     ["sieges", book.siege],
     ["sallies", book.sally],
+    ["rides", book.ride],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -996,6 +1015,31 @@ function relicLine(actor) {
   return `Relics: ${held.map((row) => `${row.name}. ${row.line}`).join(" ")}`;
 }
 
+function bandAlert(actor) {
+  const hour = world.hour || 0;
+  const rows = (world.bands || []).filter((band) => band.raid && band.raid.hour === hour && band.raid.target === actor.id && (band.men || 0) >= 8);
+  if (!rows.length) return "";
+  return rows.map((band) => `<p class="muted">${esc(band.name)} struck this hour. ${band.men} riders are still camped. Key V rides the nearest camp.</p>`).join("")
+    + `<div class="row">${rows.map((band) => `<button class="btn danger" type="button" data-ride="${band.id}">Ride ${esc(band.name)} · +${formatUtopia(EARN.ride)}</button>`).join("")}</div>`;
+}
+
+function bandCard(actor, band) {
+  const hour = world.hour || 0;
+  const live = (band.men || 0) >= 8 && (band.downUntil || 0) <= hour;
+  const truce = band.truce && band.truce[actor.id];
+  const quiet = typeof truce === "number" && truce > hour;
+  return `<h2>${esc(band.name)}</h2>
+    <p>${live ? `${band.men} riders camp here with ${band.hoard || 0} gold in the tents.` : `The camp is ash until hour ${band.downUntil}.`}</p>
+    <p class="muted">Each hour one live camp rides the nearest human inside reach. A strong wall throws them back. A soft holding loses gold, grain, and people. They stake no $UTOPIA. Riding them down takes 12 soldiers. Buying them off costs 160 gold and keeps them off your acres for five hours.</p>
+    ${quiet ? `<p class="muted">Paid off through hour ${truce - 1}.</p>` : ""}
+    <div class="row">
+      ${live ? `<button class="btn danger" type="button" data-ride="${esc(band.id)}">Ride them down · +${formatUtopia(EARN.ride)}</button>` : ""}
+      ${live && !quiet ? `<button class="btn" type="button" data-bribe="${esc(band.id)}">Buy them off · 160g</button>` : ""}
+      <button class="btn" type="button" data-band-close="1">Back to acres</button>
+    </div>
+    ${earnStrip(actor)}`;
+}
+
 function siteCard(actor, site) {
   const who = site.clearedBy ? (byId(world, site.clearedBy)?.name || "someone") : "";
   const relic = RELICS[site.id];
@@ -1076,14 +1120,17 @@ function bindMap(canvas) {
     lastTap = now;
     const point = worldPointFrom(event, canvas);
     const siteHit = hitSite(world.sites, point.x, point.y);
-    if (!hoverId && siteHit) {
-      selectedSite = (world.sites || []).find((row) => row.id === siteHit) || null;
+    const bandHit = hitBand(world.bands, point.x, point.y);
+    if (!hoverId && (siteHit || bandHit)) {
+      selectedSite = siteHit ? (world.sites || []).find((row) => row.id === siteHit) || null : null;
+      selectedBand = !siteHit && bandHit ? (world.bands || []).find((row) => row.id === bandHit) || null : null;
       if (window.matchMedia("(max-width: 760px)").matches) setSheet(true);
       play("click");
       paint();
       return;
     }
     selectedSite = null;
+    selectedBand = null;
     if (!hoverId) return;
     selectedId = hoverId;
     if (window.matchMedia("(max-width: 760px)").matches) setSheet(true);
@@ -1169,6 +1216,11 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "t" && world) order({ type: "timber" }, "build");
       if (event.key.toLowerCase() === "k" && world) order({ type: "quarry" }, "build");
       if (event.key.toLowerCase() === "z" && world && selectedId && selectedId !== seat().id) order({ type: "siege", target: selectedId }, "battle");
+      if (event.key.toLowerCase() === "v" && world) {
+        const picked = selectedBand && (world.bands || []).find((band) => band.id === selectedBand.id && (band.men || 0) >= 8);
+        const band = picked || (world.bands || []).find((row) => (row.men || 0) >= 8 && (row.downUntil || 0) <= (world.hour || 0));
+        if (band) order({ type: "ride", band: band.id }, "battle");
+      }
       if (event.key.toLowerCase() === "m" && world) {
         const foe = (world.provinces || []).find((p) => siegeLive(p, world.hour) && p.siege.target === seat().id && (!selectedId || selectedId === seat().id || p.id === selectedId));
         if (foe) order({ type: "sally", target: foe.id }, "battle");
@@ -1370,6 +1422,19 @@ app.addEventListener("click", async (event) => {
     order({ type: "clear", site: node.dataset.clear }, "march");
     return;
   }
+  if (node.dataset.ride) {
+    order({ type: "ride", band: node.dataset.ride }, "battle");
+    return;
+  }
+  if (node.dataset.bribe) {
+    order({ type: "bribe", band: node.dataset.bribe }, "coin");
+    return;
+  }
+  if (node.dataset.bandClose) {
+    selectedBand = null;
+    paint();
+    return;
+  }
   if (node.dataset.siteClose) {
     selectedSite = null;
     paint();
@@ -1484,6 +1549,7 @@ function takeState(msg) {
   if (msg.standings) standings = msg.standings;
   if (!selectedId || !byId(world, selectedId)) selectedId = world.seat;
   if (selectedSite) selectedSite = (world.sites || []).find((row) => row.id === selectedSite.id) || null;
+  if (selectedBand) selectedBand = (world.bands || []).find((row) => row.id === selectedBand.id) || null;
   const purse = seat() && seat().utopia;
   if (purseSeen == null) purseSeen = purse;
   else if (purse > purseSeen) {

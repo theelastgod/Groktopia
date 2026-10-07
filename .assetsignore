@@ -11,3 +11,5 @@ wrangler.toml
 src/worker.js
 src/realm.js
 .git/**
+brand
+brand/**
