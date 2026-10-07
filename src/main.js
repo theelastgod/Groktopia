@@ -260,7 +260,7 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck.</p>
+        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck. A war hull can escort a trader.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
@@ -827,6 +827,7 @@ function ledgerLine(actor) {
     ["prizes", book.prize],
     ["blockades", book.block],
     ["salvage", book.salvage],
+    ["convoys", book.convoy],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1064,12 +1065,17 @@ function fleetLine(actor) {
       course = `blockading ${colony ? colony.name : "a port"}`;
     } else if (ship.salvage) {
       course = `salvaging ${ship.salvage.q},${ship.salvage.r}`;
+    } else if (ship.escort) {
+      const trader = ships.find((row) => row.id === ship.escort);
+      const tradeName = trader && NAVY[trader.kind] ? NAVY[trader.kind].name : "a trader";
+      course = `escorting the ${tradeName}`;
     }
     rows.push(`<button class="btn" type="button" data-direct="ship" data-id="${esc(ship.id)}">Direct ${esc(spec ? spec.name : ship.kind)} · ${course}</button>`);
     rows.push(`<button class="btn" type="button" data-salvage="${esc(ship.id)}">Salvage with the ${esc(spec ? spec.name : ship.kind)} · click a wreck</button>`);
     if (spec && spec.teeth >= 5) {
       rows.push(`<button class="btn danger" type="button" data-grapple="${esc(ship.id)}">Close the ${esc(spec.name)} · click a hull</button>`);
       rows.push(`<button class="btn" type="button" data-blockade="${esc(ship.id)}">Blockade with the ${esc(spec.name)} · click a port</button>`);
+      rows.push(`<button class="btn" type="button" data-convoy="${esc(ship.id)}">Escort with the ${esc(spec.name)} · click a trader</button>`);
     }
   }
   if (ports.length && ships.length < 6) {
@@ -1081,13 +1087,13 @@ function fleetLine(actor) {
     }
   }
   if (aim) {
-    const hint = aim.unit === "grapple" ? "Click an enemy hull to close." : aim.unit === "blockade" ? "Click an enemy port to close it." : aim.unit === "salvage" ? "Click a wreck to take the timber." : `Click the map to send the ${esc(aim.unit)}.`;
+    const hint = aim.unit === "grapple" ? "Click an enemy hull to close." : aim.unit === "blockade" ? "Click an enemy port to close it." : aim.unit === "salvage" ? "Click a wreck to take the timber." : aim.unit === "convoy" ? "Click one of your traders to escort." : `Click the map to send the ${esc(aim.unit)}.`;
     rows.push(`<p class="muted">${hint}</p>`);
   }
   if ((world.wrecks || []).some((row) => (row.until || 0) > world.hour)) {
     rows.push(`<p class="muted">A wreck rides the water. A gold glint marks the timber.</p>`);
   }
-  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. Key X grapples. Key \\ blockades. Key ; salvages.</p>`);
+  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts.</p>`);
   return rows.join("");
 }
 
@@ -1280,6 +1286,16 @@ function bindMap(canvas) {
           return;
         }
         order({ type: "salvage", ship: course.id, q: hit.q, r: hit.r }, "coin");
+      } else if (course.unit === "convoy") {
+        const hit = shipAt(point.x, point.y);
+        const hull = hit && (seat().ships || []).find((row) => row.id === hit.id);
+        if (!hit || hit.owner !== seat().id || !hull || !NAVY[hull.kind] || NAVY[hull.kind].teeth >= 5) {
+          aim = course;
+          note("Click one of your traders.");
+          paint();
+          return;
+        }
+        order({ type: "convoy", ship: course.id, hull: hit.id }, "build");
       } else {
         const axial = worldToAxial(point.x, point.y);
         order({ type: "direct", unit: course.unit, id: course.id, q: axial.q, r: axial.r }, "build");
@@ -1393,6 +1409,15 @@ function bindMap(canvas) {
           || fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5);
         if (war) {
           aim = { unit: "grapple", id: war.id };
+          paint();
+        }
+      }
+      if (event.key === "[" && world && seat()) {
+        const fleet = seat().ships || [];
+        const war = fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5 && !row.escort)
+          || fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5);
+        if (war) {
+          aim = { unit: "convoy", id: war.id };
           paint();
         }
       }
@@ -1591,6 +1616,11 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.salvage) {
     aim = { unit: "salvage", id: node.dataset.salvage };
+    paint();
+    return;
+  }
+  if (node.dataset.convoy) {
+    aim = { unit: "convoy", id: node.dataset.convoy };
     paint();
     return;
   }

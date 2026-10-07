@@ -2741,6 +2741,26 @@ function drawColonies(ctx, world, time) {
       ctx.textAlign = "center";
       ctx.fillText("SALVAGE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
     }
+    for (const ship of realm.ships || []) {
+      if (!ship.escort) continue;
+      const trader = (realm.ships || []).find((row) => row.id === ship.escort);
+      if (!trader) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(trader.q, trader.r);
+      ctx.strokeStyle = "rgba(125, 154, 114, 0.95)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.lineDashOffset = -time * 10;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#7d9a72";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("CONVOY", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
+    }
   }
   for (const realm of world.provinces || []) {
     for (const colony of realm.colonies || []) {

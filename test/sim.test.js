@@ -2303,6 +2303,85 @@ test("a hull salvages a wreck and takes the timber", () => {
   assert.ok(w.log.some((row) => row.text.includes("salvages a wrecked Fisher")));
 });
 
+test("a war hull escorts a trader, fattens the haul, and adds teeth", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.convoy, 49);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.gold = 1000;
+    seat.grain = 5000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = hush(w, "you");
+  w.provinces = [you];
+  you.ships = [
+    { id: "cog", kind: "cog", q: 36, r: -18, destQ: null, destR: null },
+    { id: "gal", kind: "galley", q: 36, r: -18, destQ: null, destR: null },
+  ];
+  assert.equal(applyAction(w, "you", { type: "convoy", ship: "cog", hull: "gal" }).ok, false);
+  assert.equal(you.orders, ORDERS);
+  const sent = applyAction(w, "you", { type: "convoy", ship: "gal", hull: "cog" });
+  assert.equal(sent.ok, true);
+  assert.equal(you.ships[1].escort, "cog");
+  assert.equal(you.ledger.convoy, EARN.convoy);
+  advanceHour(w);
+  const bonus = Math.floor(NAVY.cog.haul / 2) + 4;
+  assert.equal(you.gold, 1000 + NAVY.cog.haul + bonus + NAVY.galley.haul);
+  assert.equal(you.utopia, EARN.convoy + EARN.hourActive);
+  you.orders = 1;
+  assert.equal(applyAction(w, "you", { type: "direct", unit: "ship", id: "gal", q: 38, r: -18 }).ok, true);
+  assert.equal(you.ships.find((row) => row.id === "gal").escort, null);
+
+  const fight = newWorld({ seed: 5 });
+  fight.bands = [];
+  const left = hush(fight, "you");
+  const right = hush(fight, "brine");
+  fight.provinces = [left, right];
+  left.ships = [
+    { id: "cog", kind: "cog", q: 36, r: -18, destQ: null, destR: null },
+    { id: "gal", kind: "galley", q: 36, r: -17, destQ: null, destR: null },
+  ];
+  right.ships = [{ id: "war", kind: "galley", q: 37, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(fight, "you", { type: "convoy", ship: "gal", hull: "cog" }).ok, true);
+  assert.equal(applyAction(fight, "brine", { type: "grapple", ship: "war", owner: "you", hull: "cog" }).ok, true);
+  advanceHour(fight);
+  assert.equal(left.ships.length, 2);
+  assert.equal(right.ships.length, 1);
+  assert.ok(fight.log.some((row) => row.text.includes("fall apart")));
+
+  const bare = newWorld({ seed: 6 });
+  bare.bands = [];
+  const open = hush(bare, "you");
+  const foe = hush(bare, "brine");
+  bare.provinces = [open, foe];
+  open.ships = [
+    { id: "cog", kind: "cog", q: 36, r: -18, destQ: null, destR: null },
+    { id: "gal", kind: "galley", q: 36, r: -17, destQ: null, destR: null },
+  ];
+  foe.ships = [{ id: "war", kind: "galley", q: 37, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(bare, "brine", { type: "grapple", ship: "war", owner: "you", hull: "cog" }).ok, true);
+  advanceHour(bare);
+  assert.equal(open.ships.some((row) => row.kind === "cog"), false);
+});
+
 test("wild holdings push their fences when the gold holds", () => {
   const w = newWorld({ seed: 2 });
   const moss = byId(w, "moss");
