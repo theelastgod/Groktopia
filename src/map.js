@@ -330,6 +330,31 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawLookout(ctx, x, y, time) {
+  const sweep = time * 0.8;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#5c564c";
+  ctx.fillRect(-5, -8, 10, 16);
+  ctx.fillStyle = "#2a2620";
+  ctx.fillRect(-6, -10, 12, 3);
+  ctx.save();
+  ctx.translate(0, -10);
+  ctx.rotate(sweep);
+  ctx.strokeStyle = "rgba(226, 192, 120, 0.85)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(16, 0);
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("LOOK", 0, 18);
+  ctx.restore();
+}
+
 function drawWheel(ctx, x, y, time) {
   const spin = time * 1.8;
   ctx.save();
@@ -508,6 +533,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "hamlet") drawHamlet(ctx, cell.pos.x, cell.pos.y);
     else if (plot && plot.crew === "timber") drawTimberCamp(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "quarry") drawQuarry(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "look") drawLookout(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
@@ -519,6 +545,29 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
     if (plot && plot.keel && keelUp(cell.owner, world.hour)) drawKeel(ctx, cell.q, cell.r, time || 0);
     if (plot && plot.crew === "wheel") drawWheel(ctx, cell.pos.x, cell.pos.y, time || 0);
+    if (plot && plot.crew === "look") {
+      for (const other of world.provinces || []) {
+        if (!other || other.id === cell.owner.id) continue;
+        for (const ship of other.ships || []) {
+          const dist = (Math.abs(ship.q - cell.q) + Math.abs(ship.r - cell.r) + Math.abs(ship.q + ship.r - (cell.q + cell.r))) / 2;
+          if (dist > 6) continue;
+          const there = axialToWorld(ship.q, ship.r);
+          ctx.strokeStyle = "rgba(226, 192, 120, 0.8)";
+          ctx.lineWidth = 1.2;
+          ctx.setLineDash([4, 5]);
+          ctx.lineDashOffset = -(time || 0) * 16;
+          ctx.beginPath();
+          ctx.moveTo(cell.pos.x, cell.pos.y);
+          ctx.lineTo(there.x, there.y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = "#e2c078";
+          ctx.font = "700 11px Palatino, Georgia, serif";
+          ctx.textAlign = "center";
+          ctx.fillText("SIGHTED", (cell.pos.x + there.x) / 2, (cell.pos.y + there.y) / 2 - 8);
+        }
+      }
+    }
   }
 }
 

@@ -3943,6 +3943,83 @@ test("a tide wheel pays from wet ground and a sack breaks it", () => {
   assert.ok(raid.log.some((row) => row.text.includes("broke the tide wheel")));
 });
 
+test("a lookout marks an enemy hull and a sack topples it", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.look, 69);
+  let hill = null;
+  let flat = null;
+  for (let q = -30; q <= 30 && (!hill || !flat); q++) {
+    for (let r = -30; r <= 30; r++) {
+      const kind = terrainKind(q, r);
+      if (!hill && (kind === "hill" || kind === "mount")) hill = { q, r };
+      if (!flat && kind === "grass") flat = { q, r };
+    }
+  }
+  assert.ok(hill);
+  assert.ok(flat);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  const foe = byId(w, "brine");
+  w.provinces = [you, foe];
+  foe.name = "Salt Ledger";
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  for (const key of Object.keys(foe.buildings)) foe.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.plots = [{ ...flat, crew: "hand" }];
+  you.grain = 5000;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  foe.peasants = 0;
+  foe.soldiers = 0;
+  foe.elites = 0;
+  foe.plots = [];
+  foe.ships = [];
+  foe.colonies = [];
+  assert.equal(applyAction(w, "you", { type: "look" }).ok, false);
+  you.plots = [{ q: hill.q, r: hill.r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "look" }).ok, false);
+  you.gold = 1000;
+  const raised = applyAction(w, "you", { type: "look" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.gold, 820);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.plots[0].crew, "look");
+  assert.equal(you.ledger.look, EARN.look);
+  assert.equal(applyAction(w, "you", { type: "look" }).ok, false);
+  foe.ships = [{ id: "spy", kind: "galley", q: hill.q, r: hill.r }];
+  advanceHour(w);
+  assert.equal(you.gold, 826);
+  assert.equal(you.grain, 5000);
+  assert.equal(you.utopia, EARN.look + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("lookout marks") && row.text.includes("Salt Ledger") && row.text.includes("Galley")));
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.plots = [{ q: hill.q, r: hill.r, crew: "look" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("toppled the lookout")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

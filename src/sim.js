@@ -72,6 +72,7 @@ export const EARN = {
   chain: 66,
   ferry: 67,
   wheel: 68,
+  look: 69,
 };
 
 export const FACTIONS = {
@@ -939,6 +940,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "timber") result = doTimber(world, actor);
   else if (action.type === "quarry") result = doQuarry(world, actor);
   else if (action.type === "wheel") result = doWheel(world, actor);
+  else if (action.type === "look") result = doLook(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -1881,6 +1883,42 @@ function doWheel(world, actor) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} raises a tide wheel on a ${kind} tile. It pays 28 grain and 12 gold an hour. A sack breaks the wheel.${purse}`);
   return { ok: true, message: `Tide wheel on the ${kind} tile.${purse}` };
+}
+
+function doLook(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "look")) return fail("A lookout already watches.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 180) return fail("A lookout wants 180 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && stoneTile(tile));
+  if (!plot) return fail("A lookout needs a hand or an open lot on a hill or a mountain.");
+  actor.gold -= 180;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "look";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.look;
+    notePurse(actor, "look", EARN.look);
+    purse = ` Purse +${formatUtopia(EARN.look)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} raises a lookout on a ${kind} tile. It pays 6 gold an hour and marks an enemy hull within six hexes. A sack topples it.${purse}`);
+  return { ok: true, message: `Lookout on the ${kind} tile.${purse}` };
+}
+
+function spotLookout(world, actor) {
+  const tower = (actor.plots || []).find((tile) => tile.crew === "look");
+  if (!tower) return;
+  for (const other of world.provinces || []) {
+    if (!other || other.id === actor.id) continue;
+    for (const ship of other.ships || []) {
+      if (hexDist(ship.q, ship.r, tower.q, tower.r) > 6) continue;
+      const spec = NAVY[ship.kind];
+      log(world, `${actor.name}'s lookout marks ${other.name}'s ${spec ? spec.name : "hull"} within six hexes.`);
+      return;
+    }
+  }
 }
 
 export function stonePrice(actor, key) {
@@ -4091,6 +4129,15 @@ function doAttack(world, actor, action) {
       wheel.crew = "hand";
       spoke = " and broke the tide wheel";
     }
+    let tower = "";
+    const look = (target.plots || []).find((tile) => tile.crew === "look");
+    if (look) {
+      const watch = Math.min(target.gold, 30);
+      target.gold -= watch;
+      g += watch;
+      look.crew = "hand";
+      tower = " and toppled the lookout";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4101,7 +4148,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4303,6 +4350,7 @@ function economy(world, p, hour) {
       foodIn += 28;
       goldIn += 12;
     }
+    else if (tile.crew === "look") goldIn += 6;
   }
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
@@ -4410,6 +4458,7 @@ export function advanceHour(world) {
     const sweep = watchSweep(world, p);
     if (sweep.fresh > 0 && p.kind === "human") log(world, `${p.name}'s watch fire reads ${sweep.fresh} new camps.`);
   }
+  for (const p of world.provinces) spotLookout(world, p);
   const prevSeason = seasonName(world.hour);
   world.hour += 1;
   for (const p of world.provinces) settleMuster(p, world.hour);
@@ -4500,6 +4549,9 @@ export function chooseAction(world, agent) {
     const held = byId(world, penned[0]);
     if (held && held.gold >= 20) return { type: "ransom", target: held.id };
     if (held) return { type: "release", target: held.id };
+  }
+  if (agent.persona === "harrow" && !(agent.plots || []).some((tile) => tile.crew === "look") && (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && stoneTile(tile)) && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) {
+    return { type: "look" };
   }
   if (agent.persona === "harrow" && !(agent.smithUntil > world.hour) && agent.gold >= 500 && agent.soldiers >= 40 && agent.orders >= 1 && rng.next() < 0.16) {
     return { type: "smith" };
