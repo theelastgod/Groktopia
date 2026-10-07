@@ -23,6 +23,7 @@ import {
   weirYield,
   timberYards,
   quarryPits,
+  patrolUp,
   stonePrice,
   siegeLive,
   leveeUp,
@@ -629,6 +630,7 @@ function cardFor(actor, selected) {
     ${weirLive(selected, world.hour) ? `<p class="muted">${selected.weir} nets hold through hour ${selected.weirUntil - 1}. This hour they yield ${weirYield(selected, world.hour).grain} grain and ${weirYield(selected, world.hour).gold} gold. A sack tears them up.</p>` : ""}
     ${timberYards(selected) > 0 ? `<p class="muted">${timberYards(selected)} timber ${timberYards(selected) === 1 ? "yard stands" : "yards stand"} on the woods. Each pays 26 gold an hour, and a causeway costs 180 gold. A sack can burn one stack.</p>` : ""}
     ${quarryPits(selected) > 0 ? `<p class="muted">${quarryPits(selected)} ${quarryPits(selected) === 1 ? "quarry cuts" : "quarries cut"} the hills. Each pays 22 gold an hour and 5 defense. Keeps and barracks cost 40 gold less per face. A sack can collapse one pit.</p>` : ""}
+    ${(self || fresh) && patrolUp(selected, world.hour) ? `<p class="muted">${selected.patrol} outriders screen the acres through hour ${selected.patrolUntil - 1}. A wild ride that cannot break them turns aside.</p>` : ""}
     ${siegeNote(actor, selected)}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
@@ -660,6 +662,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-hamlet="1">Raise a hamlet · 260g</button>
         <button class="btn" type="button" data-timber="1">Cut a timber yard · 170g</button>
         <button class="btn" type="button" data-quarry="1">Open a quarry · 190g · +${formatUtopia(EARN.quarry)}</button>
+        ${patrolButton(actor)}
       </div>
       <div class="row">${sallyButtons(actor)}</div>
       ${bandAlert(actor)}
@@ -806,6 +809,7 @@ function ledgerLine(actor) {
     ["sieges", book.siege],
     ["sallies", book.sally],
     ["rides", book.ride],
+    ["outriders", book.patrol],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1015,6 +1019,11 @@ function relicLine(actor) {
   return `Relics: ${held.map((row) => `${row.name}. ${row.line}`).join(" ")}`;
 }
 
+function patrolButton(actor) {
+  if (patrolUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Outriders through hour ${actor.patrolUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-patrol="1">Post outriders · 150g · 8 soldiers · +${formatUtopia(EARN.patrol)}</button>`;
+}
+
 function bandAlert(actor) {
   const hour = world.hour || 0;
   const rows = (world.bands || []).filter((band) => band.raid && band.raid.hour === hour && band.raid.target === actor.id && (band.men || 0) >= 8);
@@ -1030,7 +1039,7 @@ function bandCard(actor, band) {
   const quiet = typeof truce === "number" && truce > hour;
   return `<h2>${esc(band.name)}</h2>
     <p>${live ? `${band.men} riders camp here with ${band.hoard || 0} gold in the tents.` : `The camp is ash until hour ${band.downUntil}.`}</p>
-    <p class="muted">Each hour one live camp rides the nearest human inside reach. A strong wall throws them back. A soft holding loses gold, grain, and people. They stake no $UTOPIA. Riding them down takes 12 soldiers. Buying them off costs 160 gold and keeps them off your acres for five hours.</p>
+    <p class="muted">Each hour one live camp rides the nearest human inside reach. A strong wall throws them back. Outriders can turn a ride before it hits. A soft holding loses gold, grain, and people. They stake no $UTOPIA. Riding them down takes 12 soldiers. Buying them off costs 160 gold and keeps them off your acres for five hours. Key O posts outriders.</p>
     ${quiet ? `<p class="muted">Paid off through hour ${truce - 1}.</p>` : ""}
     <div class="row">
       ${live ? `<button class="btn danger" type="button" data-ride="${esc(band.id)}">Ride them down · +${formatUtopia(EARN.ride)}</button>` : ""}
@@ -1215,6 +1224,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "g" && world) order({ type: "weir" }, "build");
       if (event.key.toLowerCase() === "t" && world) order({ type: "timber" }, "build");
       if (event.key.toLowerCase() === "k" && world) order({ type: "quarry" }, "build");
+      if (event.key.toLowerCase() === "o" && world) order({ type: "patrol" }, "march");
       if (event.key.toLowerCase() === "z" && world && selectedId && selectedId !== seat().id) order({ type: "siege", target: selectedId }, "battle");
       if (event.key.toLowerCase() === "v" && world) {
         const picked = selectedBand && (world.bands || []).find((band) => band.id === selectedBand.id && (band.men || 0) >= 8);
@@ -1364,6 +1374,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.quarry) {
     order({ type: "quarry" }, "build");
+    return;
+  }
+  if (node.dataset.patrol) {
+    order({ type: "patrol" }, "march");
     return;
   }
   if (node.dataset.siege) {

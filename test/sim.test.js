@@ -45,6 +45,7 @@ import {
   stonePrice,
   siegeLive,
   growRival,
+  patrolUp,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -1750,6 +1751,81 @@ test("a wild band raids a soft holding, and a ride or a bribe answers it", () =>
   pressBands(paid);
   assert.equal(buyer.gold, 400);
   assert.notEqual(camp.raid && camp.raid.target, "you");
+});
+
+test("outriders turn a wild ride and ride home when the screen ends", () => {
+  const w = newWorld({ seed: 3 });
+  const you = byId(w, "you");
+  const band = w.bands[0];
+  you.x = band.x + 80;
+  you.y = band.y;
+  you.soldiers = 40;
+  you.elites = 0;
+  you.buildings.keep = 0;
+  you.muster = 0;
+  you.plots = [];
+  you.gold = 1000;
+  you.grain = 1000;
+  you.peasants = 200;
+  const purse = you.utopia;
+  const posted = applyAction(w, "you", { type: "patrol" });
+  assert.equal(posted.ok, true);
+  assert.equal(you.soldiers, 32);
+  assert.equal(you.gold, 850);
+  assert.equal(you.patrol, 8);
+  assert.equal(you.patrolUntil, 5);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.patrol, EARN.patrol);
+  assert.equal(you.utopia, purse + EARN.patrol);
+  assert.equal(patrolUp(you, w.hour), true);
+  assert.equal(applyAction(w, "you", { type: "patrol" }).ok, false);
+  const men = band.men;
+  pressBands(w);
+  assert.equal(band.raid.target, "you");
+  assert.equal(band.raid.met, "patrol");
+  assert.equal(you.gold, 850);
+  assert.equal(you.grain, 1000);
+  assert.equal(you.peasants, 200);
+  assert.equal(band.men, men - 3);
+  assert.equal(you.patrol, 6);
+
+  const weak = newWorld({ seed: 6 });
+  const seat = byId(weak, "you");
+  const foe = weak.bands[0];
+  seat.x = foe.x + 40;
+  seat.y = foe.y;
+  seat.soldiers = 4;
+  seat.elites = 0;
+  seat.buildings.keep = 0;
+  seat.muster = 0;
+  seat.plots = [];
+  seat.gold = 500;
+  seat.grain = 500;
+  seat.peasants = 80;
+  seat.patrol = 4;
+  seat.patrolUntil = 5;
+  foe.men = 40;
+  pressBands(weak);
+  assert.ok(seat.gold < 500);
+  assert.equal(seat.patrol, 0);
+  assert.equal(foe.men, 37);
+
+  const home = newWorld({ seed: 1 });
+  const ruler = byId(home, "you");
+  ruler.soldiers = 30;
+  for (const camp of home.bands) {
+    camp.x = 9000;
+    camp.y = 9000;
+  }
+  assert.equal(applyAction(home, "you", { type: "patrol" }).ok, true);
+  for (let i = 0; i < 5; i++) advanceHour(home);
+  assert.equal(home.hour, 5);
+  assert.equal(patrolUp(ruler, home.hour), false);
+  assert.equal(ruler.patrol, 0);
+  assert.equal(ruler.soldiers, 30);
+  ruler.soldiers = 3;
+  ruler.gold = 1000;
+  assert.equal(applyAction(home, "you", { type: "patrol" }).ok, false);
 });
 
 test("wild holdings push their fences when the gold holds", () => {

@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, quarryPits, roadLive, seasonName, seatPoint, siegeLive, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
+import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, patrolUp, quarryPits, roadLive, seasonName, seatPoint, siegeLive, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1494,9 +1494,27 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (weirLive(p, hour)) drawWeirMark(ctx, g, time);
   if (timberYards(p) > 0) drawLogPile(ctx, g, timberYards(p));
   if (quarryPits(p) > 0) drawCairn(ctx, g, quarryPits(p));
+  if (patrolUp(p, hour)) drawOutriders(ctx, g, time, p.patrol);
   if (siegeLive(p, hour)) drawSiegePennant(ctx, g, time);
   if ((p.standards || 0) > 0) drawStandards(ctx, g, p.standards, time);
   if ((p.pelts || 0) > 0) drawPelt(ctx, g, p.pelts);
+}
+
+function drawOutriders(ctx, g, time, n) {
+  const count = Math.max(3, Math.min(5, Math.ceil((n || 4) / 2)));
+  for (let i = 0; i < count; i++) {
+    const ang = time * 0.65 + i * ((Math.PI * 2) / count);
+    const rx = Math.cos(ang) * (g.r + 16);
+    const ry = Math.sin(ang) * (g.r * 0.62 + 12);
+    ctx.save();
+    ctx.translate(g.x + rx, g.y + ry);
+    ctx.rotate(ang + Math.PI / 2);
+    ctx.fillStyle = "#24180f";
+    ctx.fillRect(-7, -2, 14, 4);
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(5, -9, 3, 8);
+    ctx.restore();
+  }
 }
 
 function drawPelt(ctx, g, n) {
@@ -2246,7 +2264,7 @@ function drawBands(ctx, world, time) {
       if (!target) continue;
       const [tx, ty] = seatPoint(target);
       ctx.save();
-      ctx.strokeStyle = "rgba(196, 90, 72, 0.8)";
+      ctx.strokeStyle = band.raid.met === "patrol" ? "rgba(226, 192, 120, 0.9)" : "rgba(196, 90, 72, 0.8)";
       ctx.lineWidth = 2;
       ctx.setLineDash([3, 8]);
       ctx.lineDashOffset = -time * 22;

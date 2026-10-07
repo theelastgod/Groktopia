@@ -44,6 +44,7 @@ export const EARN = {
   siege: 39,
   sally: 41,
   ride: 42,
+  patrol: 38,
 };
 
 export const FACTIONS = {
@@ -469,6 +470,8 @@ export function blankProvince(partial) {
     weir: 0,
     weirUntil: 0,
     siege: null,
+    patrol: 0,
+    patrolUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -778,6 +781,7 @@ export const AMBITIONS = [
   { id: "quarry", name: "Open a pit", purse: 35, blurb: "Cut a quarry into a hill tile.", match: (action) => action.type === "quarry" },
   { id: "sally", name: "Sally the works", purse: 40, blurb: "Break a siege camp.", match: (action) => action.type === "sally" && action.win },
   { id: "ride", name: "Ride the band", purse: 40, blurb: "Break a wild camp.", match: (action) => action.type === "ride" && action.win },
+  { id: "patrol", name: "Post the screen", purse: 40, blurb: "Send outriders against a wild camp.", match: (action) => action.type === "patrol" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -838,6 +842,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
   else if (action.type === "bribe") result = doBribe(world, actor, action.band);
+  else if (action.type === "patrol") result = doPatrol(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2070,9 +2075,68 @@ function bandTarget(world, band) {
   return (human || rows[0]).province;
 }
 
+export function patrolUp(p, hour) {
+  return Boolean(p && (p.patrolUntil || 0) > (hour || 0) && (p.patrol || 0) >= 4);
+}
+
+function settlePatrol(p, hour) {
+  if (!p || !(p.patrolUntil > 0)) return;
+  if (p.patrolUntil > (hour || 0)) return;
+  const home = p.patrol || 0;
+  p.patrol = 0;
+  p.patrolUntil = 0;
+  if (home > 0) p.soldiers += home;
+}
+
+function doPatrol(world, actor) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (patrolUp(actor, world.hour)) return fail(`Outriders already screen the acres through hour ${actor.patrolUntil - 1}.`);
+  settlePatrol(actor, world.hour || 0);
+  if ((actor.soldiers || 0) < 8) return fail("Need 8 soldiers to post outriders.");
+  if (actor.gold < 150) return fail("Outriders want 150 gold.");
+  actor.gold -= 150;
+  actor.soldiers -= 8;
+  actor.patrol = 8;
+  actor.patrolUntil = (world.hour || 0) + 5;
+  actor.orders -= 1;
+  actor.acted = true;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.patrol;
+    notePurse(actor, "patrol", EARN.patrol);
+    purse = ` Purse +${formatUtopia(EARN.patrol)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} posts 8 outriders through hour ${actor.patrolUntil - 1}. A wild ride that cannot break the screen turns aside.${purse}`);
+  return { ok: true, message: `Outriders screen the acres through hour ${actor.patrolUntil - 1}.${purse}` };
+}
+
 function strikeBand(world, band, target) {
   const hour = world.hour || 0;
-  band.raid = { target: target.id, hour };
+  band.raid = { target: target.id, hour, met: "" };
+  if (patrolUp(target, hour)) {
+    const screen = target.patrol * 20;
+    if (screen >= band.men * 5) {
+      const lost = Math.min(band.men, 4);
+      band.men -= lost;
+      const fallen = Math.min(target.patrol, 2);
+      target.patrol -= fallen;
+      band.raid.met = "patrol";
+      if (target.patrol < 4) {
+        target.patrol = 0;
+        target.patrolUntil = hour;
+        log(world, `${band.name} meets the outriders of ${target.name}. The screen breaks after ${lost} riders fall.`);
+      } else {
+        log(world, `${band.name} meets the outriders of ${target.name} and turns aside. ${lost} riders fall. ${fallen} outriders do not come home.`);
+      }
+      if (band.men < 8) quietBand(world, band, hour, `${band.name} scatters. The camp is ash for six hours.`);
+      return;
+    }
+    const spent = target.patrol;
+    target.patrol = 0;
+    target.patrolUntil = hour;
+    band.men = Math.max(1, band.men - 3);
+    log(world, `${band.name} breaks ${spent} outriders of ${target.name} and rides on.`);
+  }
   const bite = band.men * 9;
   if (defense(target) >= bite) {
     const lost = Math.min(band.men, 3 + Math.floor(defense(target) / 120));
@@ -2551,6 +2615,7 @@ export function advanceHour(world) {
   const prevSeason = seasonName(world.hour);
   world.hour += 1;
   for (const p of world.provinces) settleMuster(p, world.hour);
+  for (const p of world.provinces) settlePatrol(p, world.hour);
   for (const p of world.provinces) settleVein(p, world.hour);
   for (const p of world.provinces) settleSmith(p, world.hour);
   for (const p of world.provinces) settleSeal(p, world.hour);
@@ -2665,6 +2730,11 @@ export function chooseAction(world, agent) {
     return trainBias(agent) || buildIf(agent, "barracks") || buildIf(agent, "field");
   }
   if (agent.persona === "sable") {
+    if (!patrolUp(agent, world.hour) && agent.soldiers >= 40 && agent.gold >= 500 && agent.orders >= 1) {
+      const [ax, ay] = seatPoint(agent);
+      const near = (world.bands || []).some((band) => bandUp(band, world.hour) && Math.hypot(ax - band.x, ay - band.y) < 1600);
+      if (near && rng.next() < 0.12) return { type: "patrol" };
+    }
     const ownsStone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (quarryPits(agent) < 2 && ownsStone && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.18) return { type: "quarry" };
     if (siegeLive(agent, world.hour)) {
