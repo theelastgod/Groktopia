@@ -3317,7 +3317,7 @@ export function seasonMod(hour) {
   if (name === "Harvest") return { food: 1.1, gold: 1.02, line: "Harvest. Granaries and purses both fill." };
   return { food: 0.9, gold: 0.96, line: "Frost. Grain thins and gold slows." };
 }
-export const MAX_HUMANS = 8;
+export const MAX_HUMANS = 12;
 
 export const SPAWNS = [
   [-1500, -1100],
@@ -3328,6 +3328,10 @@ export const SPAWNS = [
   [1500, 900],
   [400, 1650],
   [-800, 1550],
+  [0, 2320],
+  [2320, 180],
+  [-2320, -160],
+  [160, -2320],
 ];
 
 const WILD = [
@@ -3385,7 +3389,7 @@ export function createOpenRealm(seed = 1) {
     burned: 0,
     closed: false,
     provinces,
-    log: [{ hour: 0, text: "The wilds are open. Eight human seats. The age clock runs for two hours." }],
+    log: [{ hour: 0, text: "The wilds are open. Twelve human seats. The age clock runs for two hours." }],
     wonders: {},
     bounties: {},
     sites: freshSites(),
