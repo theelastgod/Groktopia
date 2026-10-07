@@ -1079,11 +1079,17 @@ function fleetLine(actor) {
     } else if (ship.cargo) {
       const quay = ports.find((row) => row.id === ship.cargo);
       course = `carrying a cargo to ${quay ? quay.name : "a port"}`;
+    } else if (ship.cut) {
+      const foe = byId(world, ship.cut.owner);
+      const prey = foe && (foe.ships || []).find((row) => row.id === ship.cut.id);
+      const preyName = prey && NAVY[prey.kind] ? NAVY[prey.kind].name : "hull";
+      course = `cutting out ${foe ? foe.name : "them"}'s ${preyName}`;
     } else if (ship.escort) {
       const trader = ships.find((row) => row.id === ship.escort);
       const tradeName = trader && NAVY[trader.kind] ? NAVY[trader.kind].name : "a trader";
       course = `escorting the ${tradeName}`;
     }
+    if ((ship.prizeUntil || 0) > world.hour) course += " · prize";
     rows.push(`<button class="btn" type="button" data-direct="ship" data-id="${esc(ship.id)}">Direct ${esc(spec ? spec.name : ship.kind)} · ${course}</button>`);
     rows.push(`<button class="btn" type="button" data-buoy="${esc(ship.id)}">Drop a buoy from the ${esc(spec ? spec.name : ship.kind)} · +${formatUtopia(EARN.buoy)}</button>`);
     rows.push(`<button class="btn" type="button" data-salvage="${esc(ship.id)}">Salvage with the ${esc(spec ? spec.name : ship.kind)} · click a wreck</button>`);
@@ -1098,6 +1104,7 @@ function fleetLine(actor) {
     }
     if (spec && spec.teeth >= 5) {
       rows.push(`<button class="btn danger" type="button" data-grapple="${esc(ship.id)}">Close the ${esc(spec.name)} · click a hull</button>`);
+      if (ships.length < 6) rows.push(`<button class="btn danger" type="button" data-cut="${esc(ship.id)}">Cut out with the ${esc(spec.name)} · click a lighter hull</button>`);
       rows.push(`<button class="btn" type="button" data-blockade="${esc(ship.id)}">Blockade with the ${esc(spec.name)} · click a port</button>`);
       rows.push(`<button class="btn" type="button" data-convoy="${esc(ship.id)}">Escort with the ${esc(spec.name)} · click a trader</button>`);
     }
@@ -1144,13 +1151,13 @@ function fleetLine(actor) {
     }
   }
   if (aim) {
-    const hint = aim.unit === "grapple" ? "Click an enemy hull to close." : aim.unit === "blockade" ? "Click an enemy port to close it." : aim.unit === "salvage" ? "Click a wreck to take the timber." : aim.unit === "tow" ? "Click a wreck to tow it toward a wharf." : aim.unit === "convoy" ? "Click one of your traders to escort." : `Click the map to send the ${esc(aim.unit)}.`;
+    const hint = aim.unit === "grapple" ? "Click an enemy hull to close." : aim.unit === "cut" ? "Click a lighter enemy hull to cut it out." : aim.unit === "blockade" ? "Click an enemy port to close it." : aim.unit === "salvage" ? "Click a wreck to take the timber." : aim.unit === "tow" ? "Click a wreck to tow it toward a wharf." : aim.unit === "convoy" ? "Click one of your traders to escort." : `Click the map to send the ${esc(aim.unit)}.`;
     rows.push(`<p class="muted">${hint}</p>`);
   }
   if ((world.wrecks || []).some((row) => (row.until || 0) > world.hour)) {
     rows.push(`<p class="muted">A wreck rides the water. A gold glint marks the timber.</p>`);
   }
-  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf. Key . raises a lee. Key - lays nets from a skiff, fisher, or cog. An enemy hull on that water does not sail for four hours and pays 10 gold. Key = slips a boom with a trader within two hexes, and the quay lands its fish that hour. Key / drops a buoy. For five hours your hulls within three hexes sail one hex farther. The grave key sends a skiff, fisher, or cog to a far port with a cargo. The quay pays 32 gold and 20 grain.</p>`);
+  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf. Key . raises a lee. Key - lays nets from a skiff, fisher, or cog. An enemy hull on that water does not sail for four hours and pays 10 gold. Key = slips a boom with a trader within two hexes, and the quay lands its fish that hour. Key / drops a buoy. For five hours your hulls within three hexes sail one hex farther. The grave key sends a skiff, fisher, or cog to a far port with a cargo. The quay pays 32 gold and 20 grain. Key + sends a galley, dromon, or hulk to cut out a lighter hull. The prize joins your fleet and flies a pennant for three hours. The old ruler pays 28 gold plus 8 for each tooth. A lee, or an escort that matches your teeth, turns the cut aside.</p>`);
   return rows.join("");
 }
 
@@ -1325,6 +1332,15 @@ function bindMap(canvas) {
           return;
         }
         order({ type: "grapple", ship: course.id, owner: hit.owner, hull: hit.id }, "battle");
+      } else if (course.unit === "cut") {
+        const hit = shipAt(point.x, point.y);
+        if (!hit || hit.owner === seat().id) {
+          aim = course;
+          note(hit ? "Cut out another ruler's hull." : "Click an enemy hull.");
+          paint();
+          return;
+        }
+        order({ type: "cut", ship: course.id, owner: hit.owner, hull: hit.id }, "battle");
       } else if (course.unit === "blockade") {
         const hit = portAt(point.x, point.y);
         if (!hit || hit.owner === seat().id) {
@@ -1523,6 +1539,15 @@ function bindMap(canvas) {
         const hull = (seat().ships || []).find((row) => NAVY[row.kind]);
         if (hull) order({ type: "buoy", ship: hull.id }, "build");
       }
+      if (event.key === "+" && world && seat()) {
+        const fleet = seat().ships || [];
+        const war = fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5 && !row.cut && fleet.length < 6)
+          || fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5 && fleet.length < 6);
+        if (war) {
+          aim = { unit: "cut", id: war.id };
+          paint();
+        }
+      }
       if (event.key === "`" && world && seat()) {
         const me = seat();
         const span = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
@@ -1714,6 +1739,11 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.grapple) {
     aim = { unit: "grapple", id: node.dataset.grapple };
+    paint();
+    return;
+  }
+  if (node.dataset.cut) {
+    aim = { unit: "cut", id: node.dataset.cut };
     paint();
     return;
   }

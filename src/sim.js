@@ -62,6 +62,7 @@ export const EARN = {
   slip: 56,
   buoy: 57,
   cargo: 58,
+  cut: 59,
 };
 
 export const FACTIONS = {
@@ -898,6 +899,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "slip") result = doSlip(world, actor, action);
   else if (action.type === "buoy") result = doBuoy(world, actor, action.ship);
   else if (action.type === "cargo") result = doCargo(world, actor, action);
+  else if (action.type === "cut") result = doCut(world, actor, action);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2342,6 +2344,7 @@ function doDirect(world, actor, action) {
     ship.escort = null;
     ship.tow = null;
     ship.cargo = null;
+    ship.cut = null;
     ship.destQ = q;
     ship.destR = r;
   } else {
@@ -2412,6 +2415,7 @@ function doGrapple(world, actor, action) {
   own.escort = null;
   own.tow = null;
   own.cargo = null;
+  own.cut = null;
   own.prey = { owner: prey.realm.id, id: prey.ship.id };
   own.destQ = prey.ship.q;
   own.destR = prey.ship.r;
@@ -2446,6 +2450,7 @@ function doBlockade(world, actor, action) {
   own.escort = null;
   own.tow = null;
   own.cargo = null;
+  own.cut = null;
   own.block = { owner: mark.realm.id, id: mark.colony.id };
   own.destQ = berth.q;
   own.destR = berth.r;
@@ -2512,6 +2517,7 @@ function doSalvage(world, actor, action) {
   own.escort = null;
   own.tow = null;
   own.cargo = null;
+  own.cut = null;
   own.salvage = { q, r };
   own.destQ = q;
   own.destR = r;
@@ -2556,6 +2562,8 @@ function doTow(world, actor, action) {
   own.block = null;
   own.salvage = null;
   own.escort = null;
+  own.cargo = null;
+  own.cut = null;
   own.tow = { q, r };
   own.destQ = q;
   own.destR = r;
@@ -2586,6 +2594,7 @@ function doConvoy(world, actor, action) {
   own.salvage = null;
   own.tow = null;
   own.cargo = null;
+  own.cut = null;
   own.escort = trader.id;
   own.destQ = trader.q;
   own.destR = trader.r;
@@ -2808,6 +2817,7 @@ function doCargo(world, actor, action) {
   own.salvage = null;
   own.escort = null;
   own.tow = null;
+  own.cut = null;
   own.cargo = colony.id;
   own.destQ = berth.q;
   own.destR = berth.r;
@@ -2832,6 +2842,33 @@ function landCargo(world, realm, ship) {
   }
   log(world, `${realm.name} lands a cargo at ${colony.name}. The quay pays 32 gold and 20 grain.${purse}`);
   ship.cargo = null;
+}
+
+function doCut(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === action.ship);
+  if (!own) return fail("That hull is not yours.");
+  if (hullTeeth(own.kind) < WAR_TEETH) return fail("A skiff, fisher, or cog will not cut a hull out. Lay a galley, dromon, or hulk.");
+  if ((actor.ships || []).length >= 6) return fail("Six hulls already ride. There is no room for a prize.");
+  const prey = findHull(world, action.owner, action.hull);
+  if (!prey || prey.realm.id === actor.id) return fail("Name another ruler's hull.");
+  if (!sailKind(terrainKind(prey.ship.q, prey.ship.r))) return fail("That hull is not on the water.");
+  if (hullTeeth(own.kind) <= hullTeeth(prey.ship.kind)) return fail("That hull is not lighter. A cut needs heavier teeth.");
+  own.prey = null;
+  own.block = null;
+  own.salvage = null;
+  own.escort = null;
+  own.tow = null;
+  own.cargo = null;
+  own.cut = { owner: prey.realm.id, id: prey.ship.id };
+  own.destQ = prey.ship.q;
+  own.destR = prey.ship.r;
+  actor.orders -= 1;
+  actor.acted = true;
+  const spec = NAVY[own.kind];
+  const theirs = NAVY[prey.ship.kind];
+  log(world, `${actor.name} sends the ${spec ? spec.name : "hull"} to cut out ${prey.realm.name}'s ${theirs ? theirs.name : "hull"}.`);
+  return { ok: true, message: `${spec ? spec.name : "Hull"} is cutting out the ${theirs ? theirs.name : "hull"}.` };
 }
 
 function buoyLit(realm, ship, hour) {
@@ -2896,6 +2933,7 @@ function pressMoles(world) {
           ship.salvage = null;
           ship.tow = null;
           ship.cargo = null;
+          ship.cut = null;
           const spec = NAVY[ship.kind];
           shoveOff(ship, colony.q, colony.r, onBlock ? 2 : 1);
           const skim = Math.min(other.gold || 0, 14);
@@ -2947,6 +2985,77 @@ function payPrize(world, winner, loser, sunk) {
   const spec = NAVY[sunk.kind];
   log(world, `${winner.name} grapples ${loser.name}'s ${spec ? spec.name : "hull"} and takes ${take} gold. The hull goes under.${purse}`);
   dropWreck(world, sunk);
+}
+
+function resolveCuts(world) {
+  const taken = new Set();
+  const gained = new Map();
+  const captured = [];
+  for (const realm of world.provinces || []) {
+    for (const ship of realm.ships || []) {
+      if (!ship.cut || taken.has(ship)) continue;
+      const prey = findHull(world, ship.cut.owner, ship.cut.id);
+      if (!prey || taken.has(prey.ship) || prey.ship === ship) {
+        ship.cut = null;
+        continue;
+      }
+      if (hexDist(ship.q, ship.r, prey.ship.q, prey.ship.r) > 1) continue;
+      const hour = world.hour || 0;
+      if (leeCover(prey.realm, prey.ship, hour)) {
+        ship.cut = null;
+        const home = (prey.realm.colonies || []).find((colony) => colony.port && (colony.leeUntil || 0) > hour);
+        log(world, `${prey.realm.name}'s lee at ${home ? home.name : "the quay"} turns ${realm.name}'s cut aside.`);
+        continue;
+      }
+      const teeth = hullTeeth(ship.kind);
+      const theirs = hullTeeth(prey.ship.kind) + coverTeeth(prey.realm, prey.ship);
+      if (teeth <= theirs) {
+        ship.cut = null;
+        log(world, `${realm.name} reaches for ${prey.realm.name}'s hull, but it slips the cut.`);
+        continue;
+      }
+      const room = (realm.ships || []).length + (gained.get(realm.id) || 0);
+      if (room >= 6) {
+        ship.cut = null;
+        log(world, `${realm.name} has no room for the prize. The hull slips away.`);
+        continue;
+      }
+      taken.add(prey.ship);
+      gained.set(realm.id, (gained.get(realm.id) || 0) + 1);
+      const take = Math.min(prey.realm.gold || 0, 28 + hullTeeth(prey.ship.kind) * 8);
+      prey.realm.gold -= take;
+      realm.gold += take;
+      let purse = "";
+      if (realm.kind === "human") {
+        realm.utopia += EARN.cut;
+        notePurse(realm, "cut", EARN.cut);
+        purse = ` Purse +${formatUtopia(EARN.cut)} $UTOPIA.`;
+      }
+      const spec = NAVY[prey.ship.kind];
+      log(world, `${realm.name} cuts out ${prey.realm.name}'s ${spec ? spec.name : "hull"}. The hull is yours${take ? ` and ${take} gold comes with it` : ""}.${purse}`);
+      ship.cut = null;
+      captured.push({ from: prey.realm, ship: prey.ship, to: realm });
+    }
+  }
+  for (const move of captured) {
+    const oldId = move.ship.id;
+    move.from.ships = (move.from.ships || []).filter((row) => row !== move.ship);
+    for (const other of move.from.ships) {
+      if (other.escort === oldId) other.escort = null;
+      if (other.prey && other.prey.id === oldId) other.prey = null;
+      if (other.cut && other.cut.id === oldId) other.cut = null;
+    }
+    move.to.ships = move.to.ships || [];
+    move.to.ships.push({
+      id: `s${world.hour || 0}-cut-${move.to.ships.length}-${move.ship.kind}`,
+      kind: move.ship.kind,
+      q: move.ship.q,
+      r: move.ship.r,
+      destQ: null,
+      destR: null,
+      prizeUntil: (world.hour || 0) + 3,
+    });
+  }
 }
 
 function resolveGrapples(world) {
@@ -3008,7 +3117,13 @@ function sailHour(world) {
     }
     realm.founders = (realm.founders || []).filter((row) => !row.spent);
     for (const ship of realm.ships || []) {
-      if (ship.prey) {
+      if (ship.cut) {
+        const prey = findHull(world, ship.cut.owner, ship.cut.id);
+        if (prey && sailKind(terrainKind(prey.ship.q, prey.ship.r))) {
+          ship.destQ = prey.ship.q;
+          ship.destR = prey.ship.r;
+        } else ship.cut = null;
+      } else if (ship.prey) {
         const prey = findHull(world, ship.prey.owner, ship.prey.id);
         if (prey && sailKind(terrainKind(prey.ship.q, prey.ship.r))) {
           ship.destQ = prey.ship.q;
@@ -3100,6 +3215,7 @@ function sailHour(world) {
       landCargo(world, realm, ship);
     }
   }
+  resolveCuts(world);
   resolveGrapples(world);
   resolveSalvage(world);
   const hour = world.hour || 0;
@@ -3961,7 +4077,7 @@ export function chooseAction(world, agent) {
     if (salvor && wreck && agent.orders >= 1 && rng.next() < 0.22) {
       return { type: "salvage", ship: salvor.id, q: wreck.q, r: wreck.r };
     }
-    const hunter = (agent.ships || []).find((row) => hullTeeth(row.kind) >= WAR_TEETH && !row.prey && !row.block && !row.escort);
+    const hunter = (agent.ships || []).find((row) => hullTeeth(row.kind) >= WAR_TEETH && !row.prey && !row.block && !row.escort && !row.cut);
     if (hunter && !hunter.block && agent.orders >= 1 && rng.next() < 0.18) {
       let port = null;
       let portD = 14;
@@ -3977,6 +4093,22 @@ export function chooseAction(world, agent) {
         }
       }
       if (port) return { type: "blockade", ship: hunter.id, owner: port.owner, colony: port.id };
+    }
+    if (hunter && (agent.ships || []).length < 6 && agent.orders >= 1 && rng.next() < 0.2) {
+      let prize = null;
+      let prizeD = 16;
+      for (const other of world.provinces) {
+        if (other.id === agent.id) continue;
+        for (const ship of other.ships || []) {
+          if (hullTeeth(ship.kind) >= hullTeeth(hunter.kind)) continue;
+          const dist = hexDist(hunter.q, hunter.r, ship.q, ship.r);
+          if (dist < prizeD) {
+            prizeD = dist;
+            prize = { owner: other.id, id: ship.id };
+          }
+        }
+      }
+      if (prize) return { type: "cut", ship: hunter.id, owner: prize.owner, hull: prize.id };
     }
     if (hunter && agent.orders >= 1 && rng.next() < 0.28) {
       let best = null;

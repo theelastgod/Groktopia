@@ -2668,6 +2668,29 @@ function drawHull(ctx, x, y, kind, time, hunting) {
   ctx.restore();
 }
 
+function drawPrize(ctx, x, y, time) {
+  const wave = Math.sin(time * 3) * 2;
+  ctx.save();
+  ctx.translate(x + 14, y - 8);
+  ctx.strokeStyle = "#1a1612";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 2);
+  ctx.lineTo(0, -16);
+  ctx.stroke();
+  ctx.fillStyle = "#a14a3c";
+  ctx.beginPath();
+  ctx.moveTo(0, -16);
+  ctx.lineTo(12, -11 + wave);
+  ctx.lineTo(0, -6);
+  ctx.fill();
+  ctx.fillStyle = "#a14a3c";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "left";
+  ctx.fillText("PRIZE", 2, 14);
+  ctx.restore();
+}
+
 function drawBuoy(ctx, x, y, time) {
   const blink = Math.sin(time * 5) > 0;
   ctx.save();
@@ -2896,6 +2919,27 @@ function drawColonies(ctx, world, time) {
       ctx.fillText("CARGO", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
     }
     for (const ship of realm.ships || []) {
+      if (!ship.cut) continue;
+      const foe = (world.provinces || []).find((row) => row.id === ship.cut.owner);
+      const prey = foe && (foe.ships || []).find((row) => row.id === ship.cut.id);
+      if (!prey) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(prey.q, prey.r);
+      ctx.strokeStyle = "rgba(161, 74, 60, 0.95)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([7, 4]);
+      ctx.lineDashOffset = -time * 16;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#a14a3c";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("CUT", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
+    }
+    for (const ship of realm.ships || []) {
       if (!ship.escort) continue;
       const trader = (realm.ships || []).find((row) => row.id === ship.escort);
       if (!trader) continue;
@@ -2937,6 +2981,7 @@ function drawColonies(ctx, world, time) {
     for (const ship of realm.ships || []) {
       const pos = axialToWorld(ship.q, ship.r);
       drawHull(ctx, pos.x, pos.y, ship.kind, time, Boolean(ship.prey));
+      if ((ship.prizeUntil || 0) > (world.hour || 0)) drawPrize(ctx, pos.x, pos.y, time);
     }
   }
   for (const realm of world.provinces || []) {
