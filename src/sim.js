@@ -46,6 +46,9 @@ export const EARN = {
   ride: 42,
   patrol: 38,
   keel: 36,
+  founder: 40,
+  colony: 44,
+  hull: 43,
 };
 
 export const FACTIONS = {
@@ -295,11 +298,22 @@ function riverDist(x, y) {
 
 const HILL_OVALS = [[-900, -700, 520, 180], [400, 500, 640, 200], [-200, 900, 480, 150], [1100, -200, 400, 140]];
 
+function outerLand(n) {
+  if (n % 17 === 0) return "mount";
+  if (n % 7 === 0) return "hill";
+  if (n % 5 === 0) return "wood";
+  if (n % 3 === 0) return "plain";
+  return "grass";
+}
+
 export function terrainKind(q, r) {
   const { x, y } = axialToWorld(q, r);
   const n = hash(`hex:${q},${r}`);
   const edge = Math.hypot(x, y);
-  if (edge > 2480) return "sea";
+  if (edge > 6400) return "sea";
+  if (edge > 6000) return "coast";
+  if (edge > 4200) return outerLand(n);
+  if (edge > 3000) return "sea";
   if (edge > 2140) return "coast";
   if (riverDist(x, y) < 34) return "river";
   for (const [hx, hy, rx, ry] of HILL_OVALS) {
@@ -490,6 +504,9 @@ export function blankProvince(partial) {
   p.roads = { ...(partial && partial.roads ? partial.roads : {}) };
   p.intel = p.intel || {};
   p.cooldown = p.cooldown || {};
+  p.founders = partial && Array.isArray(partial.founders) ? partial.founders.map((row) => ({ ...row })) : [];
+  p.ships = partial && Array.isArray(partial.ships) ? partial.ships.map((row) => ({ ...row })) : [];
+  p.colonies = partial && Array.isArray(partial.colonies) ? partial.colonies.map((row) => ({ ...row })) : [];
   return p;
 }
 
@@ -786,6 +803,7 @@ export const AMBITIONS = [
   { id: "ride", name: "Ride the band", purse: 40, blurb: "Break a wild camp.", match: (action) => action.type === "ride" && action.win },
   { id: "patrol", name: "Post the screen", purse: 40, blurb: "Send outriders against a wild camp.", match: (action) => action.type === "patrol" },
   { id: "keel", name: "Launch a keel", purse: 40, blurb: "Put a boat on the water.", match: (action) => action.type === "keel" },
+  { id: "founder", name: "Send a founder", purse: 40, blurb: "Raise a founder for a new town.", match: (action) => action.type === "founder" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -848,6 +866,9 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "bribe") result = doBribe(world, actor, action.band);
   else if (action.type === "patrol") result = doPatrol(world, actor);
   else if (action.type === "keel") result = doKeel(world, actor);
+  else if (action.type === "founder") result = doFounder(world, actor);
+  else if (action.type === "direct") result = doDirect(world, actor, action);
+  else if (action.type === "hull") result = doHull(world, actor, action.hull);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2119,6 +2140,245 @@ function doPatrol(world, actor) {
   return { ok: true, message: `Outriders screen the acres through hour ${actor.patrolUntil - 1}.${purse}` };
 }
 
+export const NAVY = {
+  skiff: { name: "Skiff", gold: 140, speed: 3, fish: 4, haul: 0 },
+  fisher: { name: "Fisher", gold: 220, speed: 2, fish: 12, haul: 0 },
+  cog: { name: "Cog", gold: 320, speed: 2, fish: 0, haul: 8 },
+  galley: { name: "Galley", gold: 440, speed: 3, fish: 0, haul: 4 },
+  dromon: { name: "Dromon", gold: 580, speed: 2, fish: 6, haul: 6 },
+  hulk: { name: "Hulk", gold: 680, speed: 1, fish: 8, haul: 12 },
+};
+
+const COLONY_NAMES = ["Salt Step", "Reed Haven", "Grey Landing", "Low Quay", "Millwater", "Ash Dock", "Far Acre", "Pale Reach"];
+
+function hexDist(aq, ar, bq, br) {
+  return (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
+}
+
+function sailKind(kind) {
+  return kind === "sea" || kind === "coast" || kind === "river";
+}
+
+function stepToward(q, r, destQ, destR, allow) {
+  if (q === destQ && r === destR) return { q, r };
+  let best = { q, r };
+  let bestD = hexDist(q, r, destQ, destR);
+  for (const [dq, dr] of HEX_DIRS) {
+    const nq = q + dq;
+    const nr = r + dr;
+    if (!allow(nq, nr)) continue;
+    const dist = hexDist(nq, nr, destQ, destR);
+    if (dist < bestD) {
+      bestD = dist;
+      best = { q: nq, r: nr };
+    }
+  }
+  return best;
+}
+
+function portSite(q, r) {
+  const kind = terrainKind(q, r);
+  if (kind === "coast" || kind === "river") return true;
+  for (const [dq, dr] of HEX_DIRS) {
+    const near = terrainKind(q + dq, r + dr);
+    if (near === "sea" || near === "coast") return true;
+  }
+  return false;
+}
+
+function cityBlocks(world, q, r) {
+  for (const realm of world.provinces || []) {
+    const [x, y] = seatPoint(realm);
+    const seat = worldToAxial(x, y);
+    if (hexDist(q, r, seat.q, seat.r) < 6) return true;
+    for (const colony of realm.colonies || []) {
+      if (hexDist(q, r, colony.q, colony.r) < 5) return true;
+    }
+  }
+  return false;
+}
+
+function waterBeside(q, r) {
+  for (const [dq, dr] of HEX_DIRS) {
+    const nq = q + dq;
+    const nr = r + dr;
+    if (sailKind(terrainKind(nq, nr))) return { q: nq, r: nr };
+  }
+  if (sailKind(terrainKind(q, r))) return { q, r };
+  return null;
+}
+
+function doFounder(world, actor) {
+  ensurePlots(world);
+  const field = (actor.founders || []).filter((row) => !row.spent);
+  if (field.length >= 2) return fail("Two founders are already in the field.");
+  if ((actor.colonies || []).length >= 4) return fail("Four colonies already answer this holding.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 260) return fail("A founder wants 260 gold.");
+  if ((actor.peasants || 0) < 8) return fail("A founder needs 8 peasants.");
+  const plot = (actor.plots || []).find((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) !== "sea");
+  if (!plot) return fail("A founder needs a hand tile that is not open sea.");
+  actor.gold -= 260;
+  actor.peasants -= 8;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.founders = actor.founders || [];
+  const founder = {
+    id: `f${world.hour || 0}-${actor.founders.length}`,
+    q: plot.q,
+    r: plot.r,
+    destQ: null,
+    destR: null,
+  };
+  actor.founders.push(founder);
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.founder;
+    notePurse(actor, "founder", EARN.founder);
+    purse = ` Purse +${formatUtopia(EARN.founder)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a founder on a worked tile. Direct them to open grass, wheat, or coast. A coast or a river bank becomes a port.${purse}`);
+  return { ok: true, message: `Founder ${founder.id} is in the field. Click the map to direct them.${purse}` };
+}
+
+function plantColony(world, actor, founder) {
+  const kind = terrainKind(founder.q, founder.r);
+  if (kind !== "grass" && kind !== "plain" && kind !== "coast") {
+    founder.destQ = null;
+    founder.destR = null;
+    log(world, `${actor.name}'s founder waits. That tile will not hold a city.`);
+    return false;
+  }
+  if (cityBlocks(world, founder.q, founder.r) || takenPlots(world).has(plotKey(founder.q, founder.r))) {
+    founder.destQ = null;
+    founder.destR = null;
+    log(world, `${actor.name}'s founder waits. Another city or a worked tile is too close.`);
+    return false;
+  }
+  if ((actor.colonies || []).length >= 4) {
+    founder.destQ = null;
+    founder.destR = null;
+    return false;
+  }
+  const port = portSite(founder.q, founder.r);
+  const name = COLONY_NAMES[(actor.colonies || []).length % COLONY_NAMES.length];
+  const spot = axialToWorld(founder.q, founder.r);
+  actor.colonies = actor.colonies || [];
+  actor.colonies.push({
+    id: `c${world.hour || 0}-${actor.colonies.length}`,
+    name,
+    q: founder.q,
+    r: founder.r,
+    x: spot.x,
+    y: spot.y,
+    port,
+    land: 24,
+  });
+  actor.plots = actor.plots || [];
+  actor.plots.push({ q: founder.q, r: founder.r, crew: "hand" });
+  actor.land += 12;
+  actor.peasants += 8;
+  founder.spent = true;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.colony;
+    notePurse(actor, "colony", EARN.colony);
+    purse = ` Purse +${formatUtopia(EARN.colony)} $UTOPIA.`;
+  }
+  const quay = port ? " The quay fishes 12 grain an hour and can lay a hull." : "";
+  log(world, `${actor.name} founds ${name}.${quay}${purse}`);
+  return true;
+}
+
+function doDirect(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const q = action.q | 0;
+  const r = action.r | 0;
+  const kind = terrainKind(q, r);
+  if (action.unit === "founder") {
+    const founder = (actor.founders || []).find((row) => row.id === action.id && !row.spent);
+    if (!founder) return fail("That founder is not in the field.");
+    if (kind === "sea") return fail("A founder will not step onto open sea.");
+    founder.destQ = q;
+    founder.destR = r;
+  } else if (action.unit === "ship") {
+    const ship = (actor.ships || []).find((row) => row.id === action.id);
+    if (!ship) return fail("That hull is not yours.");
+    if (!sailKind(kind)) return fail("A hull only takes sea, coast, or river.");
+    ship.destQ = q;
+    ship.destR = r;
+  } else {
+    return fail("Direct a founder or a hull.");
+  }
+  actor.orders -= 1;
+  actor.acted = true;
+  log(world, `${actor.name} directs a ${action.unit} toward ${q},${r}.`);
+  return { ok: true, message: `Course set for ${q},${r}.` };
+}
+
+function doHull(world, actor, hull) {
+  const spec = NAVY[hull];
+  if (!spec) return fail("Name a hull. A port can lay a skiff, fisher, cog, galley, dromon, or hulk.");
+  const port = (actor.colonies || []).find((row) => row.port);
+  if (!port) return fail("Only a port can lay a hull.");
+  if ((actor.ships || []).length >= 6) return fail("Six hulls already ride for this holding.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < spec.gold) return fail(`A ${spec.name} wants ${spec.gold} gold.`);
+  const berth = waterBeside(port.q, port.r);
+  if (!berth) return fail("The port has no water to launch into.");
+  actor.gold -= spec.gold;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.ships = actor.ships || [];
+  const ship = {
+    id: `s${world.hour || 0}-${actor.ships.length}-${hull}`,
+    kind: hull,
+    q: berth.q,
+    r: berth.r,
+    destQ: null,
+    destR: null,
+  };
+  actor.ships.push(ship);
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.hull;
+    notePurse(actor, "hull", EARN.hull);
+    purse = ` Purse +${formatUtopia(EARN.hull)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} lays a ${spec.name} at ${port.name}. Direct it across sea, coast, or river. On the water it works the hour.${purse}`);
+  return { ok: true, message: `${spec.name} launched from ${port.name}.${purse}` };
+}
+
+function sailHour(world) {
+  for (const realm of world.provinces || []) {
+    for (const founder of realm.founders || []) {
+      if (founder.spent || founder.destQ == null) continue;
+      let left = 2;
+      while (left > 0 && (founder.q !== founder.destQ || founder.r !== founder.destR)) {
+        const next = stepToward(founder.q, founder.r, founder.destQ, founder.destR, (q, r) => terrainKind(q, r) !== "sea");
+        if (next.q === founder.q && next.r === founder.r) break;
+        founder.q = next.q;
+        founder.r = next.r;
+        left -= 1;
+      }
+      if (founder.q === founder.destQ && founder.r === founder.destR) plantColony(world, realm, founder);
+    }
+    realm.founders = (realm.founders || []).filter((row) => !row.spent);
+    for (const ship of realm.ships || []) {
+      if (ship.destQ == null) continue;
+      const spec = NAVY[ship.kind];
+      let left = spec ? spec.speed : 1;
+      while (left > 0 && (ship.q !== ship.destQ || ship.r !== ship.destR)) {
+        const next = stepToward(ship.q, ship.r, ship.destQ, ship.destR, (q, r) => sailKind(terrainKind(q, r)));
+        if (next.q === ship.q && next.r === ship.r) break;
+        ship.q = next.q;
+        ship.r = next.r;
+        left -= 1;
+      }
+    }
+  }
+}
+
 export function keelUp(p, hour) {
   return Boolean(p && (p.keelUntil || 0) > (hour || 0) && (p.keel || 0) >= 3);
 }
@@ -2655,6 +2915,17 @@ function economy(p, hour) {
     else if (tile.crew === "timber") goldIn += 26;
     else if (tile.crew === "quarry") goldIn += 22;
   }
+  for (const colony of p.colonies || []) {
+    if (colony.port) foodIn += 12;
+  }
+  for (const ship of p.ships || []) {
+    const spec = NAVY[ship.kind];
+    if (!spec) continue;
+    const wet = terrainKind(ship.q, ship.r);
+    if (wet !== "sea" && wet !== "coast" && wet !== "river") continue;
+    foodIn += spec.fish || 0;
+    goldIn += spec.haul || 0;
+  }
   const foodOut = foodNeed(p);
   p.gold += goldIn;
   p.grain += foodIn - foodOut;
@@ -2735,6 +3006,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleSiege(p, world.hour);
   expireBounties(world);
   pressBands(world);
+  sailHour(world);
   if (world.hour % 3 === 0) {
     let grown = 0;
     for (const p of world.provinces) {

@@ -20,6 +20,8 @@ import {
   redact,
   newWorld,
   terrainKind,
+  worldToAxial,
+  NAVY,
   nwFactor,
   seatRival,
   serialize,
@@ -1942,6 +1944,117 @@ test("a keel hauls fish, turns a wild ride, escorts a caravan, and burns in a sa
   assert.equal(taken.win, true);
   assert.equal(keelUp(camp, sack.hour), false);
   assert.ok(taken.message.includes("burned the keel"));
+});
+
+test("a founder plants a port, and a directed fisher works the ocean", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(Object.keys(NAVY).length, 6);
+  assert.equal(NAVY.galley.gold, 440);
+  assert.equal(NAVY.galley.speed, 3);
+  assert.equal(NAVY.hulk.speed, 1);
+  assert.equal(terrainKind(36, -18), "sea");
+  assert.equal(terrainKind(70, -35), "sea");
+  assert.equal(terrainKind(-2, 5), "hill");
+  const far = terrainKind(52, -26);
+  assert.ok(["grass", "plain", "wood", "hill", "mount"].includes(far));
+
+  const quiet = (seed = 4) => {
+    const realm = newWorld({ seed });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    realm.bands = [];
+    seat.gold = 8000;
+    seat.peasants = 200;
+    seat.grain = 5000;
+    seat.orders = ORDERS;
+    return realm;
+  };
+  const findCoast = (seat) => {
+    const home = worldToAxial(seat.x, seat.y);
+    const taken = new Set((seat.plots || []).map((tile) => `${tile.q},${tile.r}`));
+    for (let q = -50; q <= 50; q++) {
+      for (let r = -50; r <= 50; r++) {
+        if (terrainKind(q, r) !== "coast") continue;
+        if (taken.has(`${q},${r}`)) continue;
+        const dist = (Math.abs(q - home.q) + Math.abs(r - home.r) + Math.abs(q + r - (home.q + home.r))) / 2;
+        if (dist < 6) continue;
+        return { q, r };
+      }
+    }
+    return null;
+  };
+  const delta = (extra) => {
+    const realm = quiet();
+    const seat = realm.provinces[0];
+    extra(seat);
+    const grain = seat.grain;
+    const gold = seat.gold;
+    advanceHour(realm);
+    return { grain: seat.grain - grain, gold: seat.gold - gold };
+  };
+  const spot = findCoast(quiet().provinces[0]);
+  assert.ok(spot);
+  const plain = delta(() => {});
+  const ported = delta((seat) => {
+    seat.colonies = [{ id: "c", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+    seat.plots = seat.plots.concat([{ q: spot.q, r: spot.r, crew: "hand" }]);
+  });
+  assert.equal(ported.grain - plain.grain, 16);
+  const fished = delta((seat) => {
+    seat.ships = [{ id: "s", kind: "fisher", q: 36, r: -18, destQ: null, destR: null }];
+  });
+  assert.equal(fished.grain - plain.grain, NAVY.fisher.fish);
+  const hauled = delta((seat) => {
+    seat.ships = [{ id: "s", kind: "cog", q: 36, r: -18, destQ: null, destR: null }];
+  });
+  assert.equal(hauled.gold - plain.gold, NAVY.cog.haul);
+
+  const w = quiet(1);
+  const you = w.provinces[0];
+  const land = you.land;
+  const purse = you.utopia;
+  const raised = applyAction(w, "you", { type: "founder" });
+  assert.equal(raised.ok, true);
+  assert.equal(you.gold, 8000 - 260);
+  assert.equal(you.peasants, 192);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.founder, EARN.founder);
+  assert.equal(you.utopia, purse + EARN.founder);
+  const coast = findCoast(you);
+  const founder = you.founders[0];
+  founder.q = coast.q;
+  founder.r = coast.r;
+  you.orders = 1;
+  assert.equal(applyAction(w, "you", { type: "direct", unit: "founder", id: founder.id, q: coast.q, r: coast.r }).ok, true);
+  advanceHour(w);
+  assert.equal(you.colonies.length, 1);
+  assert.equal(you.colonies[0].port, true);
+  assert.equal(you.founders.length, 0);
+  assert.equal(you.land, land + 12);
+  assert.ok(you.peasants >= 200);
+  assert.equal(you.ledger.colony, EARN.colony);
+  you.orders = 0;
+  assert.equal(applyAction(w, "you", { type: "hull", hull: "skiff" }).ok, false);
+  you.orders = 1;
+  you.gold = 5000;
+  const laid = applyAction(w, "you", { type: "hull", hull: "fisher" });
+  assert.equal(laid.ok, true);
+  assert.equal(you.ships.length, 1);
+  assert.equal(you.ships[0].kind, "fisher");
+  assert.equal(you.gold, 5000 - NAVY.fisher.gold);
+  assert.equal(you.ledger.hull, EARN.hull);
+  assert.ok(["sea", "coast", "river"].includes(terrainKind(you.ships[0].q, you.ships[0].r)));
+  const dry = quiet(2);
+  assert.equal(applyAction(dry, "you", { type: "hull", hull: "hulk" }).ok, false);
+
+  const sail = quiet(3);
+  const captain = sail.provinces[0];
+  captain.ships = [{ id: "s1", kind: "fisher", q: 36, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(sail, "you", { type: "direct", unit: "ship", id: "s1", q: -2, r: 5 }).ok, false);
+  assert.equal(applyAction(sail, "you", { type: "direct", unit: "ship", id: "s1", q: 40, r: -20 }).ok, true);
+  advanceHour(sail);
+  assert.equal(captain.ships[0].q, 38);
+  assert.equal(captain.ships[0].r, -18);
 });
 
 test("wild holdings push their fences when the gold holds", () => {

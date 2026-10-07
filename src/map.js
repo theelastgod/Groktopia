@@ -2159,8 +2159,16 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
   sky.addColorStop(1, "#12180f");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, width, height);
-  const scale = width / 4800;
+  const scale = width / 13000;
   const to = (x, y) => [width / 2 + x * scale, height / 2 + y * scale];
+  ctx.strokeStyle = "rgba(28, 89, 100, 0.55)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(width / 2, height / 2, 3000 * scale, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(width / 2, height / 2, 4200 * scale, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.strokeStyle = "#1c5964";
   ctx.lineWidth = 3;
   ctx.beginPath();

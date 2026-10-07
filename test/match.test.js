@@ -24,13 +24,13 @@ test("an open realm keeps every wild holding on its own ground", () => {
   }
 });
 
-test("matchmaking fills eight human seats and then refuses", () => {
+test("matchmaking fills every human seat and then refuses", () => {
   const world = createOpenRealm(5);
   for (let i = 0; i < MAX_HUMANS; i++) {
     const res = claimSeat(world, { id: `p${i}`, ruler: `R${i}`, province: `Acre ${i}`, faction: "warden" });
     assert.equal(res.ok, true, res.message);
   }
-  assert.equal(humanCount(world), 8);
+  assert.equal(humanCount(world), MAX_HUMANS);
   const full = claimSeat(world, { id: "overflow", ruler: "Late", province: "Nowhere", faction: "marcher" });
   assert.equal(full.ok, false);
 });

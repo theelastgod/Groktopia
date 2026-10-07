@@ -26,6 +26,7 @@ import {
   patrolUp,
   keelUp,
   keelHaul,
+  NAVY,
   stonePrice,
   siegeLive,
   leveeUp,
@@ -34,6 +35,7 @@ import {
   seasonMod,
   stallQuote,
   byId,
+  worldToAxial,
   defense,
   foodNeed,
   formatUtopia,
@@ -57,7 +59,7 @@ const app = document.querySelector("#app");
 
 let world = null;
 let session = null;
-let meta = { status: "filling", startedAt: null, endsAt: null, fillUntil: null, nextTickAt: null, humans: 0, maxHumans: 8, serverNow: Date.now() };
+let meta = { status: "filling", startedAt: null, endsAt: null, fillUntil: null, nextTickAt: null, humans: 0, maxHumans: 12, serverNow: Date.now() };
 let standings = [];
 let socket = null;
 let socketGen = 0;
@@ -66,6 +68,7 @@ let toast = "";
 let selectedId = "";
 let selectedSite = null;
 let selectedBand = null;
+let aim = null;
 let stake = 100;
 let soundOn = true;
 let wallet = "";
@@ -256,11 +259,11 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Seven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, climb from Camp to Crown, and open the old places on the map.</p>
+        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
-          <li><b>Match</b><span>Starts now. Eight seats stay open for two minutes</span></li>
+          <li><b>Match</b><span>Starts now. Twelve seats stay open for two minutes</span></li>
         </ul>
       </div>
     </section>
@@ -518,7 +521,7 @@ function paint() {
   const log = document.querySelector("#log");
   const veil = document.querySelector("#veil");
   const watch = beaconLit(p, world.hour) ? ` · watch through ${p.beaconUntil - 1}` : "";
-  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 8} players${watch}</span>`;
+  if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 12} players${watch}</span>`;
   const age = document.querySelector("#hud-age");
   if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>${esc(seasonName(world.hour))} · ${esc(seasonMod(world.hour).line)} · legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/8 studies</span>`;
   if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)} $UTOPIA</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
@@ -534,7 +537,7 @@ function paint() {
       veil.innerHTML = `<div class="veil-card"><h2>The age is over</h2><p>Two hours on the clock. Placement is already in the $UTOPIA purses.</p><ol>${standings.filter((row) => row.kind === "human").map((row, index) => `<li>${index + 1}. ${esc(row.ruler)} of ${esc(row.name)} · networth ${row.networth}</li>`).join("")}</ol><button class="btn primary" type="button" id="again">Find another realm</button></div>`;
     } else if (meta.status !== "live") {
       veil.hidden = false;
-      veil.innerHTML = `<div class="veil-card"><h2>The age is opening</h2><p>${meta.humans || 1} of ${meta.maxHumans || 8} players. Seats stay open, and the hours already on the clock belong to whoever is here.</p></div>`;
+      veil.innerHTML = `<div class="veil-card"><h2>The age is opening</h2><p>${meta.humans || 1} of ${meta.maxHumans || 12} players. Seats stay open, and the hours already on the clock belong to whoever is here.</p></div>`;
     } else veil.hidden = true;
   }
   if (card) card.innerHTML = selectedBand ? bandCard(p, selectedBand) : selectedSite ? siteCard(p, selectedSite) : cardFor(p, byId(world, selectedId) || p);
@@ -665,6 +668,8 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-hamlet="1">Raise a hamlet · 260g</button>
         <button class="btn" type="button" data-timber="1">Cut a timber yard · 170g</button>
         <button class="btn" type="button" data-quarry="1">Open a quarry · 190g · +${formatUtopia(EARN.quarry)}</button>
+        <button class="btn" type="button" data-founder="1">Raise a founder · 260g · +${formatUtopia(EARN.founder)}</button>
+        ${fleetLine(actor)}
         ${patrolButton(actor)}
         ${keelButton(actor)}
       </div>
@@ -815,6 +820,9 @@ function ledgerLine(actor) {
     ["rides", book.ride],
     ["outriders", book.patrol],
     ["keels", book.keel],
+    ["founders", book.founder],
+    ["colonies", book.colony],
+    ["hulls", book.hull],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1024,6 +1032,36 @@ function relicLine(actor) {
   return `Relics: ${held.map((row) => `${row.name}. ${row.line}`).join(" ")}`;
 }
 
+function fleetLine(actor) {
+  const founders = (actor.founders || []).filter((row) => !row.spent);
+  const ships = actor.ships || [];
+  const ports = (actor.colonies || []).filter((row) => row.port);
+  const towns = actor.colonies || [];
+  const rows = [];
+  if (towns.length) {
+    const quay = ports.length ? `${ports.length} ${ports.length === 1 ? "port fishes" : "ports fish"} 12 grain an hour and can lay a hull.` : "No quay yet. A coast or a river bank makes a port.";
+    rows.push(`<p class="muted">${towns.map((row) => esc(row.name)).join(", ")}. ${quay}</p>`);
+  }
+  for (const founder of founders) {
+    const course = founder.destQ == null ? "waiting" : `bound ${founder.destQ},${founder.destR}`;
+    rows.push(`<button class="btn" type="button" data-direct="founder" data-id="${esc(founder.id)}">Direct founder · ${course}</button>`);
+  }
+  for (const ship of ships) {
+    const spec = NAVY[ship.kind];
+    rows.push(`<button class="btn" type="button" data-direct="ship" data-id="${esc(ship.id)}">Direct ${esc(spec ? spec.name : ship.kind)} · ${ship.q},${ship.r}</button>`);
+  }
+  if (ports.length && ships.length < 6) {
+    for (const [id, spec] of Object.entries(NAVY)) {
+      const work = spec.fish ? `${spec.fish} fish` : "";
+      const coin = spec.haul ? `${spec.haul} gold` : "";
+      const yieldLine = [work, coin].filter(Boolean).join(", ") || "a fast hull";
+      rows.push(`<button class="btn" type="button" data-hull="${id}">Lay a ${esc(spec.name)} · ${spec.gold}g · ${yieldLine}</button>`);
+    }
+  }
+  if (aim) rows.push(`<p class="muted">Click the map to send the ${esc(aim.unit)}.</p>`);
+  return rows.join("");
+}
+
 function keelButton(actor) {
   if (keelUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Keel through hour ${actor.keelUntil - 1}</button>`;
   return `<button class="btn primary" type="button" data-keel="1">Launch a keel · 200g · 6 soldiers · +${formatUtopia(EARN.keel)}</button>`;
@@ -1135,6 +1173,14 @@ function bindMap(canvas) {
     track(event);
     if (moved || !world) return;
     const point = worldPointFrom(event, canvas);
+    if (aim && seat()) {
+      const axial = worldToAxial(point.x, point.y);
+      const course = aim;
+      aim = null;
+      order({ type: "direct", unit: course.unit, id: course.id, q: axial.q, r: axial.r }, "build");
+      paint();
+      return;
+    }
     const now = performance.now();
     if (hoverId && now - lastTap < 300) focusHolding(hoverId);
     lastTap = now;
@@ -1195,7 +1241,7 @@ function bindMap(canvas) {
       const rect = mini.getBoundingClientRect();
       const sx = (event.clientX - rect.left) * (mini.width / rect.width);
       const sy = (event.clientY - rect.top) * (mini.height / rect.height);
-      const scale = mini.width / 4800;
+      const scale = mini.width / 13000;
       goal.x = (sx - mini.width / 2) / scale;
       goal.y = (sy - mini.height / 2) / scale;
     });
@@ -1234,6 +1280,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "g" && world) order({ type: "weir" }, "build");
       if (event.key.toLowerCase() === "t" && world) order({ type: "timber" }, "build");
       if (event.key.toLowerCase() === "k" && world) order({ type: "quarry" }, "build");
+      if (event.key.toLowerCase() === "u" && world) order({ type: "founder" }, "build");
       if (event.key.toLowerCase() === "o" && world) order({ type: "patrol" }, "march");
       if (event.key.toLowerCase() === "p" && world) order({ type: "keel" }, "march");
       if (event.key.toLowerCase() === "z" && world && selectedId && selectedId !== seat().id) order({ type: "siege", target: selectedId }, "battle");
@@ -1385,6 +1432,19 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.quarry) {
     order({ type: "quarry" }, "build");
+    return;
+  }
+  if (node.dataset.founder) {
+    order({ type: "founder" }, "build");
+    return;
+  }
+  if (node.dataset.hull) {
+    order({ type: "hull", hull: node.dataset.hull }, "build");
+    return;
+  }
+  if (node.dataset.direct) {
+    aim = { unit: node.dataset.direct, id: node.dataset.id };
+    paint();
     return;
   }
   if (node.dataset.patrol) {
@@ -1564,7 +1624,7 @@ function clockLabel() {
   const left = (meta.endsAt || now) - now;
   const tick = (meta.nextTickAt || now) - now;
   const seats = meta.startedAt ? meta.startedAt + JOIN_GRACE_MS - now : 0;
-  const open = seats > 0 && (meta.humans || 0) < (meta.maxHumans || 8) ? ` · seats ${fmt(seats)}` : "";
+  const open = seats > 0 && (meta.humans || 0) < (meta.maxHumans || 12) ? ` · seats ${fmt(seats)}` : "";
   return { time: fmt(left), note: `left · hour in ${fmt(tick)}${open}` };
 }
 
