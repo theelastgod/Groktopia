@@ -23,6 +23,7 @@ import {
   worldToAxial,
   NAVY,
   nwFactor,
+  seatPoint,
   seatRival,
   serialize,
   studyCount,
@@ -63,6 +64,30 @@ test("build spends gold and an acre", () => {
   assert.equal(you.land - buildingCount(you), free - 1);
 });
 
+test("two rings beside a seat start open", () => {
+  const w = newWorld({ seed: 2 });
+  const you = byId(w, "you");
+  const [x, y] = seatPoint(you);
+  const seat = worldToAxial(x, y);
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  const ownedBy = (q, r) => w.provinces.find((p) => (p.plots || []).some((tile) => tile.q === q && tile.r === r));
+  for (const [dq, dr] of dirs) {
+    const q = seat.q + dq;
+    const r = seat.r + dr;
+    if (terrainKind(q, r) === "sea") continue;
+    const holder = ownedBy(q, r);
+    assert.ok(holder);
+    if (holder.id === "you") assert.ok(you.plots.some((tile) => tile.q === q && tile.r === r && tile.home));
+  }
+  const lot = you.plots.find((tile) => tile.crew === "lot" && tile.home);
+  assert.ok(lot);
+  you.gold = 5000;
+  const raised = applyAction(w, "you", { type: "build", building: "field", q: lot.q, r: lot.r });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(lot.structure, "field");
+  assert.equal(lot.crew, "hand");
+});
+
 test("a bought tile can hold one building", () => {
   const w = newWorld({ seed: 3 });
   const you = byId(w, "you");
@@ -72,13 +97,15 @@ test("a bought tile can hold one building", () => {
   you.orders = ORDERS;
   const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
   const held = new Set(you.plots.map((tile) => `${tile.q},${tile.r}`));
+  const home = worldToAxial(...seatPoint(you));
+  const dist = (q, r) => Math.max(Math.abs(q - home.q), Math.abs(r - home.r), Math.abs(q + r - home.q - home.r));
   let spot = null;
   for (const tile of you.plots) {
     for (const [dq, dr] of dirs) {
       const q = tile.q + dq;
       const r = tile.r + dr;
       const kind = terrainKind(q, r);
-      if (held.has(`${q},${r}`) || kind === "sea" || kind === "mount") continue;
+      if (held.has(`${q},${r}`) || kind === "sea" || kind === "mount" || dist(q, r) <= 2) continue;
       spot = { q, r };
       break;
     }
@@ -1005,7 +1032,9 @@ test("settling buys live tiles and each arm locks to its ground", () => {
   const you = byId(w, "you");
   const before = you.plots.length;
   assert.ok(before >= 6);
-  assert.ok(you.plots.every((tile) => tile.crew === "hand"));
+  assert.ok(you.plots.every((tile) => tile.crew === "hand" || tile.crew === "lot"));
+  assert.ok(you.plots.some((tile) => tile.crew === "hand"));
+  assert.ok(you.plots.some((tile) => tile.crew === "lot"));
   const settled = applyAction(w, "you", { type: "explore" });
   assert.equal(settled.ok, true);
   assert.equal(you.land, 210);

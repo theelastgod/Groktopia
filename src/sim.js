@@ -374,6 +374,43 @@ function takenPlots(world) {
   return taken;
 }
 
+function grantHome(p, taken) {
+  if (p.homeSet) return;
+  const [x, y] = seatPoint(p);
+  const city = worldToAxial(x, y);
+  p.plots = p.plots || [];
+  const owned = new Set(p.plots.map((tile) => plotKey(tile.q, tile.r)));
+  const seen = new Set([plotKey(city.q, city.r)]);
+  const queue = [{ q: city.q, r: city.r, dist: 0 }];
+  while (queue.length) {
+    const cell = queue.shift();
+    if (cell.dist > 0) {
+      const key = plotKey(cell.q, cell.r);
+      const kind = terrainKind(cell.q, cell.r);
+      if (kind !== "sea") {
+        if (owned.has(key)) {
+          const tile = p.plots.find((row) => row.q === cell.q && row.r === cell.r);
+          if (tile) tile.home = true;
+        } else if (!taken.has(key)) {
+          taken.add(key);
+          owned.add(key);
+          p.plots.push({ q: cell.q, r: cell.r, crew: "lot", home: true });
+        }
+      }
+    }
+    if (cell.dist >= 2) continue;
+    for (const [dq, dr] of HEX_DIRS) {
+      const nq = cell.q + dq;
+      const nr = cell.r + dr;
+      const key = plotKey(nq, nr);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queue.push({ q: nq, r: nr, dist: cell.dist + 1 });
+    }
+  }
+  p.homeSet = true;
+}
+
 export function ensurePlots(world) {
   const taken = takenPlots(world);
   for (const p of world.provinces || []) {
@@ -399,6 +436,7 @@ export function ensurePlots(world) {
       }
     }
   }
+  for (const p of world.provinces || []) grantHome(p, taken);
 }
 
 export function claimTiles(world, actor, n) {
@@ -995,7 +1033,7 @@ function doBuild(world, actor, key, action) {
     plot = (actor.plots || []).find((tile) => tile.q === q && tile.r === r);
     if (!plot) return fail("Buy that tile before you raise a building.");
     if (plot.structure) return fail("A building already stands on that tile.");
-    if (plot.crew && plot.crew !== "hand") return fail("That tile is already worked.");
+    if (plot.crew && plot.crew !== "hand" && plot.crew !== "lot") return fail("That tile is already worked.");
     const kind = terrainKind(q, r);
     if (kind === "sea" || kind === "mount") return fail("That ground will not hold a building.");
   }
@@ -1004,7 +1042,10 @@ function doBuild(world, actor, key, action) {
   if (actor.gold < cost) return fail(`Need ${cost} gold for a ${spec.name.slice(0, -1).toLowerCase()}.`);
   actor.gold -= cost;
   actor.buildings[key] += 1;
-  if (plot) plot.structure = key;
+  if (plot) {
+    plot.structure = key;
+    if (plot.crew === "lot") plot.crew = "hand";
+  }
   actor.acted = true;
   const cut = (key === "keep" || key === "barracks") && quarryPits(actor) > 0 ? " Quarry stone cheapened it." : "";
   const where = plot ? ` on a ${terrainKind(plot.q, plot.r)} tile` : "";
@@ -1877,7 +1918,7 @@ function doWeir(world, actor) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   if (actor.gold < 160) return fail("Nets want 160 gold.");
   if ((actor.peasants || 0) < 24) return fail("Need 24 peasants to crew the nets.");
-  const sites = (actor.plots || []).filter((tile) => waterTouch(tile));
+  const sites = (actor.plots || []).filter((tile) => tile.crew !== "lot" && waterTouch(tile));
   if (!sites.length) return fail("The nets need a bought tile on the coast or beside the river.");
   const posts = sites.slice(0, 3);
   actor.gold -= 160;
@@ -3727,7 +3768,7 @@ function doKeel(world, actor) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   if ((actor.soldiers || 0) < 6) return fail("Need 6 soldiers to crew a keel.");
   if (actor.gold < 200) return fail("A keel wants 200 gold.");
-  const plot = (actor.plots || []).find((tile) => waterTouch(tile));
+  const plot = (actor.plots || []).find((tile) => tile.crew !== "lot" && waterTouch(tile));
   if (!plot) return fail("A keel needs a bought tile on the coast or beside the river.");
   actor.gold -= 200;
   actor.soldiers -= 6;
@@ -4501,10 +4542,10 @@ export function chooseAction(world, agent) {
     if (!innUp(agent, world.hour) && agent.gold >= 700 && agent.grain >= 900 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "inn" };
     }
-    if (!weirLive(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.gold >= 400 && agent.peasants >= 40 && agent.orders >= 1 && rng.next() < 0.16) {
+    if (!weirLive(agent, world.hour) && (agent.plots || []).some((tile) => tile.crew !== "lot" && waterTouch(tile)) && agent.gold >= 400 && agent.peasants >= 40 && agent.orders >= 1 && rng.next() < 0.16) {
       return { type: "weir" };
     }
-    if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
+    if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => tile.crew !== "lot" && waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "keel" };
     }
     const closed = (agent.colonies || []).find((colony) => colony.port && (colony.slipUntil || 0) <= (world.hour || 0) && blockadeAt(world, agent, colony));

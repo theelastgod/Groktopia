@@ -656,7 +656,7 @@ function cardFor(actor, selected) {
     return `${head}
       <p class="muted">${esc(armsLine(actor))}</p>
       ${weaponLine(actor)}
-      <p class="muted">Buy a tile beside your acres, then click a structure and the tile to raise it there. Soldiers ${actor.soldiers}/${soldierCap(actor)} · ${esc(f.elite)} ${actor.elites}/${eliteCap(actor)} · thieves ${actor.thieves}/${thiefCap(actor)} · mystics ${actor.mystics}/${mysticCap(actor)}. Food need ${foodNeed(actor)}. Aether ${actor.aether}.</p>
+      <p class="muted">Two rings beside your seat start open. Buy further ground, then click a structure and the tile to raise it there. Soldiers ${actor.soldiers}/${soldierCap(actor)} · ${esc(f.elite)} ${actor.elites}/${eliteCap(actor)} · thieves ${actor.thieves}/${thiefCap(actor)} · mystics ${actor.mystics}/${mysticCap(actor)}. Food need ${foodNeed(actor)}. Aether ${actor.aether}.</p>
       <div class="row">${builds}</div>
       <div class="row">
         <button class="btn" type="button" data-train="soldier">Draft 10</button>
@@ -1044,7 +1044,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} worked tiles. Hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. Key K opens one.`;
+  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. Key K opens one.`;
 }
 
 function relicLine(actor) {

@@ -349,6 +349,16 @@ function drawHamlet(ctx, x, y) {
   ctx.fillRect(x + 4, y - 1, 3, 4);
 }
 
+function drawLot(ctx, x, y) {
+  ctx.save();
+  ctx.fillStyle = "rgba(226, 192, 120, 0.9)";
+  ctx.strokeStyle = "#1a1612";
+  ctx.lineWidth = 1.2;
+  ctx.fillRect(x - 7, y - 7, 14, 14);
+  ctx.strokeRect(x - 7, y - 7, 14, 14);
+  ctx.restore();
+}
+
 function drawYields(ctx, x, y, kind) {
   const [food, prod, gold] = YIELD[kind] || [0, 0, 0];
   const bits = [];
@@ -462,10 +472,12 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     ctx.stroke();
   }
   for (const cell of cells) {
+    const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
+    if (plot && plot.crew === "lot") drawLot(ctx, cell.pos.x, cell.pos.y);
     if (cell.kind === "sea" || cell.kind === "river" || cell.kind === "coast") continue;
     drawHexFeature(ctx, cell.kind, cell.pos.x, cell.pos.y, hash(cell.key));
-    if (cam.z >= 1 && cell.owner) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
-    const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
+    if (cam.z >= 1 && cell.owner && !(plot && plot.crew === "lot")) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
+    if (plot && plot.crew === "lot") continue;
     if (plot && plot.structure) drawStructure(ctx, cell.pos.x, cell.pos.y, plot.structure, time || 0);
     else if (plot && plot.crew === "hamlet") drawHamlet(ctx, cell.pos.x, cell.pos.y);
     else if (plot && plot.crew === "timber") drawTimberCamp(ctx, cell.pos.x, cell.pos.y, time || 0);
