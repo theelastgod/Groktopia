@@ -73,6 +73,7 @@ export const EARN = {
   ferry: 67,
   wheel: 68,
   look: 69,
+  pale: 70,
 };
 
 export const FACTIONS = {
@@ -717,7 +718,8 @@ export function defense(p) {
   const horn = p.relics && p.relics.stand ? 1.04 : 1;
   const foot = (p.plots || []).filter((tile) => tile.crew === "foot").length * 2;
   const stone = quarryPits(p) * 5;
-  return Math.floor((p.soldiers * 1 + (p.muster || 0) + p.elites * f.def + p.buildings.keep * 10 + foot + stone) * wageFactor(p) * bulwark * pale * bastion * horn);
+  const stakes = (p.plots || []).filter((tile) => tile.crew === "pale").length * 4;
+  return Math.floor((p.soldiers * 1 + (p.muster || 0) + p.elites * f.def + p.buildings.keep * 10 + foot + stone + stakes) * wageFactor(p) * bulwark * pale * bastion * horn);
 }
 
 export function networth(p) {
@@ -941,6 +943,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "quarry") result = doQuarry(world, actor);
   else if (action.type === "wheel") result = doWheel(world, actor);
   else if (action.type === "look") result = doLook(world, actor);
+  else if (action.type === "pale") result = doPale(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -1919,6 +1922,37 @@ function spotLookout(world, actor) {
       return;
     }
   }
+}
+
+function plotEdge(actor, tile) {
+  for (const [dq, dr] of HEX_DIRS) {
+    const nq = tile.q + dq;
+    const nr = tile.r + dr;
+    if (!(actor.plots || []).some((row) => row.q === nq && row.r === nr)) return true;
+  }
+  return false;
+}
+
+function doPale(world, actor) {
+  ensurePlots(world);
+  const held = (actor.plots || []).filter((tile) => tile.crew === "pale").length;
+  if (held >= 3) return fail("Three stakes already ring the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 170) return fail("A palisade wants 170 gold.");
+  const sites = (actor.plots || []).filter((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && plotEdge(actor, tile)).slice(0, 3 - held);
+  if (!sites.length) return fail("A palisade needs an open lot or a hand on the edge of your acres.");
+  actor.gold -= 170;
+  actor.orders -= 1;
+  actor.acted = true;
+  for (const tile of sites) tile.crew = "pale";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.pale;
+    notePurse(actor, "pale", EARN.pale);
+    purse = ` Purse +${formatUtopia(EARN.pale)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises ${sites.length} palisade ${sites.length === 1 ? "stake" : "stakes"}. Each adds 4 to the wall and pays 4 gold an hour. A sack breaks one.${purse}`);
+  return { ok: true, message: `${sites.length} stakes raised.${purse}` };
 }
 
 export function stonePrice(actor, key) {
@@ -4138,6 +4172,15 @@ function doAttack(world, actor, action) {
       look.crew = "hand";
       tower = " and toppled the lookout";
     }
+    let stake = "";
+    const paleTile = (target.plots || []).find((tile) => tile.crew === "pale");
+    if (paleTile) {
+      const post = Math.min(target.gold, 24);
+      target.gold -= post;
+      g += post;
+      paleTile.crew = "hand";
+      stake = " and broke a palisade stake";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4148,7 +4191,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4351,6 +4394,7 @@ function economy(world, p, hour) {
       goldIn += 12;
     }
     else if (tile.crew === "look") goldIn += 6;
+    else if (tile.crew === "pale") goldIn += 4;
   }
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
@@ -4561,6 +4605,9 @@ export function chooseAction(world, agent) {
   }
   if ((agent.persona === "sable" || agent.persona === "moss") && !beaconLit(agent, world.hour) && agent.orders >= 1 && agent.gold >= 160 && agent.grain >= 80 && rng.next() < 0.2) {
     return { type: "beacon" };
+  }
+  if (agent.persona === "sable" && (agent.plots || []).filter((tile) => tile.crew === "pale").length < 3 && (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && plotEdge(agent, tile)) && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) {
+    return { type: "pale" };
   }
   if (agent.persona === "sable" && !curfewUp(agent, world.hour) && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) {
     return { type: "curfew" };

@@ -330,6 +330,32 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawPale(ctx, x, y, time) {
+  const sway = Math.sin(time * 1.4 + x) * 0.8;
+  ctx.save();
+  ctx.translate(x, y + sway);
+  ctx.strokeStyle = "#6a4632";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-8, 6);
+  ctx.lineTo(-6, -8);
+  ctx.moveTo(0, 7);
+  ctx.lineTo(0, -10);
+  ctx.moveTo(8, 6);
+  ctx.lineTo(6, -8);
+  ctx.stroke();
+  ctx.strokeStyle = "#cbb892";
+  ctx.beginPath();
+  ctx.moveTo(-8, -1);
+  ctx.lineTo(8, -2);
+  ctx.stroke();
+  ctx.fillStyle = "#c4a15a";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("PALE", 0, 18);
+  ctx.restore();
+}
+
 function drawLookout(ctx, x, y, time) {
   const sweep = time * 0.8;
   ctx.save();
@@ -525,6 +551,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
   for (const cell of cells) {
     const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
     if (plot && plot.crew === "lot") drawLot(ctx, cell.pos.x, cell.pos.y);
+    if (plot && plot.crew === "pale") drawPale(ctx, cell.pos.x, cell.pos.y, time || 0);
     if (cell.kind === "sea" || cell.kind === "river" || cell.kind === "coast") continue;
     drawHexFeature(ctx, cell.kind, cell.pos.x, cell.pos.y, hash(cell.key));
     if (cam.z >= 1 && cell.owner && !(plot && plot.crew === "lot")) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
@@ -534,6 +561,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "timber") drawTimberCamp(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "quarry") drawQuarry(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "look") drawLookout(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "pale") { /* stakes already drawn */ }
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

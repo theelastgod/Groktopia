@@ -4020,6 +4020,81 @@ test("a lookout marks an enemy hull and a sack topples it", () => {
   assert.ok(raid.log.some((row) => row.text.includes("toppled the lookout")));
 });
 
+test("a palisade stakes the edge and a sack breaks one", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.pale, 70);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.muster = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.plots = [
+    { q: 0, r: 0, crew: "hand" },
+    { q: 1, r: 0, crew: "foot" },
+    { q: 1, r: -1, crew: "foot" },
+    { q: 0, r: -1, crew: "foot" },
+    { q: -1, r: 0, crew: "foot" },
+    { q: -1, r: 1, crew: "foot" },
+    { q: 0, r: 1, crew: "foot" },
+  ];
+  you.grain = 5000;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.studies = {};
+  you.marks = {};
+  you.relics = {};
+  you.spells = { bulwark: 0, fury: 0, shade: 0 };
+  assert.equal(applyAction(w, "you", { type: "pale" }).ok, false);
+  you.plots = [
+    { q: 0, r: 0, crew: "lot" },
+    { q: 1, r: 0, crew: "lot" },
+    { q: 0, r: 1, crew: "hand" },
+    { q: 4, r: 4, crew: "lot" },
+  ];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "pale" }).ok, false);
+  you.gold = 1000;
+  const bare = defense(you);
+  const raised = applyAction(w, "you", { type: "pale" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.gold, 830);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.plots.filter((tile) => tile.crew === "pale").length, 3);
+  assert.equal(defense(you), bare + 12);
+  assert.equal(you.ledger.pale, EARN.pale);
+  assert.equal(applyAction(w, "you", { type: "pale" }).ok, false);
+  advanceHour(w);
+  assert.equal(you.gold, 842);
+  assert.equal(you.grain, 5000);
+  assert.equal(you.utopia, EARN.pale + EARN.hourActive);
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.plots = [{ q: 0, r: 0, crew: "pale" }, { q: 2, r: 0, crew: "pale" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots.filter((tile) => tile.crew === "pale").length, 1);
+  assert.ok(raid.log.some((row) => row.text.includes("broke a palisade stake")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

@@ -674,6 +674,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-quarry="1">Open a quarry · 190g · +${formatUtopia(EARN.quarry)}</button>
         <button class="btn" type="button" data-wheel="1">Raise a tide wheel · 210g · +${formatUtopia(EARN.wheel)}</button>
         <button class="btn" type="button" data-look="1">Raise a lookout · 180g · +${formatUtopia(EARN.look)}</button>
+        <button class="btn" type="button" data-pale="1">Raise a palisade · 170g · +${formatUtopia(EARN.pale)}</button>
         <button class="btn" type="button" data-founder="1">Raise a founder · 260g · +${formatUtopia(EARN.founder)}</button>
         ${fleetLine(actor)}
         ${patrolButton(actor)}
@@ -848,6 +849,7 @@ function ledgerLine(actor) {
     ["ferries", book.ferry],
     ["wheels", book.wheel],
     ["lookouts", book.look],
+    ["pales", book.pale],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1048,7 +1050,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout.`;
+  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. Each stake adds 4 to the wall.`;
 }
 
 function relicLine(actor) {
@@ -1558,6 +1560,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "k" && world) order({ type: "quarry" }, "build");
       if (event.key === "#" && world) order({ type: "wheel" }, "build");
       if (event.key === "%" && world) order({ type: "look" }, "build");
+      if (event.key === "^" && world) order({ type: "pale" }, "build");
       if (event.key.toLowerCase() === "u" && world) order({ type: "founder" }, "build");
       if (event.key.toLowerCase() === "x" && world && seat()) {
         const fleet = seat().ships || [];
@@ -1837,6 +1840,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.look) {
     order({ type: "look" }, "build");
+    return;
+  }
+  if (node.dataset.pale) {
+    order({ type: "pale" }, "build");
     return;
   }
   if (node.dataset.founder) {
