@@ -330,6 +330,37 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawBell(ctx, x, y, time) {
+  const swing = Math.sin(time * 3) * 0.35;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#5c564c";
+  ctx.fillRect(-3, -2, 6, 12);
+  ctx.strokeStyle = "#2a2620";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(0, -2);
+  ctx.lineTo(0, -10);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(0, -10);
+  ctx.rotate(swing);
+  ctx.fillStyle = "#c4a15a";
+  ctx.beginPath();
+  ctx.moveTo(-4, 0);
+  ctx.lineTo(4, 0);
+  ctx.lineTo(2.5, 7);
+  ctx.lineTo(-2.5, 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = "#c4a15a";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("BELL", 0, 20);
+  ctx.restore();
+}
+
 function drawGrove(ctx, x, y, time) {
   const bob = Math.sin(time * 1.6 + y) * 1.1;
   ctx.save();
@@ -610,6 +641,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "pale") { /* stakes already drawn */ }
     else if (plot && plot.crew === "pan") { /* pans already drawn */ }
     else if (plot && plot.crew === "grove") drawGrove(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "bell") drawBell(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

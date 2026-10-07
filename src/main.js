@@ -677,6 +677,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-pale="1">Raise a palisade · 170g · +${formatUtopia(EARN.pale)}</button>
         <button class="btn" type="button" data-pan="1">Cut a salt pan · 150g · +${formatUtopia(EARN.pan)}</button>
         <button class="btn" type="button" data-grove="1">Plant a grove · 160g · +${formatUtopia(EARN.grove)}</button>
+        <button class="btn" type="button" data-bell="1">Hang a bell · 170g · +${formatUtopia(EARN.bell)}</button>
         <button class="btn" type="button" data-founder="1">Raise a founder · 260g · +${formatUtopia(EARN.founder)}</button>
         ${fleetLine(actor)}
         ${patrolButton(actor)}
@@ -856,6 +857,7 @@ function ledgerLine(actor) {
     ["pans", book.pan],
     ["groves", book.grove],
     ["ropes", book.rope],
+    ["bells", book.bell],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1056,7 +1058,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. Each stake adds 4 to the wall.`;
+  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}, bells ${count("bell")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. Key | hangs a bell. A bell keeps grass or plain, pays 5 gold, and a wild ride takes half. Each stake adds 4 to the wall.`;
 }
 
 function relicLine(actor) {
@@ -1581,6 +1583,7 @@ function bindMap(canvas) {
       if (event.key === "^" && world) order({ type: "pale" }, "build");
       if (event.key === "?" && world) order({ type: "pan" }, "build");
       if (event.key === ":" && world) order({ type: "grove" }, "build");
+      if (event.key === "|" && world) order({ type: "bell" }, "build");
       if (event.key === "~" && world && seat()) {
         const port = (seat().colonies || []).find((row) => row.port && !row.cooper);
         if (port) order({ type: "cooper", colony: port.id }, "build");
@@ -1880,6 +1883,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.grove) {
     order({ type: "grove" }, "build");
+    return;
+  }
+  if (node.dataset.bell) {
+    order({ type: "bell" }, "build");
     return;
   }
   if (node.dataset.founder) {

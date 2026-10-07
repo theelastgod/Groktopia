@@ -78,6 +78,7 @@ export const EARN = {
   pan: 72,
   grove: 73,
   rope: 74,
+  bell: 75,
 };
 
 export const FACTIONS = {
@@ -950,6 +951,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "pale") result = doPale(world, actor);
   else if (action.type === "pan") result = doPan(world, actor);
   else if (action.type === "grove") result = doGrove(world, actor);
+  else if (action.type === "bell") result = doBell(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2020,6 +2022,28 @@ function doGrove(world, actor) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} plants a grove on a ${kind} tile. It pays 24 grain and 4 gold an hour. A sack burns one grove.${purse}`);
   return { ok: true, message: `Grove on the ${kind} tile.${purse}` };
+}
+
+function doBell(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "bell")) return fail("A bell already hangs over the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 170) return fail("A bell wants 170 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A bell needs a hand or an open lot on grass or plain.");
+  actor.gold -= 170;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "bell";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.bell;
+    notePurse(actor, "bell", EARN.bell);
+    purse = ` Purse +${formatUtopia(EARN.bell)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} hangs a bell on a ${kind} tile. It pays 5 gold an hour. A wild ride that breaks in takes half. A sack silences it.${purse}`);
+  return { ok: true, message: `Bell on the ${kind} tile.${purse}` };
 }
 
 export function stonePrice(actor, key) {
@@ -4072,6 +4096,8 @@ function strikeBand(world, band, target) {
     band.men = Math.max(1, band.men - 2);
     log(world, `${band.name} breaks the keel of ${target.name}. ${spent} crew are lost, and the camp still comes on.`);
   }
+  const tolled = (target.plots || []).some((tile) => tile.crew === "bell");
+  const cut = tolled ? 0.5 : 1;
   const bite = band.men * 9;
   if (defense(target) >= bite) {
     const lost = Math.min(band.men, 3 + Math.floor(defense(target) / 120));
@@ -4080,15 +4106,16 @@ function strikeBand(world, band, target) {
     if (band.men < 8) quietBand(world, band, hour, `${band.name} scatters. The camp is ash for six hours.`);
     return;
   }
-  const gold = Math.min(target.gold, 36 + band.men);
-  const grain = Math.min(target.grain, 50 + band.men * 2);
+  const gold = Math.min(target.gold, Math.floor((36 + band.men) * cut));
+  const grain = Math.min(target.grain, Math.floor((50 + band.men * 2) * cut));
   target.gold -= gold;
   target.grain -= grain;
   band.hoard = (band.hoard || 0) + Math.floor(gold / 2);
-  const folk = Math.min(target.peasants, 6 + Math.floor(band.men / 8));
+  const folk = Math.min(target.peasants, Math.floor((6 + Math.floor(band.men / 8)) * cut));
   target.peasants -= folk;
   target.soldiers = Math.max(0, (target.soldiers || 0) - Math.min(target.soldiers || 0, 2));
-  log(world, `${band.name} rides through ${target.name}, taking ${gold} gold and ${grain} grain. ${folk} people fall.`);
+  const toll = tolled ? " The bell saves half." : "";
+  log(world, `${band.name} rides through ${target.name}, taking ${gold} gold and ${grain} grain. ${folk} people fall.${toll}`);
 }
 
 export function pressBands(world) {
@@ -4334,6 +4361,15 @@ function doAttack(world, actor, action) {
       grove.crew = "hand";
       ashes = " and burned a grove";
     }
+    let clapper = "";
+    const bellTile = (target.plots || []).find((tile) => tile.crew === "bell");
+    if (bellTile) {
+      const toll = Math.min(target.gold, 20);
+      target.gold -= toll;
+      g += toll;
+      bellTile.crew = "hand";
+      clapper = " and silenced the bell";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4344,7 +4380,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${clapper}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4553,6 +4589,7 @@ function economy(world, p, hour) {
       foodIn += 24;
       goldIn += 4;
     }
+    else if (tile.crew === "bell") goldIn += 5;
   }
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
@@ -4790,6 +4827,9 @@ export function chooseAction(world, agent) {
     return trainBias(agent) || buildIf(agent, "barracks") || buildIf(agent, "field");
   }
   if (agent.persona === "sable") {
+    const belled = (agent.plots || []).some((tile) => tile.crew === "bell");
+    const bellField = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+    if (!belled && bellField && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "bell" };
     if (!patrolUp(agent, world.hour) && agent.soldiers >= 40 && agent.gold >= 500 && agent.orders >= 1) {
       const [ax, ay] = seatPoint(agent);
       const near = (world.bands || []).some((band) => bandUp(band, world.hour) && Math.hypot(ax - band.x, ay - band.y) < 1600);
