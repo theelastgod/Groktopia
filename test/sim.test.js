@@ -3418,6 +3418,41 @@ test("a quay watch throws a landing back and then comes home", () => {
   assert.equal(you.colonies[0].quay, 0);
 });
 
+test("ages issue bows, guns, cannon, and landcars", () => {
+  assert.equal(ORDERS, 10);
+  const w = newWorld({ seed: 12 });
+  const you = byId(w, "you");
+  you.gold = 8000;
+  you.soldiers = 20;
+  you.orders = ORDERS;
+  assert.equal(ageName(you), "Camp");
+  assert.equal(applyAction(w, "you", { type: "armory", weapon: "bow" }).ok, false);
+  assert.equal(applyAction(w, "you", { type: "study", study: "furrow" }).ok, true);
+  assert.equal(applyAction(w, "you", { type: "study", study: "kiln" }).ok, true);
+  assert.equal(ageName(you), "Borough");
+  const before = offense(you);
+  const gold = you.gold;
+  const issued = applyAction(w, "you", { type: "armory", weapon: "bow" });
+  assert.equal(issued.ok, true, issued.message);
+  assert.equal(you.weapon, "bow");
+  assert.equal(you.gold, gold - 180);
+  assert.equal(you.ledger.armory, EARN.armory);
+  assert.ok(offense(you) > before);
+  assert.equal(applyAction(w, "you", { type: "armory", weapon: "lock" }).ok, false);
+  you.studies = { furrow: 1, kiln: 1, palisade: 1, charter: 1, ledger: 1, rite: 1, oath: 1, crown: 1 };
+  you.aether = 200;
+  you.orders = 3;
+  assert.equal(ageName(you), "Crown");
+  assert.equal(applyAction(w, "you", { type: "armory", weapon: "cannon" }).ok, true);
+  assert.equal(you.weapon, "cannon");
+  assert.equal(applyAction(w, "you", { type: "study", study: "powder" }).ok, true);
+  assert.equal(ageName(you), "Arsenal");
+  you.orders = 1;
+  assert.equal(applyAction(w, "you", { type: "armory", weapon: "car" }).ok, true);
+  assert.equal(you.weapon, "car");
+  assert.equal(applyAction(w, "you", { type: "armory", weapon: "bow" }).ok, false);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

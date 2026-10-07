@@ -66,6 +66,7 @@ export const EARN = {
   tile: 60,
   raid: 61,
   quay: 62,
+  armory: 63,
 };
 
 export const FACTIONS = {
@@ -178,6 +179,7 @@ export const STUDIES = [
   { id: "rite", name: "River Rite", cost: 900, aether: 40, need: 3, purse: 110, blurb: "Spires draw a brighter aether." },
   { id: "oath", name: "Road Oath", cost: 1000, aether: 0, need: 4, purse: 130, blurb: "The host marches a little heavier." },
   { id: "crown", name: "Crown Seat", cost: 1600, aether: 80, need: 6, purse: 250, blurb: "The monument of the age." },
+  { id: "powder", name: "Powder Seat", cost: 1800, aether: 60, need: 8, purse: 180, blurb: "The host may roll iron landcars." },
 ];
 
 export function studyCount(p) {
@@ -187,11 +189,21 @@ export function studyCount(p) {
 
 export function ageName(p) {
   const n = studyCount(p);
+  if (n >= 9) return "Arsenal";
   if (n >= 8) return "Crown";
   if (n >= 5) return "Realm";
   if (n >= 2) return "Borough";
   return "Camp";
 }
+
+/** Arms the host may take once the age allows. Spears are the default and add no bite. */
+export const WEAPONS = {
+  spear: { name: "Spears", need: 0, bite: 0, gold: 0, age: "Camp", line: "The camp host still carries spears." },
+  bow: { name: "Bows", need: 2, bite: 1, gold: 180, age: "Borough", line: "Borough archers loose across the field." },
+  lock: { name: "Handlocks", need: 5, bite: 2, gold: 320, age: "Realm", line: "Realm guns crack from the line." },
+  cannon: { name: "Cannon", need: 8, bite: 4, gold: 480, age: "Crown", line: "Crown cannon sit behind the host." },
+  car: { name: "Landcars", need: 9, bite: 6, gold: 720, age: "Arsenal", line: "Iron hulls roll once the Powder Seat is sworn." },
+};
 
 /** One civic at a time. Switching spends an order. The purse still comes from play. */
 export const DOCTRINES = {
@@ -642,7 +654,8 @@ export function offense(p) {
   const levy = p.doctrine === "levy" ? 1.05 : 1;
   const ash = p.relics && p.relics.barrow ? 1.04 : 1;
   const seam = p.vein === "iron" ? 1.04 : 1;
-  const bite = p.smithUntil > 0 ? 4 : 3;
+  const armed = WEAPONS[p.weapon];
+  const bite = (p.smithUntil > 0 ? 4 : 3) + (armed ? armed.bite : 0);
   const posted = (p.plots || []).reduce((sum, tile) => {
     if (tile.crew === "rider") return sum + 6;
     if (tile.crew === "engine") return sum + 8;
@@ -853,6 +866,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "explore") result = doExplore(world, actor);
   else if (action.type === "buy") result = doBuy(world, actor, action);
   else if (action.type === "arm") result = doArm(world, actor, action.unit);
+  else if (action.type === "armory") result = doArmory(world, actor, action.weapon);
   else if (action.type === "study") result = doStudy(world, actor, action.study);
   else if (action.type === "doctrine") result = doDoctrine(world, actor, action.doctrine);
   else if (action.type === "wonder") result = doWonder(world, actor, action.wonder);
@@ -906,6 +920,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "cut") result = doCut(world, actor, action);
   else if (action.type === "raid") result = doRaid(world, actor, action);
   else if (action.type === "quay") result = doQuay(world, actor, action.colony);
+  else if (action.type === "dues") result = doDues(world, actor, action.colony);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1084,6 +1099,31 @@ function doArm(world, actor, unit) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} posts ${spec.name} on a ${kind} tile.${purse}`);
   return { ok: true, message: `${spec.name} hold the ${kind} tile.${purse}` };
+}
+
+function doArmory(world, actor, id) {
+  const spec = WEAPONS[id];
+  if (!spec || id === "spear") return fail("Name the arms the age can field.");
+  if (studyCount(actor) < spec.need) return fail(`${spec.name} wait on the ${spec.age} age.`);
+  if (id === "car" && !(actor.studies && actor.studies.powder)) return fail("Landcars wait on the Powder Seat.");
+  if (actor.weapon === id) return fail(`The host already carries ${spec.name}.`);
+  const held = WEAPONS[actor.weapon];
+  if (held && held.bite > spec.bite) return fail("The host will not set those arms down.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if ((actor.soldiers || 0) < 8) return fail("Eight soldiers must stand to take the new arms.");
+  if (actor.gold < spec.gold) return fail(`${spec.name} want ${spec.gold} gold.`);
+  actor.gold -= spec.gold;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.weapon = id;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.armory;
+    notePurse(actor, "armory", EARN.armory);
+    purse = ` Purse +${formatUtopia(EARN.armory)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} issues ${spec.name} to the host. ${spec.line}${purse}`);
+  return { ok: true, message: `${spec.name} issued.${purse}` };
 }
 
 function doStudy(world, actor, id) {

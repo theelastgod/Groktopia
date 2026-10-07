@@ -50,6 +50,7 @@ import {
   soldierCap,
   spellbook,
   studyCount,
+  WEAPONS,
   thiefCap,
   eliteCap,
 } from "./sim.js";
@@ -524,7 +525,7 @@ function paint() {
   const watch = beaconLit(p, world.hour) ? ` · watch through ${p.beaconUntil - 1}` : "";
   if (hour) hour.innerHTML = `<b>Hour ${world.hour}</b><span>${esc(p.name)} · ${p.orders}/${ORDERS} orders · ${meta.humans || 1}/${meta.maxHumans || 12} players${watch}</span>`;
   const age = document.querySelector("#hud-age");
-  if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>${esc(seasonName(world.hour))} · ${esc(seasonMod(world.hour).line)} · legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/8 studies</span>`;
+  if (age) age.innerHTML = `<b>${esc(ageName(p))} age</b><span>${esc(seasonName(world.hour))} · ${esc((WEAPONS[p.weapon] || WEAPONS.spear).name)} · ${esc(seasonMod(world.hour).line)} · legacy ${networth(p) + (p.utopia || 0)} · ${studyCount(p)}/${STUDIES.length} studies</span>`;
   if (purse) purse.innerHTML = `<b class="coin"><img class="coin-mark" src="/public/art/coin.jpg" alt="">${formatUtopia(p.utopia)} $UTOPIA</b><span>gold ${p.gold} · grain ${p.grain}</span>`;
   const hudWallet = document.querySelector("#hud-phantom");
   if (hudWallet) hudWallet.textContent = wallet ? shortWallet() : "Phantom";
@@ -654,6 +655,7 @@ function cardFor(actor, selected) {
     }).join("");
     return `${head}
       <p class="muted">${esc(armsLine(actor))}</p>
+      ${weaponLine(actor)}
       <p class="muted">Buy a tile beside your acres, then click a structure and the tile to raise it there. Soldiers ${actor.soldiers}/${soldierCap(actor)} · ${esc(f.elite)} ${actor.elites}/${eliteCap(actor)} · thieves ${actor.thieves}/${thiefCap(actor)} · mystics ${actor.mystics}/${mysticCap(actor)}. Food need ${foodNeed(actor)}. Aether ${actor.aether}.</p>
       <div class="row">${builds}</div>
       <div class="row">
@@ -830,6 +832,7 @@ function ledgerLine(actor) {
     ["salvage", book.salvage],
     ["convoys", book.convoy],
     ["tiles", book.tile],
+    ["armory", book.armory],
     ["wharves", book.wharf],
     ["refits", book.refit],
     ["moles", book.mole],
@@ -1046,6 +1049,20 @@ function relicLine(actor) {
   const held = Object.keys(actor.relics || {}).map((id) => RELICS[id]).filter(Boolean);
   if (!held.length) return "Old places on the map still hold a relic. Open one and it stays with your acres.";
   return `Relics: ${held.map((row) => `${row.name}. ${row.line}`).join(" ")}`;
+}
+
+function weaponLine(actor) {
+  const held = WEAPONS[actor.weapon] || WEAPONS.spear;
+  const rows = [`<p class="muted">${esc(ageName(actor))} age. The host carries ${esc(held.name)}. ${esc(held.line)}</p>`];
+  for (const [id, spec] of Object.entries(WEAPONS)) {
+    if (id === "spear" || actor.weapon === id) continue;
+    if (studyCount(actor) < spec.need) continue;
+    if (id === "car" && !(actor.studies && actor.studies.powder)) continue;
+    const older = WEAPONS[actor.weapon];
+    if (older && older.bite > spec.bite) continue;
+    rows.push(`<button class="btn" type="button" data-armory="${id}">Issue ${esc(spec.name)} · ${spec.gold}g · +${formatUtopia(EARN.armory)}</button>`);
+  }
+  return rows.join("");
 }
 
 function fleetLine(actor) {
@@ -1892,6 +1909,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.arm) {
     order({ type: "arm", unit: node.dataset.arm }, "build");
+    return;
+  }
+  if (node.dataset.armory) {
+    order({ type: "armory", weapon: node.dataset.armory }, "build");
     return;
   }
   if (node.dataset.train) {

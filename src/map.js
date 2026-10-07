@@ -472,7 +472,8 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "quarry") drawQuarry(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
-      drawFolk(ctx, cell.pos.x, cell.pos.y - 4, 0.4, time || 0, role, cell.kind);
+      const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
+      drawFolk(ctx, cell.pos.x, cell.pos.y - 4, 0.4, time || 0, role, cell.kind, arms);
     }
     if (plot && plot.net && weirLive(cell.owner, world.hour)) drawSkiff(ctx, cell.q, cell.r, time);
   }
@@ -820,6 +821,7 @@ function drawBanks(ctx, time) {
 
 function eraOf(p) {
   const n = studyCount(p);
+  if (n >= 9) return 4;
   if (n >= 8) return 3;
   if (n >= 5) return 2;
   if (n >= 2) return 1;
@@ -1213,7 +1215,53 @@ function drawCivic(ctx, p, g, time) {
   }
 }
 
-function drawFolk(ctx, x, y, ang, time, role, terrain) {
+function drawArms(ctx, weapon, time) {
+  if (weapon === "bow") {
+    ctx.strokeStyle = "#6a4632";
+    ctx.beginPath();
+    ctx.arc(4.2, -2, 3.2, -1.1, 1.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(4.2, -5.1);
+    ctx.lineTo(4.2, 1.1);
+    ctx.stroke();
+  } else if (weapon === "lock") {
+    ctx.strokeStyle = "#2a241c";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(1.4, -2);
+    ctx.lineTo(8.4, -3.2);
+    ctx.stroke();
+    ctx.fillStyle = "#6e675f";
+    ctx.fillRect(2.2, -3.4, 2.2, 1.6);
+  } else if (weapon === "cannon") {
+    ctx.fillStyle = "#3a2a1c";
+    ctx.fillRect(1, -1.2, 8, 2.4);
+    ctx.fillStyle = "#6e675f";
+    ctx.beginPath();
+    ctx.arc(1.2, 1.6, 1.3, 0, Math.PI * 2);
+    ctx.arc(6.2, 1.6, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (weapon === "car") {
+    const roll = (time * 3) % 2;
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(-1, -2.4, 11, 4.2);
+    ctx.fillStyle = "#6e675f";
+    ctx.fillRect(6, -4.2, 3.2, 2);
+    ctx.beginPath();
+    ctx.arc(1.2 + roll, 2.2, 1.6, 0, Math.PI * 2);
+    ctx.arc(7.2 + roll, 2.2, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = "#e8d6b0";
+    ctx.beginPath();
+    ctx.moveTo(1.6, -2);
+    ctx.lineTo(7.2, -0.6);
+    ctx.stroke();
+  }
+}
+
+function drawFolk(ctx, x, y, ang, time, role, terrain, weapon) {
   const step = Math.sin(time * 8 + x * 0.05);
   ctx.save();
   ctx.translate(x, y);
@@ -1330,11 +1378,7 @@ function drawFolk(ctx, x, y, ang, time, role, terrain) {
     ctx.lineTo(5, -5);
     ctx.fill();
   } else if (role === "soldier" || role === "elite" || role === "foot") {
-    ctx.strokeStyle = "#e8d6b0";
-    ctx.beginPath();
-    ctx.moveTo(1.6, -2);
-    ctx.lineTo(7.2, -0.6);
-    ctx.stroke();
+    drawArms(ctx, weapon, time);
   } else if (role === "thief") {
     ctx.fillStyle = "#1a1420";
     ctx.fillRect(-2.6, -8.6, 5.2, 2.2);
@@ -1385,14 +1429,17 @@ function drawCrew(ctx, p, g, time, known) {
     const lap = time * 0.28 + (i / Math.max(1, soldiers)) * Math.PI * 2;
     const x = g.x + Math.cos(lap) * g.r * 0.7;
     const y = g.y + Math.sin(lap) * g.r * 0.7;
-    drawFolk(ctx, x, y, lap + Math.PI / 2, time + i, "soldier");
+    drawFolk(ctx, x, y, lap + Math.PI / 2, time + i, "soldier", "", p.weapon);
   }
   const elites = Math.min(2, Math.round((p.elites || 0) / 16));
   for (let i = 0; i < elites; i++) {
     const lap = -time * 0.2 + i * Math.PI;
     const x = g.x + Math.cos(lap) * g.r * 0.22;
     const y = g.y + Math.sin(lap) * g.r * 0.22;
-    drawFolk(ctx, x, y, lap + Math.PI / 2, time + i, "elite");
+    drawFolk(ctx, x, y, lap + Math.PI / 2, time + i, "elite", "", p.weapon);
+  }
+  if (p.weapon === "cannon" || p.weapon === "car") {
+    drawFolk(ctx, g.x + g.r * 0.15, g.y + g.r * 0.55, 0.2, time, "soldier", "", p.weapon);
   }
 }
 
