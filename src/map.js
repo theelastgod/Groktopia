@@ -2879,6 +2879,32 @@ function drawLee(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawLamp(ctx, x, y, time) {
+  ctx.save();
+  ctx.translate(x, y - 16);
+  ctx.fillStyle = "#3d3224";
+  ctx.fillRect(-3, -4, 6, 20);
+  ctx.fillStyle = "#e2c078";
+  ctx.beginPath();
+  ctx.arc(0, -6, 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(0, -6);
+  ctx.rotate(time * 0.9);
+  ctx.strokeStyle = "rgba(226, 192, 120, 0.7)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(4, 0);
+  ctx.lineTo(42, 0);
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("LAMP", 0, 28);
+  ctx.restore();
+}
+
 function drawDues(ctx, x, y, time) {
   const wave = Math.sin(time * 2) * 1.2;
   ctx.save();
@@ -3138,6 +3164,7 @@ function drawColonies(ctx, world, time) {
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);
+      if (colony.port && (colony.lampUntil || 0) > (world.hour || 0)) drawLamp(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.leeUntil || 0) > (world.hour || 0)) drawLee(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.slipUntil || 0) > (world.hour || 0)) drawSlip(ctx, pos.x, pos.y, time);
