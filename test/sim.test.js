@@ -4195,6 +4195,92 @@ test("a bell pays gold and a wild ride takes half", () => {
   assert.ok(raid.log.some((row) => row.text.includes("silenced the bell")));
 });
 
+test("a sail mills grain on a hill and a sack topples it", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.sail, 76);
+  assert.equal(EARN.bell, 75);
+  let hill = null;
+  let mount = null;
+  let grass = null;
+  for (let q = -40; q <= 40 && (!hill || !mount || !grass); q++) {
+    for (let r = -40; r <= 40; r++) {
+      const kind = terrainKind(q, r);
+      if (!hill && kind === "hill") hill = { q, r };
+      if (!mount && kind === "mount") mount = { q, r };
+      if (!grass && kind === "grass") grass = { q, r };
+    }
+  }
+  assert.ok(hill);
+  assert.ok(mount);
+  assert.ok(grass);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.muster = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.plots = [{ q: grass.q, r: grass.r, crew: "hand" }];
+  you.grain = 20;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.studies = {};
+  you.marks = {};
+  you.relics = {};
+  you.spells = { bulwark: 0, fury: 0, shade: 0 };
+  assert.equal(applyAction(w, "you", { type: "sail" }).ok, false);
+  you.plots = [{ q: mount.q, r: mount.r, crew: "lot" }];
+  assert.equal(applyAction(w, "you", { type: "sail" }).ok, false);
+  you.plots = [{ q: hill.q, r: hill.r, crew: "hand", structure: "keep" }];
+  assert.equal(applyAction(w, "you", { type: "sail" }).ok, false);
+  you.plots = [{ q: hill.q, r: hill.r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "sail" }).ok, false);
+  you.gold = 1000;
+  const raised = applyAction(w, "you", { type: "sail" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "sail");
+  assert.equal(you.gold, 780);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.sail, EARN.sail);
+  assert.equal(applyAction(w, "you", { type: "sail" }).ok, false);
+  advanceHour(w);
+  assert.equal(you.grain, 20);
+  assert.equal(you.gold, 784);
+  assert.equal(you.utopia, EARN.sail + EARN.hourActive);
+  you.grain = 36;
+  advanceHour(w);
+  assert.equal(you.grain, 20);
+  assert.equal(you.gold, 812);
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 200;
+  vic.plots = [{ q: hill.q, r: hill.r, crew: "sail" }];
+  const before = vic.gold;
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(before - vic.gold >= 40);
+  assert.ok(raid.log.some((row) => row.text.includes("toppled the sail")));
+});
+
 test("a ropewalk pays gold and lets a hull sail one hex farther", () => {
   assert.equal(ORDERS, 10);
   assert.equal(TICK_MS, 60 * 1000);

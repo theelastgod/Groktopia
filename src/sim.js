@@ -79,6 +79,7 @@ export const EARN = {
   grove: 73,
   rope: 74,
   bell: 75,
+  sail: 76,
 };
 
 export const FACTIONS = {
@@ -952,6 +953,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "pan") result = doPan(world, actor);
   else if (action.type === "grove") result = doGrove(world, actor);
   else if (action.type === "bell") result = doBell(world, actor);
+  else if (action.type === "sail") result = doSail(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2044,6 +2046,38 @@ function doBell(world, actor) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} hangs a bell on a ${kind} tile. It pays 5 gold an hour. A wild ride that breaks in takes half. A sack silences it.${purse}`);
   return { ok: true, message: `Bell on the ${kind} tile.${purse}` };
+}
+
+function doSail(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "sail")) return fail("A sail already turns on the hill.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 220) return fail("A sail wants 220 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "hill");
+  if (!plot) return fail("A sail needs a hand or an open lot on a hill.");
+  actor.gold -= 220;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "sail";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.sail;
+    notePurse(actor, "sail", EARN.sail);
+    purse = ` Purse +${formatUtopia(EARN.sail)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a sail on a hill. While the stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. A sack topples it.${purse}`);
+  return { ok: true, message: `Sail on the hill.${purse}` };
+}
+
+function grindSail(p) {
+  const mill = (p.plots || []).find((tile) => tile.crew === "sail");
+  if (!mill) return;
+  if ((p.grain || 0) >= 36) {
+    p.grain -= 16;
+    p.gold += 28;
+    return;
+  }
+  p.gold += 4;
 }
 
 export function stonePrice(actor, key) {
@@ -4370,6 +4404,15 @@ function doAttack(world, actor, action) {
       bellTile.crew = "hand";
       clapper = " and silenced the bell";
     }
+    let vanes = "";
+    const sail = (target.plots || []).find((tile) => tile.crew === "sail");
+    if (sail) {
+      const flour = Math.min(target.gold, 40);
+      target.gold -= flour;
+      g += flour;
+      sail.crew = "hand";
+      vanes = " and toppled the sail";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4380,7 +4423,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${clapper}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${clapper}${vanes}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4659,6 +4702,7 @@ function economy(world, p, hour) {
     p.peasants -= die;
     p.grain = 0;
   }
+  grindSail(p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5057,6 +5101,9 @@ export function chooseAction(world, agent) {
     if (!hospiceUp(agent, world.hour) && agent.gold >= 500 && agent.grain >= 800 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "hospice" };
     }
+    const sailed = (agent.plots || []).some((tile) => tile.crew === "sail");
+    const hillLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "hill");
+    if (!sailed && hillLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) return { type: "sail" };
     const groves = (agent.plots || []).filter((tile) => tile.crew === "grove").length;
     const field = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
     if (groves < 2 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "grove" };

@@ -330,6 +330,37 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawSail(ctx, x, y, time) {
+  const spin = time * 1.4;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#8d7b68";
+  ctx.fillRect(-4, -2, 8, 14);
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(-5, -6, 10, 5);
+  ctx.save();
+  ctx.translate(0, -8);
+  ctx.rotate(spin);
+  ctx.strokeStyle = "#f3e6c8";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    ctx.rotate(Math.PI / 2);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(11, 2);
+  }
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "#e2c078";
+  ctx.beginPath();
+  ctx.arc(0, -8, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("SAIL", 0, 22);
+  ctx.restore();
+}
+
 function drawBell(ctx, x, y, time) {
   const swing = Math.sin(time * 3) * 0.35;
   ctx.save();
@@ -642,6 +673,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "pan") { /* pans already drawn */ }
     else if (plot && plot.crew === "grove") drawGrove(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "bell") drawBell(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "sail") drawSail(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
