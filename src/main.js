@@ -850,6 +850,7 @@ function ledgerLine(actor) {
     ["wheels", book.wheel],
     ["lookouts", book.look],
     ["pales", book.pale],
+    ["coopers", book.cooper],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1146,6 +1147,11 @@ function fleetLine(actor) {
     if (!port.wharf) {
       rows.push(`<button class="btn" type="button" data-wharf="${esc(port.id)}">Raise a wharf at ${esc(port.name)} · 220g · +${formatUtopia(EARN.wharf)}</button>`);
     }
+    if (port.cooper) {
+      rows.push(`<p class="muted">${esc(port.name)}'s cooperage pays 10 gold an hour. A hull laid from a cooperage costs 40 gold less.</p>`);
+    } else {
+      rows.push(`<button class="btn" type="button" data-cooper="${esc(port.id)}">Raise a cooperage at ${esc(port.name)} · 220g · +${formatUtopia(EARN.cooper)}</button>`);
+    }
     if ((port.lampUntil || 0) > world.hour) {
       rows.push(`<p class="muted">${esc(port.name)}'s lamp burns through hour ${port.lampUntil - 1}. Enemy hulls within four hexes sail one hex slower.</p>`);
     } else {
@@ -1204,11 +1210,13 @@ function fleetLine(actor) {
     rows.push(`<button class="btn" type="button" data-ferry="1">Run a ferry between your ports · 280g · +${formatUtopia(EARN.ferry)}</button>`);
   }
   if (ports.length && ships.length < 6) {
+    const yard = ports.find((row) => row.cooper) || ports[0];
     for (const [id, spec] of Object.entries(NAVY)) {
       const work = spec.fish ? `${spec.fish} fish` : "";
       const coin = spec.haul ? `${spec.haul} gold` : "";
       const yieldLine = [work, coin].filter(Boolean).join(", ") || "a fast hull";
-      rows.push(`<button class="btn" type="button" data-hull="${id}">Lay a ${esc(spec.name)} · ${spec.gold}g · ${yieldLine}</button>`);
+      const ask = yard && yard.cooper ? Math.max(80, spec.gold - 40) : spec.gold;
+      rows.push(`<button class="btn" type="button" data-hull="${id}">Lay a ${esc(spec.name)} · ${ask}g · ${yieldLine}</button>`);
     }
   }
   if (aim) {
@@ -1561,6 +1569,10 @@ function bindMap(canvas) {
       if (event.key === "#" && world) order({ type: "wheel" }, "build");
       if (event.key === "%" && world) order({ type: "look" }, "build");
       if (event.key === "^" && world) order({ type: "pale" }, "build");
+      if (event.key === "~" && world && seat()) {
+        const port = (seat().colonies || []).find((row) => row.port && !row.cooper);
+        if (port) order({ type: "cooper", colony: port.id }, "build");
+      }
       if (event.key.toLowerCase() === "u" && world) order({ type: "founder" }, "build");
       if (event.key.toLowerCase() === "x" && world && seat()) {
         const fleet = seat().ships || [];
@@ -1912,6 +1924,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.wharf) {
     order({ type: "wharf", colony: node.dataset.wharf }, "build");
+    return;
+  }
+  if (node.dataset.cooper) {
+    order({ type: "cooper", colony: node.dataset.cooper }, "build");
     return;
   }
   if (node.dataset.lamp) {

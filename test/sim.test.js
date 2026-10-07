@@ -4095,6 +4095,127 @@ test("a palisade stakes the edge and a sack breaks one", () => {
   assert.ok(raid.log.some((row) => row.text.includes("broke a palisade stake")));
 });
 
+test("a port cooperage pays gold and cuts the next hull", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.cooper, 71);
+  assert.equal(EARN.pale, 70);
+  const coast = () => {
+    for (let q = -40; q <= 40; q++) {
+      for (let r = -40; r <= 40; r++) {
+        if (terrainKind(q, r) !== "coast") continue;
+        const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+        if (dirs.some(([dq, dr]) => {
+          const kind = terrainKind(q + dq, r + dr);
+          return kind === "sea" || kind === "coast" || kind === "river";
+        })) return { q, r };
+      }
+    }
+    return null;
+  };
+  const spot = coast();
+  assert.ok(spot);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const dry = hush(4);
+  dry.seat.colonies = [{ id: "c1", name: "Inland", q: 0, r: 0, port: false }];
+  assert.equal(applyAction(dry.realm, "you", { type: "cooper", colony: "c1" }).ok, false);
+  assert.equal(applyAction(dry.realm, "you", { type: "hull", hull: "skiff" }).ok, false);
+
+  const raised = hush(5);
+  raised.seat.colonies = [{ id: "c1", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  raised.seat.gold = 100;
+  assert.equal(applyAction(raised.realm, "you", { type: "cooper", colony: "c1" }).ok, false);
+  raised.seat.gold = 1000;
+  const purse = raised.seat.utopia;
+  const built = applyAction(raised.realm, "you", { type: "cooper", colony: "c1" });
+  assert.equal(built.ok, true, built.message);
+  assert.equal(raised.seat.colonies[0].cooper, true);
+  assert.equal(raised.seat.gold, 780);
+  assert.equal(raised.seat.orders, ORDERS - 1);
+  assert.equal(raised.seat.ledger.cooper, EARN.cooper);
+  assert.equal(raised.seat.utopia, purse + EARN.cooper);
+  assert.equal(applyAction(raised.realm, "you", { type: "cooper", colony: "c1" }).ok, false);
+
+  const delta = (cooper) => {
+    const row = hush(6);
+    row.seat.colonies = [{ id: "c1", name: "Salt Step", q: spot.q, r: spot.r, port: true, cooper }];
+    const gold = row.seat.gold;
+    const grain = row.seat.grain;
+    advanceHour(row.realm);
+    return { gold: row.seat.gold - gold, grain: row.seat.grain - grain };
+  };
+  const bare = delta(false);
+  const yarded = delta(true);
+  assert.equal(yarded.gold - bare.gold, 10);
+  assert.equal(yarded.grain, bare.grain);
+
+  const full = hush(7);
+  full.seat.colonies = [{ id: "c1", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  full.seat.gold = 5000;
+  full.seat.orders = 1;
+  const dear = applyAction(full.realm, "you", { type: "hull", hull: "skiff" });
+  assert.equal(dear.ok, true, dear.message);
+  assert.equal(full.seat.gold, 5000 - NAVY.skiff.gold);
+
+  const cut = hush(8);
+  cut.seat.colonies = [
+    { id: "c0", name: "Far Quay", q: spot.q + 8, r: spot.r, port: true },
+    { id: "c1", name: "Salt Step", q: spot.q, r: spot.r, port: true, cooper: true },
+  ];
+  cut.seat.gold = 5000;
+  cut.seat.orders = 1;
+  const cheap = applyAction(cut.realm, "you", { type: "hull", hull: "skiff" });
+  assert.equal(cheap.ok, true, cheap.message);
+  assert.equal(cut.seat.gold, 5000 - (NAVY.skiff.gold - 40));
+  assert.equal(cut.seat.ships[0].kind, "skiff");
+  assert.ok(cheap.message.includes("cooperage"));
+
+  const raid = newWorld({ seed: 9 });
+  raid.bands = [];
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "brine");
+  raid.provinces = [atk, vic];
+  atk.kind = "human";
+  vic.kind = "human";
+  atk.ships = [{ id: "s1", kind: "galley", q: spot.q, r: spot.r, destQ: spot.q, destR: spot.r, marines: 6, raid: { owner: "brine", id: "port" } }];
+  vic.ships = [];
+  atk.gold = 400;
+  atk.grain = 400;
+  vic.gold = 80;
+  vic.grain = 40;
+  vic.colonies = [{ id: "port", name: "Brine Quay", q: spot.q, r: spot.r, port: true, cooper: true }];
+  advanceHour(raid);
+  assert.equal(vic.colonies[0].cooper, false);
+  assert.ok(raid.log.some((row) => row.text.includes("cooperage is smashed")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

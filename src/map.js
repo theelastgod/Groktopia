@@ -3149,6 +3149,32 @@ function drawCrane(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawCooper(ctx, x, y, time) {
+  const bob = Math.sin(time * 2.2) * 1.2;
+  ctx.save();
+  ctx.translate(x - 22, y + 8 + bob);
+  ctx.fillStyle = "#6a3e28";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(9, 3, 6, 4.4, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#cbb892";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-5, 0);
+  ctx.lineTo(5, 0);
+  ctx.moveTo(5, 3);
+  ctx.lineTo(13, 3);
+  ctx.stroke();
+  ctx.fillStyle = "#8a5a32";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("COOPER", 4, 18);
+  ctx.restore();
+}
+
 function drawColonies(ctx, world, time) {
   for (const realm of world.provinces || []) {
     for (const ship of realm.ships || []) {
@@ -3317,6 +3343,7 @@ function drawColonies(ctx, world, time) {
       const pos = axialToWorld(colony.q, colony.r);
       drawTown(ctx, pos.x, pos.y, colony.port);
       if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
+      if (colony.port && colony.cooper) drawCooper(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);

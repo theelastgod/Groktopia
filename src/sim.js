@@ -74,6 +74,7 @@ export const EARN = {
   wheel: 68,
   look: 69,
   pale: 70,
+  cooper: 71,
 };
 
 export const FACTIONS = {
@@ -959,6 +960,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "tow") result = doTow(world, actor, action);
   else if (action.type === "convoy") result = doConvoy(world, actor, action);
   else if (action.type === "wharf") result = doWharf(world, actor, action.colony);
+  else if (action.type === "cooper") result = doCooper(world, actor, action.colony);
   else if (action.type === "refit") result = doRefit(world, actor, action);
   else if (action.type === "mole") result = doMole(world, actor, action.colony);
   else if (action.type === "lee") result = doLee(world, actor, action.colony);
@@ -2611,17 +2613,28 @@ function doDirect(world, actor, action) {
   return { ok: true, message: `Course set for ${q},${r}.` };
 }
 
+function hullAsk(port, spec) {
+  if (port && port.cooper) return Math.max(80, spec.gold - 40);
+  return spec.gold;
+}
+
+function launchPort(actor) {
+  const ports = (actor.colonies || []).filter((row) => row.port);
+  return ports.find((row) => row.cooper) || ports[0] || null;
+}
+
 function doHull(world, actor, hull) {
   const spec = NAVY[hull];
   if (!spec) return fail("Name a hull. A port can lay a skiff, fisher, cog, galley, dromon, or hulk.");
-  const port = (actor.colonies || []).find((row) => row.port);
+  const port = launchPort(actor);
   if (!port) return fail("Only a port can lay a hull.");
   if ((actor.ships || []).length >= 6) return fail("Six hulls already ride for this holding.");
   if (actor.orders < 1) return fail("No orders left this hour.");
-  if (actor.gold < spec.gold) return fail(`A ${spec.name} wants ${spec.gold} gold.`);
+  const price = hullAsk(port, spec);
+  if (actor.gold < price) return fail(`A ${spec.name} wants ${price} gold.`);
   const berth = waterBeside(port.q, port.r);
   if (!berth) return fail("The port has no water to launch into.");
-  actor.gold -= spec.gold;
+  actor.gold -= price;
   actor.orders -= 1;
   actor.acted = true;
   actor.ships = actor.ships || [];
@@ -2640,8 +2653,9 @@ function doHull(world, actor, hull) {
     notePurse(actor, "hull", EARN.hull);
     purse = ` Purse +${formatUtopia(EARN.hull)} $UTOPIA.`;
   }
-  log(world, `${actor.name} lays a ${spec.name} at ${port.name}. Direct it across sea, coast, or river. On the water it works the hour.${purse}`);
-  return { ok: true, message: `${spec.name} launched from ${port.name}.${purse}` };
+  const cut = price < spec.gold ? ` The cooperage cut ${spec.gold - price} gold.` : "";
+  log(world, `${actor.name} lays a ${spec.name} at ${port.name}. Direct it across sea, coast, or river. On the water it works the hour.${cut}${purse}`);
+  return { ok: true, message: `${spec.name} launched from ${port.name}.${cut}${purse}` };
 }
 
 function hullTeeth(kind) {
@@ -2907,6 +2921,27 @@ function doWharf(world, actor, colonyId) {
   }
   log(world, `${actor.name} raises a wharf at ${colony.name}. The yard pays 8 gold an hour and can refit a wreck within three hexes.${purse}`);
   return { ok: true, message: `Wharf raised at ${colony.name}.${purse}` };
+}
+
+function doCooper(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A cooperage needs a port.");
+  if (colony.cooper) return fail(`${colony.name} already has a cooperage.`);
+  if (actor.gold < 220) return fail("A cooperage wants 220 gold.");
+  actor.gold -= 220;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.cooper = true;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.cooper;
+    notePurse(actor, "cooper", EARN.cooper);
+    purse = ` Purse +${formatUtopia(EARN.cooper)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a cooperage at ${colony.name}. The yard pays 10 gold an hour, and a hull laid there costs 40 gold less.${purse}`);
+  return { ok: true, message: `Cooperage raised at ${colony.name}.${purse}` };
 }
 
 function doRefit(world, actor, action) {
@@ -3375,13 +3410,18 @@ function landRaid(world, realm, ship) {
   realm.soldiers += company;
   ship.marines = 0;
   ship.raid = null;
+  let staves = "";
+  if (mark.colony.cooper) {
+    mark.colony.cooper = false;
+    staves = " The cooperage is smashed.";
+  }
   let purse = "";
   if (realm.kind === "human" && (gold > 0 || grain > 0)) {
     realm.utopia += EARN.raid;
     notePurse(realm, "raid", EARN.raid);
     purse = ` Purse +${formatUtopia(EARN.raid)} $UTOPIA.`;
   }
-  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${purse}`);
+  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${staves}${purse}`);
 }
 
 function chainHold(world, realm, ship, hour) {
@@ -4400,6 +4440,7 @@ function economy(world, p, hour) {
     if (!colony.port) continue;
     const hold = blockadeAt(world, p, colony);
     if (colony.wharf) goldIn += 8;
+    if (colony.cooper) goldIn += 10;
     if (!hold || (colony.slipUntil || 0) > hour) {
       foodIn += 12;
       if ((colony.quayUntil || 0) > hour && (colony.quay || 0) > 0) foodIn += 6;
@@ -4707,6 +4748,8 @@ export function chooseAction(world, agent) {
     if (chainPort && agent.orders >= 1 && rng.next() < 0.14) return { type: "chain", colony: chainPort.id };
     const ferryLive = (agent.ferries || []).some((row) => (row.until || 0) > (world.hour || 0));
     if (!ferryLive && ferryPair(agent) && agent.gold >= 600 && agent.orders >= 1 && rng.next() < 0.1) return { type: "ferry" };
+    const cooperPort = (agent.colonies || []).find((colony) => colony.port && !colony.cooper);
+    if (cooperPort && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.1) return { type: "cooper", colony: cooperPort.id };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };
