@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, roadLive, seasonName, seatPoint, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
+import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, quarryPits, roadLive, seasonName, seatPoint, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -434,6 +434,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
     if (plot && plot.crew === "hamlet") drawHamlet(ctx, cell.pos.x, cell.pos.y);
     else if (plot && plot.crew === "timber") drawTimberCamp(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "quarry") drawQuarry(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       drawFolk(ctx, cell.pos.x, cell.pos.y - 4, 0.4, time || 0, role, cell.kind);
@@ -1479,6 +1480,55 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (innUp(p, hour)) drawInn(ctx, g, time);
   if (weirLive(p, hour)) drawWeirMark(ctx, g, time);
   if (timberYards(p) > 0) drawLogPile(ctx, g, timberYards(p));
+  if (quarryPits(p) > 0) drawCairn(ctx, g, quarryPits(p));
+}
+
+function drawQuarry(ctx, x, y, time) {
+  const swing = Math.sin(time * 1.6) * 0.35;
+  ctx.fillStyle = "#3a342c";
+  ctx.beginPath();
+  ctx.ellipse(x, y + 4, 12, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6e675f";
+  ctx.fillRect(x - 8, y + 1, 5, 4);
+  ctx.fillRect(x + 2, y + 2, 6, 3);
+  ctx.strokeStyle = "#8d8478";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(x + 8, y + 6);
+  ctx.lineTo(x + 8, y - 10);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(x + 8, y - 10);
+  ctx.rotate(swing);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-14, 4);
+  ctx.stroke();
+  ctx.fillStyle = "#5c4632";
+  ctx.fillRect(-16, 2, 4, 5);
+  ctx.restore();
+}
+
+function drawCairn(ctx, g, n) {
+  const x = g.x - g.r * 0.55;
+  const y = g.y - g.r * 0.2;
+  ctx.fillStyle = "#8d8478";
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y + 6);
+  ctx.lineTo(x, y - 6);
+  ctx.lineTo(x + 8, y + 6);
+  ctx.fill();
+  ctx.fillStyle = "#cfc6b8";
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y - 2);
+  ctx.lineTo(x + 1, y - 10);
+  ctx.lineTo(x + 6, y - 1);
+  ctx.fill();
+  if (n > 1) {
+    ctx.fillStyle = "#6e675f";
+    ctx.fillRect(x + 8, y + 1, 6, 5);
+  }
 }
 
 function drawLogPile(ctx, g, n) {

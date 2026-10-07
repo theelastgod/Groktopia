@@ -40,6 +40,8 @@ import {
   weirLive,
   weirYield,
   timberYards,
+  quarryPits,
+  stonePrice,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -1410,6 +1412,136 @@ test("a timber yard pays from a wood tile, cheapens a causeway, and a sack burns
   const shut = sacked(true);
   assert.equal(shut.gold, open.gold + 50);
   assert.equal(shut.yards, 1);
+});
+
+test("a quarry claims nearby stone, cheapens a keep, and a sack collapses one face", () => {
+  const w = newWorld({ seed: 1 });
+  const you = byId(w, "you");
+  const held = you.plots.length;
+  const gold = you.gold;
+  const purse = you.utopia;
+  assert.equal(you.plots.some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount")), false);
+  assert.equal(applyAction(w, "you", { type: "quarry" }).ok, true);
+  assert.equal(you.gold, gold - 190);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(quarryPits(you), 1);
+  assert.equal(you.plots.length, held + 1);
+  const face = you.plots.find((tile) => tile.crew === "quarry");
+  assert.ok(face);
+  assert.ok(terrainKind(face.q, face.r) === "hill" || terrainKind(face.q, face.r) === "mount");
+  assert.equal(you.ledger.quarry, EARN.quarry);
+  assert.equal(you.utopia, purse + EARN.quarry);
+  you.orders = 1;
+  you.gold = 4000;
+  if (!you.plots.some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"))) {
+    const spot = { q: 1, r: 4, crew: "hand" };
+    if (!you.plots.some((tile) => tile.q === spot.q && tile.r === spot.r)) you.plots.push(spot);
+  }
+  const beforeSecond = quarryPits(you);
+  assert.equal(applyAction(w, "you", { type: "quarry" }).ok, true);
+  assert.equal(quarryPits(you), beforeSecond + 1);
+  you.orders = 1;
+  you.gold = 4000;
+  assert.equal(applyAction(w, "you", { type: "quarry" }).ok, false);
+  const poor = newWorld({ seed: 1 });
+  byId(poor, "you").gold = 10;
+  assert.equal(applyAction(poor, "you", { type: "quarry" }).ok, false);
+
+  function coined(cut) {
+    const realm = newWorld({ seed: 131 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    let tile = seat.plots.find((row) => row.q === 1 && row.r === 4);
+    if (!tile) {
+      tile = { q: 1, r: 4, crew: "hand" };
+      seat.plots.push(tile);
+    }
+    assert.equal(terrainKind(tile.q, tile.r), "hill");
+    tile.crew = cut ? "quarry" : "hand";
+    const before = seat.gold;
+    advanceHour(realm);
+    return seat.gold - before;
+  }
+  assert.equal(coined(true) - coined(false), 22);
+
+  const priced = newWorld({ seed: 132 });
+  const buyer = byId(priced, "you");
+  const bareKeep = stonePrice(buyer, "keep");
+  const bareField = stonePrice(buyer, "field");
+  buyer.plots.push({ q: 1, r: 4, crew: "quarry" });
+  assert.equal(stonePrice(buyer, "keep"), bareKeep - 40);
+  assert.equal(stonePrice(buyer, "field"), bareField);
+  buyer.plots.push({ q: 9, r: 9, crew: "quarry" });
+  assert.equal(stonePrice(buyer, "barracks"), Math.max(40, buyer.buildings.barracks * 20 + 180 - 80));
+  const spent = buyer.gold;
+  assert.equal(applyAction(priced, "you", { type: "build", building: "keep" }).ok, true);
+  assert.equal(spent - buyer.gold, bareKeep - 80);
+
+  buyer.grain = foodNeed(buyer);
+  buyer.spells.bulwark = 0;
+  const wall = defense(buyer);
+  buyer.plots = buyer.plots.filter((tile) => tile.crew !== "quarry");
+  assert.equal(wall - defense(buyer), 10);
+
+  function sacked(withPit) {
+    const realm = newWorld({ seed: 133 });
+    const seat = byId(realm, "you");
+    const camp = byId(realm, "harrow");
+    seat.soldiers = 200;
+    camp.soldiers = 8;
+    camp.elites = 0;
+    camp.buildings.keep = 0;
+    camp.plots = [
+      { q: 2, r: 2, crew: withPit ? "quarry" : "hand" },
+      { q: 3, r: 2, crew: withPit ? "quarry" : "hand" },
+      { q: 4, r: 2, crew: "hand" },
+      { q: 5, r: 2, crew: "hand" },
+      { q: 6, r: 2, crew: "hand" },
+    ];
+    const before = seat.gold;
+    const res = applyAction(realm, "you", { type: "attack", target: "harrow", mode: "sack" });
+    assert.equal(res.win, true);
+    return { gold: seat.gold - before, pits: quarryPits(camp) };
+  }
+  const open = sacked(false);
+  const shut = sacked(true);
+  assert.equal(shut.gold, open.gold + 45);
+  assert.equal(shut.pits, 1);
+
+  const blocked = newWorld({ seed: 1 });
+  const seat = byId(blocked, "you");
+  const brine = byId(blocked, "brine");
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  const seen = new Set(seat.plots.map((tile) => `${tile.q},${tile.r}`));
+  const queue = seat.plots.map((tile) => ({ q: tile.q, r: tile.r, d: 0 }));
+  const owned = new Set();
+  for (const province of blocked.provinces) {
+    for (const tile of province.plots) owned.add(`${tile.q},${tile.r}`);
+  }
+  while (queue.length) {
+    const cell = queue.shift();
+    if (cell.d > 0 && cell.d <= 4) {
+      const key = `${cell.q},${cell.r}`;
+      const kind = terrainKind(cell.q, cell.r);
+      if (!owned.has(key) && (kind === "hill" || kind === "mount")) {
+        brine.plots.push({ q: cell.q, r: cell.r, crew: "hand" });
+        owned.add(key);
+      }
+    }
+    if (cell.d >= 4) continue;
+    for (const [dq, dr] of dirs) {
+      const key = `${cell.q + dq},${cell.r + dr}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queue.push({ q: cell.q + dq, r: cell.r + dr, d: cell.d + 1 });
+    }
+  }
+  for (const tile of seat.plots) {
+    const kind = terrainKind(tile.q, tile.r);
+    if (kind === "hill" || kind === "mount") tile.crew = "foot";
+  }
+  seat.gold = 4000;
+  assert.equal(applyAction(blocked, "you", { type: "quarry" }).ok, false);
 });
 
 test("save and load keep the hour and the random stream", () => {

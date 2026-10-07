@@ -40,6 +40,7 @@ export const EARN = {
   inn: 33,
   weir: 35,
   timber: 34,
+  quarry: 37,
 };
 
 export const FACTIONS = {
@@ -610,7 +611,8 @@ export function defense(p) {
   const bastion = p.marks && p.marks.bastion ? 1.08 : 1;
   const horn = p.relics && p.relics.stand ? 1.04 : 1;
   const foot = (p.plots || []).filter((tile) => tile.crew === "foot").length * 2;
-  return Math.floor((p.soldiers * 1 + (p.muster || 0) + p.elites * f.def + p.buildings.keep * 10 + foot) * wageFactor(p) * bulwark * pale * bastion * horn);
+  const stone = quarryPits(p) * 5;
+  return Math.floor((p.soldiers * 1 + (p.muster || 0) + p.elites * f.def + p.buildings.keep * 10 + foot + stone) * wageFactor(p) * bulwark * pale * bastion * horn);
 }
 
 export function networth(p) {
@@ -768,6 +770,7 @@ export const AMBITIONS = [
   { id: "inn", name: "Open the inn", purse: 35, blurb: "Raise a wayside inn.", match: (action) => action.type === "inn" },
   { id: "weir", name: "Set the nets", purse: 35, blurb: "Stake a weir on the water.", match: (action) => action.type === "weir" },
   { id: "timber", name: "Cut a yard", purse: 35, blurb: "Raise a timber yard on a wood tile.", match: (action) => action.type === "timber" },
+  { id: "quarry", name: "Open a pit", purse: 35, blurb: "Cut a quarry into a hill tile.", match: (action) => action.type === "quarry" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -823,6 +826,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "inn") result = doInn(world, actor);
   else if (action.type === "weir") result = doWeir(world, actor);
   else if (action.type === "timber") result = doTimber(world, actor);
+  else if (action.type === "quarry") result = doQuarry(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -834,13 +838,14 @@ function doBuild(world, actor, key) {
   const spec = BUILDINGS[key];
   if (!spec) return fail("Unknown building.");
   if (freeLand(actor) < 1) return fail("No empty acres.");
-  const cost = spec.cost(actor.buildings[key]);
+  const cost = stonePrice(actor, key);
   if (actor.gold < cost) return fail(`Need ${cost} gold for a ${spec.name.slice(0, -1).toLowerCase()}.`);
   actor.gold -= cost;
   actor.buildings[key] += 1;
   actor.acted = true;
-  log(world, `${actor.name} raises a ${spec.name.slice(0, -1).toLowerCase()} (${cost} gold).`);
-  return { ok: true, message: `Built. ${cost} gold.` };
+  const cut = (key === "keep" || key === "barracks") && quarryPits(actor) > 0 ? " Quarry stone cheapened it." : "";
+  log(world, `${actor.name} raises a ${spec.name.slice(0, -1).toLowerCase()} (${cost} gold).${cut}`);
+  return { ok: true, message: `Built. ${cost} gold.${cut}` };
 }
 
 function doTrain(world, actor, action) {
@@ -1545,6 +1550,87 @@ function doTimber(world, actor) {
   return { ok: true, message: `Timber yard cut.${purse}` };
 }
 
+function stoneTile(tile) {
+  if (!tile) return false;
+  const kind = terrainKind(tile.q, tile.r);
+  return kind === "hill" || kind === "mount";
+}
+
+function nearestFreeStone(world, actor) {
+  ensurePlots(world);
+  const taken = takenPlots(world);
+  const seen = new Set();
+  const queue = [];
+  for (const seed of actor.plots || []) {
+    const key = plotKey(seed.q, seed.r);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    queue.push({ q: seed.q, r: seed.r, d: 0 });
+  }
+  while (queue.length) {
+    const cell = queue.shift();
+    if (cell.d > 0 && cell.d <= 4) {
+      const key = plotKey(cell.q, cell.r);
+      const kind = terrainKind(cell.q, cell.r);
+      if (!taken.has(key) && (kind === "hill" || kind === "mount")) return { q: cell.q, r: cell.r, kind };
+    }
+    if (cell.d >= 4) continue;
+    for (const [dq, dr] of HEX_DIRS) {
+      const nq = cell.q + dq;
+      const nr = cell.r + dr;
+      const key = plotKey(nq, nr);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queue.push({ q: nq, r: nr, d: cell.d + 1 });
+    }
+  }
+  return null;
+}
+
+function doQuarry(world, actor) {
+  ensurePlots(world);
+  if (quarryPits(actor) >= 2) return fail("Two quarries already cut the stone.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 190) return fail("A quarry wants 190 gold.");
+  let plot = (actor.plots || []).find((tile) => tile.crew === "hand" && stoneTile(tile));
+  let claimed = "";
+  if (!plot) {
+    const spot = nearestFreeStone(world, actor);
+    if (!spot) return fail("A quarry needs a hill or mountain worked by hands, or free stone within four tiles.");
+    plot = { q: spot.q, r: spot.r, crew: "hand" };
+    actor.plots = actor.plots || [];
+    actor.plots.push(plot);
+    claimed = " The crew claimed the stone.";
+  }
+  actor.gold -= 190;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "quarry";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.quarry;
+    notePurse(actor, "quarry", EARN.quarry);
+    purse = ` Purse +${formatUtopia(EARN.quarry)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} opens a quarry on a ${kind} tile. The face pays 22 gold an hour, keeps and barracks cost 40 gold less per face, and the wall stands harder. A sack can collapse one face.${claimed}${purse}`);
+  return { ok: true, message: `Quarry open on the ${kind} tile.${claimed}${purse}` };
+}
+
+export function quarryPits(p) {
+  return (p && p.plots ? p.plots : []).filter((tile) => tile.crew === "quarry").length;
+}
+
+export function stonePrice(actor, key) {
+  const spec = BUILDINGS[key];
+  if (!spec || !actor) return 0;
+  let cost = spec.cost(actor.buildings[key] || 0);
+  if ((key === "keep" || key === "barracks") && quarryPits(actor) > 0) {
+    cost = Math.max(40, cost - 40 * quarryPits(actor));
+  }
+  return cost;
+}
+
 export function waterTouch(tile) {
   if (!tile) return false;
   const kind = terrainKind(tile.q, tile.r);
@@ -1898,9 +1984,18 @@ function doAttack(world, actor, action) {
       yard.crew = "hand";
       logs = " and burned a timber yard";
     }
+    let face = "";
+    const pit = (target.plots || []).find((tile) => tile.crew === "quarry");
+    if (pit) {
+      const block = Math.min(target.gold, 45);
+      target.gold -= block;
+      g += block;
+      pit.crew = "hand";
+      face = " and collapsed a quarry";
+    }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -2092,6 +2187,7 @@ function economy(p, hour) {
       goldIn += 10;
     }
     else if (tile.crew === "timber") goldIn += 26;
+    else if (tile.crew === "quarry") goldIn += 22;
   }
   const foodOut = foodNeed(p);
   p.gold += goldIn;
@@ -2245,6 +2341,8 @@ export function chooseAction(world, agent) {
     return trainBias(agent) || buildIf(agent, "barracks") || buildIf(agent, "field");
   }
   if (agent.persona === "sable") {
+    const ownsStone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
+    if (quarryPits(agent) < 2 && ownsStone && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.18) return { type: "quarry" };
     if (agent.grudge) {
       const foe = byId(world, agent.grudge);
       if (foe && nwFactor(agent, foe) > 0 && !onCooldown(agent, foe, world.hour) && offense(agent) > defense(foe) * 0.9) {
@@ -2324,6 +2422,9 @@ export function chooseAction(world, agent) {
     const yards = timberYards(agent);
     const woods = (agent.plots || []).some((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) === "wood");
     if (yards < 2 && woods && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.16) return { type: "timber" };
+    const pits = quarryPits(agent);
+    const stone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
+    if (pits < 1 && stone && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) return { type: "quarry" };
     const hungry = world.provinces.find((p) => p.id !== agent.id && p.grain < foodNeed(p) && !(agent.reliefs && agent.reliefs[p.id] > (world.hour || 0)));
     if (hungry && agent.grain >= 1200 && agent.orders >= 1 && rng.next() < 0.22) return { type: "relief", target: hungry.id };
     const cost = 300 + agent.land * 3;
