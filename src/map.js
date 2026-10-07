@@ -2876,6 +2876,26 @@ function drawColonies(ctx, world, time) {
       ctx.fillText("TOW", (a.x + b.x) / 2, (a.y + b.y) / 2 - 16);
     }
     for (const ship of realm.ships || []) {
+      if (!ship.cargo) continue;
+      const colony = (realm.colonies || []).find((row) => row.id === ship.cargo);
+      if (!colony) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(colony.q, colony.r);
+      ctx.strokeStyle = "rgba(125, 154, 114, 0.95)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -time * 10;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#7d9a72";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("CARGO", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
+    }
+    for (const ship of realm.ships || []) {
       if (!ship.escort) continue;
       const trader = (realm.ships || []).find((row) => row.id === ship.escort);
       if (!trader) continue;

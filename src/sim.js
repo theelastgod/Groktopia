@@ -61,6 +61,7 @@ export const EARN = {
   net: 55,
   slip: 56,
   buoy: 57,
+  cargo: 58,
 };
 
 export const FACTIONS = {
@@ -896,6 +897,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "net") result = doNet(world, actor, action.ship);
   else if (action.type === "slip") result = doSlip(world, actor, action);
   else if (action.type === "buoy") result = doBuoy(world, actor, action.ship);
+  else if (action.type === "cargo") result = doCargo(world, actor, action);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2339,6 +2341,7 @@ function doDirect(world, actor, action) {
     ship.salvage = null;
     ship.escort = null;
     ship.tow = null;
+    ship.cargo = null;
     ship.destQ = q;
     ship.destR = r;
   } else {
@@ -2408,6 +2411,7 @@ function doGrapple(world, actor, action) {
   own.salvage = null;
   own.escort = null;
   own.tow = null;
+  own.cargo = null;
   own.prey = { owner: prey.realm.id, id: prey.ship.id };
   own.destQ = prey.ship.q;
   own.destR = prey.ship.r;
@@ -2441,6 +2445,7 @@ function doBlockade(world, actor, action) {
   own.salvage = null;
   own.escort = null;
   own.tow = null;
+  own.cargo = null;
   own.block = { owner: mark.realm.id, id: mark.colony.id };
   own.destQ = berth.q;
   own.destR = berth.r;
@@ -2506,6 +2511,7 @@ function doSalvage(world, actor, action) {
   own.block = null;
   own.escort = null;
   own.tow = null;
+  own.cargo = null;
   own.salvage = { q, r };
   own.destQ = q;
   own.destR = r;
@@ -2579,6 +2585,7 @@ function doConvoy(world, actor, action) {
   own.block = null;
   own.salvage = null;
   own.tow = null;
+  own.cargo = null;
   own.escort = trader.id;
   own.destQ = trader.q;
   own.destR = trader.r;
@@ -2785,6 +2792,48 @@ function doBuoy(world, actor, shipId) {
   return { ok: true, message: `Buoy lit at ${own.q},${own.r}.${purse}` };
 }
 
+function doCargo(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === action.ship);
+  if (!own) return fail("That hull is not yours.");
+  if (hullTeeth(own.kind) >= WAR_TEETH) return fail("A galley, dromon, or hulk will not carry a packet.");
+  if (!sailKind(terrainKind(own.q, own.r))) return fail("A cargo runs from the water.");
+  const colony = (actor.colonies || []).find((row) => row.id === action.colony);
+  if (!colony || !colony.port) return fail("Name one of your ports.");
+  if (hexDist(own.q, own.r, colony.q, colony.r) <= 3) return fail("That quay is too close for a cargo run.");
+  const berth = sailKind(terrainKind(colony.q, colony.r)) ? { q: colony.q, r: colony.r } : waterBeside(colony.q, colony.r);
+  if (!berth) return fail("That port has no water.");
+  own.prey = null;
+  own.block = null;
+  own.salvage = null;
+  own.escort = null;
+  own.tow = null;
+  own.cargo = colony.id;
+  own.destQ = berth.q;
+  own.destR = berth.r;
+  actor.orders -= 1;
+  actor.acted = true;
+  const spec = NAVY[own.kind];
+  log(world, `${actor.name} sends the ${spec ? spec.name : "hull"} with a cargo for ${colony.name}.`);
+  return { ok: true, message: `${spec ? spec.name : "Hull"} is carrying a cargo to ${colony.name}.` };
+}
+
+function landCargo(world, realm, ship) {
+  if (!ship.cargo) return;
+  const colony = (realm.colonies || []).find((row) => row.id === ship.cargo);
+  if (!colony || !colony.port || hexDist(ship.q, ship.r, colony.q, colony.r) > 1) return;
+  realm.gold += 32;
+  realm.grain += 20;
+  let purse = "";
+  if (realm.kind === "human") {
+    realm.utopia += EARN.cargo;
+    notePurse(realm, "cargo", EARN.cargo);
+    purse = ` Purse +${formatUtopia(EARN.cargo)} $UTOPIA.`;
+  }
+  log(world, `${realm.name} lands a cargo at ${colony.name}. The quay pays 32 gold and 20 grain.${purse}`);
+  ship.cargo = null;
+}
+
 function buoyLit(realm, ship, hour) {
   return (realm.buoys || []).some((row) => (row.until || 0) > (hour || 0) && hexDist(ship.q, ship.r, row.q, row.r) <= 3);
 }
@@ -2846,6 +2895,7 @@ function pressMoles(world) {
           ship.prey = null;
           ship.salvage = null;
           ship.tow = null;
+          ship.cargo = null;
           const spec = NAVY[ship.kind];
           shoveOff(ship, colony.q, colony.r, onBlock ? 2 : 1);
           const skim = Math.min(other.gold || 0, 14);
@@ -3017,6 +3067,14 @@ function sailHour(world) {
           ship.destQ = trader.q;
           ship.destR = trader.r;
         }
+      } else if (ship.cargo) {
+        const colony = (realm.colonies || []).find((row) => row.id === ship.cargo);
+        const berth = colony && colony.port ? (sailKind(terrainKind(colony.q, colony.r)) ? { q: colony.q, r: colony.r } : waterBeside(colony.q, colony.r)) : null;
+        if (!berth) ship.cargo = null;
+        else {
+          ship.destQ = berth.q;
+          ship.destR = berth.r;
+        }
       }
       const holder = netHolder(world, realm, ship, world.hour || 0);
       if (holder) {
@@ -3039,6 +3097,7 @@ function sailHour(world) {
         ship.r = next.r;
         left -= 1;
       }
+      landCargo(world, realm, ship);
     }
   }
   resolveGrapples(world);
@@ -3891,6 +3950,11 @@ export function chooseAction(world, agent) {
     const buoyHere = marker && liveBuoys.some((row) => row.q === marker.q && row.r === marker.r);
     if (marker && !buoyHere && liveBuoys.length < 2 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "buoy", ship: marker.id };
+    }
+    const packet = (agent.ships || []).find((row) => hullTeeth(row.kind) < WAR_TEETH && !row.prey && !row.block && !row.salvage && !row.escort && !row.tow && !row.cargo);
+    const quay = packet && (agent.colonies || []).find((row) => row.port && hexDist(packet.q, packet.r, row.q, row.r) > 3);
+    if (packet && quay && agent.orders >= 1 && rng.next() < 0.14) {
+      return { type: "cargo", ship: packet.id, colony: quay.id };
     }
     const salvor = (agent.ships || []).find((row) => !row.prey && !row.block && !row.salvage && !row.escort && !row.tow);
     const wreck = salvor && (world.wrecks || []).find((row) => (row.until || 0) > (world.hour || 0) && hexDist(salvor.q, salvor.r, row.q, row.r) <= 12);
