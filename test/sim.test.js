@@ -2473,6 +2473,71 @@ test("a port wharf pays gold and refits a nearby wreck", () => {
   assert.equal(applyAction(bare, "you", { type: "refit", q: 2, r: 2 }).ok, false);
 });
 
+test("a mole shoves a blockading hull off the quay", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.mole, 52);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = hush(w, "you");
+  const foe = hush(w, "brine");
+  w.provinces = [you, foe];
+  you.colonies = [{ id: "c", name: "Salt Step", q: spot.q, r: spot.r, port: false }];
+  assert.equal(applyAction(w, "you", { type: "mole", colony: "c" }).ok, false);
+  assert.equal(you.orders, ORDERS);
+  you.colonies[0].port = true;
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "mole", colony: "c" }).ok, false);
+  you.gold = 1000;
+  const raised = applyAction(w, "you", { type: "mole", colony: "c" });
+  assert.equal(raised.ok, true);
+  assert.equal(you.gold, 820);
+  assert.equal(you.colonies[0].moleUntil, 5);
+  assert.equal(you.ledger.mole, EARN.mole);
+  assert.equal(you.utopia, EARN.mole);
+  assert.equal(applyAction(w, "you", { type: "mole", colony: "c" }).ok, false);
+  foe.ships = [{ id: "gal", kind: "galley", q: spot.q, r: spot.r, destQ: null, destR: null, block: { owner: "you", id: "c" } }];
+  advanceHour(w);
+  assert.equal(foe.ships[0].block, null);
+  assert.ok(foe.ships[0].q !== spot.q || foe.ships[0].r !== spot.r);
+  assert.equal(you.grain, 5012);
+  assert.equal(you.gold, 820 + 14);
+  assert.equal(foe.gold, 1000 - 14 + NAVY.galley.haul);
+  assert.equal(you.utopia, EARN.mole + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("shoves") && row.text.includes("Salt Step")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

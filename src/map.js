@@ -2679,6 +2679,30 @@ function drawWreck(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawMole(ctx, x, y, time) {
+  const flash = Math.sin(time * 5) > 0.35;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "#5c5648";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(6, 14, 18, 0.15, 2.2);
+  ctx.stroke();
+  ctx.fillStyle = "#2a2620";
+  ctx.fillRect(16, 6, 10, 4);
+  if (flash) {
+    ctx.fillStyle = "rgba(226, 192, 120, 0.9)";
+    ctx.beginPath();
+    ctx.arc(28, 6, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#2f5c6e";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("MOLE", 8, 30);
+  ctx.restore();
+}
+
 function drawCrane(ctx, x, y, time) {
   const swing = Math.sin(time * 1.4) * 0.4;
   ctx.save();
@@ -2791,6 +2815,7 @@ function drawColonies(ctx, world, time) {
       const pos = axialToWorld(colony.q, colony.r);
       drawTown(ctx, pos.x, pos.y, colony.port);
       if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
+      if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       ctx.fillStyle = "#1a1612";
       ctx.font = "12px Palatino, Georgia, serif";

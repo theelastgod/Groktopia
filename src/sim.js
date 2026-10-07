@@ -55,6 +55,7 @@ export const EARN = {
   convoy: 49,
   wharf: 50,
   refit: 51,
+  mole: 52,
 };
 
 export const FACTIONS = {
@@ -882,6 +883,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "convoy") result = doConvoy(world, actor, action);
   else if (action.type === "wharf") result = doWharf(world, actor, action.colony);
   else if (action.type === "refit") result = doRefit(world, actor, action);
+  else if (action.type === "mole") result = doMole(world, actor, action.colony);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2600,6 +2602,80 @@ function doRefit(world, actor, action) {
   return { ok: true, message: `${spec.name} refit at ${yard.name}.${purse}` };
 }
 
+function doMole(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A mole needs a port.");
+  const hour = world.hour || 0;
+  if ((colony.moleUntil || 0) > hour) return fail(`${colony.name} already has a mole.`);
+  if (actor.gold < 180) return fail("A mole wants 180 gold.");
+  actor.gold -= 180;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.moleUntil = hour + 5;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.mole;
+    notePurse(actor, "mole", EARN.mole);
+    purse = ` Purse +${formatUtopia(EARN.mole)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a mole at ${colony.name}. For five hours an enemy hull within two hexes is shoved off the quay.${purse}`);
+  return { ok: true, message: `Mole raised at ${colony.name}.${purse}` };
+}
+
+function shoveOff(ship, cq, cr, steps) {
+  let left = steps;
+  while (left > 0) {
+    let best = null;
+    let bestD = hexDist(ship.q, ship.r, cq, cr);
+    for (const [dq, dr] of HEX_DIRS) {
+      const nq = ship.q + dq;
+      const nr = ship.r + dr;
+      if (!sailKind(terrainKind(nq, nr))) continue;
+      const dist = hexDist(nq, nr, cq, cr);
+      if (dist > bestD) {
+        bestD = dist;
+        best = { q: nq, r: nr };
+      }
+    }
+    if (!best) break;
+    ship.q = best.q;
+    ship.r = best.r;
+    left -= 1;
+  }
+  ship.destQ = ship.q;
+  ship.destR = ship.r;
+}
+
+function pressMoles(world) {
+  const hour = world.hour || 0;
+  const shoved = new Set();
+  for (const realm of world.provinces || []) {
+    for (const colony of realm.colonies || []) {
+      if (!colony.port || (colony.moleUntil || 0) <= hour) continue;
+      for (const other of world.provinces || []) {
+        if (other.id === realm.id) continue;
+        for (const ship of other.ships || []) {
+          if (shoved.has(ship)) continue;
+          const onBlock = ship.block && ship.block.owner === realm.id && ship.block.id === colony.id;
+          if (!onBlock && hexDist(ship.q, ship.r, colony.q, colony.r) > 2) continue;
+          shoved.add(ship);
+          ship.block = null;
+          ship.prey = null;
+          ship.salvage = null;
+          const spec = NAVY[ship.kind];
+          shoveOff(ship, colony.q, colony.r, onBlock ? 2 : 1);
+          const skim = Math.min(other.gold || 0, 14);
+          other.gold -= skim;
+          realm.gold += skim;
+          log(world, `${realm.name}'s mole at ${colony.name} shoves ${other.name}'s ${spec ? spec.name : "hull"} off the quay${skim ? ` and takes ${skim} gold` : ""}.`);
+        }
+      }
+    }
+  }
+}
+
 function resolveSalvage(world) {
   const hour = world.hour || 0;
   for (const realm of world.provinces || []) {
@@ -3356,6 +3432,7 @@ function economy(world, p, hour) {
 }
 
 export function advanceHour(world) {
+  pressMoles(world);
   for (const p of world.provinces) economy(world, p, world.hour || 0);
   pressSieges(world);
   for (const p of world.provinces) {
@@ -3540,6 +3617,10 @@ export function chooseAction(world, agent) {
     }
     if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "keel" };
+    }
+    const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
+    if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
+      return { type: "mole", colony: threatened.id };
     }
     const guard = (agent.ships || []).find((row) => hullTeeth(row.kind) >= WAR_TEETH && !row.prey && !row.block && !row.salvage && !row.escort);
     const trader = guard && (agent.ships || []).find((row) => row.id !== guard.id && hullTeeth(row.kind) < WAR_TEETH);
