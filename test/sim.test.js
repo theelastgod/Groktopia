@@ -2178,6 +2178,84 @@ test("a war hull grapples a lighter ship and the heavier teeth take the prize", 
   assert.equal(captain.ships[0].destQ, 40);
 });
 
+test("a war hull blockades a port, cuts the fish, and takes gold while it sits", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.block, 47);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const coast = () => {
+    for (let q = -40; q <= 40; q++) {
+      for (let r = -40; r <= 40; r++) {
+        if (terrainKind(q, r) === "coast") return { q, r };
+      }
+    }
+    return null;
+  };
+  const spot = coast();
+  assert.ok(spot);
+  const open = newWorld({ seed: 4 });
+  open.bands = [];
+  const openFoe = hush(open, "brine");
+  hush(open, "you");
+  open.provinces = [open.provinces[0], openFoe];
+  openFoe.colonies = [{ id: "c", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  advanceHour(open);
+  assert.equal(openFoe.grain, 5012);
+
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = hush(w, "you");
+  const foe = hush(w, "brine");
+  w.provinces = [you, foe];
+  foe.colonies = [{ id: "c", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  you.ships = [{ id: "gal", kind: "galley", q: spot.q, r: spot.r, destQ: null, destR: null }];
+  you.ships[0].kind = "fisher";
+  assert.equal(applyAction(w, "you", { type: "blockade", ship: "gal", owner: "brine", colony: "c" }).ok, false);
+  assert.equal(you.orders, ORDERS);
+  you.ships[0].kind = "galley";
+  foe.colonies[0].port = false;
+  assert.equal(applyAction(w, "you", { type: "blockade", ship: "gal", owner: "brine", colony: "c" }).ok, false);
+  foe.colonies[0].port = true;
+  assert.equal(applyAction(w, "you", { type: "blockade", ship: "gal", owner: "you", colony: "c" }).ok, false);
+  const closed = applyAction(w, "you", { type: "blockade", ship: "gal", owner: "brine", colony: "c" });
+  assert.equal(closed.ok, true);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.block, EARN.block);
+  assert.equal(you.utopia, EARN.block);
+  assert.equal(you.ships[0].block.owner, "brine");
+  assert.equal(you.ships[0].prey, null);
+  advanceHour(w);
+  advanceHour(w);
+  assert.equal(foe.grain, 5000);
+  assert.equal(foe.gold, 1000 - 36);
+  assert.equal(you.gold, 1000 + NAVY.galley.haul * 2 + 36);
+  assert.equal(you.utopia, EARN.block + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("holds Salt Step closed")));
+  you.orders = 1;
+  assert.equal(applyAction(w, "you", { type: "direct", unit: "ship", id: "gal", q: you.ships[0].destQ, r: you.ships[0].destR }).ok, true);
+  assert.equal(you.ships[0].block, null);
+});
+
 test("wild holdings push their fences when the gold holds", () => {
   const w = newWorld({ seed: 2 });
   const moss = byId(w, "moss");

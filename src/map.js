@@ -2566,6 +2566,34 @@ function drawTown(ctx, x, y, port) {
   }
 }
 
+function drawBoom(ctx, x, y, time) {
+  const sway = Math.sin(time * 2) * 1.2;
+  ctx.strokeStyle = "#24180f";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y + 10 + sway);
+  ctx.lineTo(x + 18, y + 10 - sway);
+  ctx.stroke();
+  ctx.fillStyle = "#6a4632";
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.arc(x + i * 8, y + 10, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function portHeld(world, ownerId, colony) {
+  for (const realm of world.provinces || []) {
+    if (realm.id === ownerId) continue;
+    for (const ship of realm.ships || []) {
+      if (!ship.block || ship.block.owner !== ownerId || ship.block.id !== colony.id) continue;
+      const dist = (Math.abs(ship.q - colony.q) + Math.abs(ship.r - colony.r) + Math.abs(ship.q + ship.r - (colony.q + colony.r))) / 2;
+      if (dist <= 2) return true;
+    }
+  }
+  return false;
+}
+
 function drawFounder(ctx, x, y, time) {
   const bob = Math.sin(time * 6) * 1.4;
   ctx.fillStyle = "#e2c078";
@@ -2670,11 +2698,33 @@ function drawColonies(ctx, world, time) {
       ctx.textAlign = "center";
       ctx.fillText("CLOSING", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
     }
+    for (const ship of realm.ships || []) {
+      if (!ship.block) continue;
+      const foe = (world.provinces || []).find((row) => row.id === ship.block.owner);
+      const colony = foe && (foe.colonies || []).find((row) => row.id === ship.block.id);
+      if (!colony) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(colony.q, colony.r);
+      ctx.strokeStyle = "rgba(47, 92, 110, 0.9)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([2, 6]);
+      ctx.lineDashOffset = -time * 12;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#2f5c6e";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("BLOCKADE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
+    }
   }
   for (const realm of world.provinces || []) {
     for (const colony of realm.colonies || []) {
       const pos = axialToWorld(colony.q, colony.r);
       drawTown(ctx, pos.x, pos.y, colony.port);
+      if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       ctx.fillStyle = "#1a1612";
       ctx.font = "12px Palatino, Georgia, serif";
       ctx.textAlign = "center";
