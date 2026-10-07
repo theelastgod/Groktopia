@@ -2408,6 +2408,71 @@ test("wild holdings push their fences when the gold holds", () => {
   assert.ok(brine.land >= before + 4);
 });
 
+test("a port wharf pays gold and refits a nearby wreck", () => {
+  assert.equal(ORDERS, 10);
+  const quiet = () => {
+    const realm = newWorld({ seed: 8 });
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    realm.bands = [];
+    seat.gold = 8000;
+    seat.peasants = 200;
+    seat.grain = 5000;
+    seat.orders = ORDERS;
+    seat.colonies = [{ id: "c1", name: "Salt Step", q: 2, r: 2, port: true }];
+    return realm;
+  };
+  const inland = quiet();
+  inland.provinces[0].colonies[0].port = false;
+  assert.equal(applyAction(inland, "you", { type: "wharf", colony: "c1" }).ok, false);
+
+  const raised = quiet();
+  const you = raised.provinces[0];
+  const purse = you.utopia;
+  assert.equal(applyAction(raised, "you", { type: "wharf", colony: "c1" }).ok, true);
+  assert.equal(you.gold, 8000 - 220);
+  assert.equal(you.colonies[0].wharf, true);
+  assert.equal(you.ledger.wharf, EARN.wharf);
+  assert.equal(you.utopia, purse + EARN.wharf);
+  assert.equal(applyAction(raised, "you", { type: "wharf", colony: "c1" }).ok, false);
+
+  const delta = (wharf) => {
+    const realm = quiet();
+    const seat = realm.provinces[0];
+    if (wharf) seat.colonies[0].wharf = true;
+    const gold = seat.gold;
+    advanceHour(realm);
+    return seat.gold - gold;
+  };
+  assert.equal(delta(true) - delta(false), 8);
+
+  const yard = quiet();
+  const ruler = yard.provinces[0];
+  ruler.colonies[0].wharf = true;
+  yard.wrecks = [{ q: 8, r: 2, kind: "fisher", gold: 64, until: 6 }];
+  assert.equal(applyAction(yard, "you", { type: "refit", q: 8, r: 2 }).ok, false);
+  yard.wrecks = [{ q: 2, r: 2, kind: "fisher", gold: 64, until: 6 }];
+  ruler.orders = 1;
+  const before = ruler.gold;
+  const refit = applyAction(yard, "you", { type: "refit", q: 2, r: 2 });
+  assert.equal(refit.ok, true);
+  assert.equal(ruler.gold, before - 110);
+  assert.equal(ruler.ships.length, 1);
+  assert.equal(ruler.ships[0].kind, "fisher");
+  assert.equal(ruler.ships[0].q, 2);
+  assert.equal(ruler.ships[0].r, 2);
+  assert.equal(yard.wrecks.length, 0);
+  assert.equal(ruler.ledger.refit, EARN.refit);
+  ruler.ships = Array.from({ length: 6 }, (_, i) => ({ id: `full${i}`, kind: "skiff", q: 2, r: 2 }));
+  yard.wrecks = [{ q: 2, r: 2, kind: "cog", gold: 40, until: 6 }];
+  ruler.orders = 1;
+  assert.equal(applyAction(yard, "you", { type: "refit", q: 2, r: 2 }).ok, false);
+
+  const bare = quiet();
+  bare.wrecks = [{ q: 2, r: 2, kind: "skiff", gold: 40, until: 6 }];
+  assert.equal(applyAction(bare, "you", { type: "refit", q: 2, r: 2 }).ok, false);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

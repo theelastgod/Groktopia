@@ -2679,6 +2679,30 @@ function drawWreck(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawCrane(ctx, x, y, time) {
+  const swing = Math.sin(time * 1.4) * 0.4;
+  ctx.save();
+  ctx.translate(x + 18, y + 6);
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(-2, -4, 5, 16);
+  ctx.save();
+  ctx.translate(0, -4);
+  ctx.rotate(swing);
+  ctx.strokeStyle = "#3a2a22";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(16, -12);
+  ctx.stroke();
+  ctx.strokeStyle = "#cbb892";
+  ctx.beginPath();
+  ctx.moveTo(16, -12);
+  ctx.lineTo(16, -3 + Math.sin(time * 3) * 1.5);
+  ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+}
+
 function drawColonies(ctx, world, time) {
   for (const realm of world.provinces || []) {
     for (const ship of realm.ships || []) {
@@ -2766,6 +2790,7 @@ function drawColonies(ctx, world, time) {
     for (const colony of realm.colonies || []) {
       const pos = axialToWorld(colony.q, colony.r);
       drawTown(ctx, pos.x, pos.y, colony.port);
+      if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       ctx.fillStyle = "#1a1612";
       ctx.font = "12px Palatino, Georgia, serif";

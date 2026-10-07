@@ -828,6 +828,8 @@ function ledgerLine(actor) {
     ["blockades", book.block],
     ["salvage", book.salvage],
     ["convoys", book.convoy],
+    ["wharves", book.wharf],
+    ["refits", book.refit],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1044,7 +1046,7 @@ function fleetLine(actor) {
   const towns = actor.colonies || [];
   const rows = [];
   if (towns.length) {
-    const quay = ports.length ? `${ports.length} ${ports.length === 1 ? "port fishes" : "ports fish"} 12 grain an hour and can lay a hull.` : "No quay yet. A coast or a river bank makes a port.";
+    const quay = ports.length ? `${ports.length} ${ports.length === 1 ? "port fishes" : "ports fish"} 12 grain an hour and can lay a hull. A wharf pays 8 gold and refits wrecks.` : "No quay yet. A coast or a river bank makes a port.";
     rows.push(`<p class="muted">${towns.map((row) => esc(row.name)).join(", ")}. ${quay}</p>`);
   }
   for (const founder of founders) {
@@ -1078,6 +1080,21 @@ function fleetLine(actor) {
       rows.push(`<button class="btn" type="button" data-convoy="${esc(ship.id)}">Escort with the ${esc(spec.name)} · click a trader</button>`);
     }
   }
+  for (const port of ports) {
+    if (!port.wharf) {
+      rows.push(`<button class="btn" type="button" data-wharf="${esc(port.id)}">Raise a wharf at ${esc(port.name)} · 220g · +${formatUtopia(EARN.wharf)}</button>`);
+    }
+  }
+  if (ports.some((row) => row.wharf) && ships.length < 6) {
+    for (const wreck of world.wrecks || []) {
+      if ((wreck.until || 0) <= world.hour) continue;
+      const spec = NAVY[wreck.kind];
+      if (!spec) continue;
+      const near = ports.some((row) => row.wharf && ((Math.abs(row.q - wreck.q) + Math.abs(row.r - wreck.r) + Math.abs(row.q + row.r - (wreck.q + wreck.r))) / 2) <= 3);
+      if (!near) continue;
+      rows.push(`<button class="btn" type="button" data-refit="1" data-q="${wreck.q}" data-r="${wreck.r}">Refit the ${esc(spec.name)} · ${Math.ceil(spec.gold / 2)}g · +${formatUtopia(EARN.refit)}</button>`);
+    }
+  }
   if (ports.length && ships.length < 6) {
     for (const [id, spec] of Object.entries(NAVY)) {
       const work = spec.fish ? `${spec.fish} fish` : "";
@@ -1093,7 +1110,7 @@ function fleetLine(actor) {
   if ((world.wrecks || []).some((row) => (row.until || 0) > world.hour)) {
     rows.push(`<p class="muted">A wreck rides the water. A gold glint marks the timber.</p>`);
   }
-  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts.</p>`);
+  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf.</p>`);
   return rows.join("");
 }
 
@@ -1429,6 +1446,10 @@ function bindMap(canvas) {
           paint();
         }
       }
+      if (event.key === "]" && world && seat()) {
+        const port = (seat().colonies || []).find((row) => row.port && !row.wharf);
+        if (port) order({ type: "wharf", colony: port.id }, "build");
+      }
       if (event.key === "\\" && world && seat()) {
         const fleet = seat().ships || [];
         const war = fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5 && !row.block)
@@ -1622,6 +1643,14 @@ app.addEventListener("click", async (event) => {
   if (node.dataset.convoy) {
     aim = { unit: "convoy", id: node.dataset.convoy };
     paint();
+    return;
+  }
+  if (node.dataset.wharf) {
+    order({ type: "wharf", colony: node.dataset.wharf }, "build");
+    return;
+  }
+  if (node.dataset.refit) {
+    order({ type: "refit", q: Number(node.dataset.q), r: Number(node.dataset.r) }, "build");
     return;
   }
   if (node.dataset.patrol) {

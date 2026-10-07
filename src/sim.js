@@ -53,6 +53,8 @@ export const EARN = {
   block: 47,
   salvage: 48,
   convoy: 49,
+  wharf: 50,
+  refit: 51,
 };
 
 export const FACTIONS = {
@@ -878,6 +880,8 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "blockade") result = doBlockade(world, actor, action);
   else if (action.type === "salvage") result = doSalvage(world, actor, action);
   else if (action.type === "convoy") result = doConvoy(world, actor, action);
+  else if (action.type === "wharf") result = doWharf(world, actor, action.colony);
+  else if (action.type === "refit") result = doRefit(world, actor, action);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2539,6 +2543,63 @@ function convoyNear(realm, ship) {
   return (realm.ships || []).some((other) => other.escort === ship.id && hullTeeth(other.kind) >= WAR_TEETH && hexDist(other.q, other.r, ship.q, ship.r) <= 2);
 }
 
+function doWharf(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A wharf needs a port.");
+  if (colony.wharf) return fail(`${colony.name} already has a wharf.`);
+  if (actor.gold < 220) return fail("A wharf wants 220 gold.");
+  actor.gold -= 220;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.wharf = true;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.wharf;
+    notePurse(actor, "wharf", EARN.wharf);
+    purse = ` Purse +${formatUtopia(EARN.wharf)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a wharf at ${colony.name}. The yard pays 8 gold an hour and can refit a wreck within three hexes.${purse}`);
+  return { ok: true, message: `Wharf raised at ${colony.name}.${purse}` };
+}
+
+function doRefit(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if ((actor.ships || []).length >= 6) return fail("Six hulls already ride for this holding.");
+  const q = action.q | 0;
+  const r = action.r | 0;
+  const wreck = liveWreck(world, q, r);
+  if (!wreck || !NAVY[wreck.kind]) return fail("No wreck rides there.");
+  const yard = (actor.colonies || []).find((row) => row.port && row.wharf && hexDist(row.q, row.r, q, r) <= 3);
+  if (!yard) return fail("A wharf within three hexes can refit that wreck.");
+  const spec = NAVY[wreck.kind];
+  const cost = Math.ceil(spec.gold / 2);
+  if (actor.gold < cost) return fail(`Refitting a ${spec.name} wants ${cost} gold.`);
+  actor.gold -= cost;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.ships = actor.ships || [];
+  const ship = {
+    id: `s${world.hour || 0}-refit-${actor.ships.length}-${wreck.kind}`,
+    kind: wreck.kind,
+    q,
+    r,
+    destQ: null,
+    destR: null,
+  };
+  actor.ships.push(ship);
+  world.wrecks = (world.wrecks || []).filter((row) => row !== wreck);
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.refit;
+    notePurse(actor, "refit", EARN.refit);
+    purse = ` Purse +${formatUtopia(EARN.refit)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} refits a ${spec.name} at ${yard.name}. The wreck is a hull again.${purse}`);
+  return { ok: true, message: `${spec.name} refit at ${yard.name}.${purse}` };
+}
+
 function resolveSalvage(world) {
   const hour = world.hour || 0;
   for (const realm of world.provinces || []) {
@@ -3218,6 +3279,7 @@ function economy(world, p, hour) {
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
     const hold = blockadeAt(world, p, colony);
+    if (colony.wharf) goldIn += 8;
     if (!hold) {
       foodIn += 12;
       continue;
