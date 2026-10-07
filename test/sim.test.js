@@ -46,6 +46,8 @@ import {
   siegeLive,
   growRival,
   patrolUp,
+  keelUp,
+  keelHaul,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -1826,6 +1828,120 @@ test("outriders turn a wild ride and ride home when the screen ends", () => {
   ruler.soldiers = 3;
   ruler.gold = 1000;
   assert.equal(applyAction(home, "you", { type: "patrol" }).ok, false);
+});
+
+test("a keel hauls fish, turns a wild ride, escorts a caravan, and burns in a sack", () => {
+  const w = newWorld({ seed: 3 });
+  const you = byId(w, "you");
+  const band = w.bands[0];
+  assert.ok(you.plots.some((tile) => waterTouch(tile)));
+  you.x = band.x + 80;
+  you.y = band.y;
+  you.soldiers = 40;
+  you.elites = 0;
+  you.buildings.keep = 0;
+  you.muster = 0;
+  you.gold = 1000;
+  you.grain = 1000;
+  you.peasants = 200;
+  const purse = you.utopia;
+  const launched = applyAction(w, "you", { type: "keel" });
+  assert.equal(launched.ok, true);
+  assert.equal(you.soldiers, 34);
+  assert.equal(you.gold, 800);
+  assert.equal(you.keel, 6);
+  assert.equal(you.keelUntil, 6);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.keel, EARN.keel);
+  assert.equal(you.utopia, purse + EARN.keel);
+  assert.equal(keelUp(you, w.hour), true);
+  assert.equal(you.plots.some((tile) => tile.keel), true);
+  assert.equal(keelHaul(you, 0).gold, 18);
+  assert.equal(keelHaul(you, 0).grain, 14);
+  you.weir = 2;
+  you.weirUntil = 4;
+  assert.equal(keelHaul(you, 0).grain, 24);
+  you.weir = 0;
+  you.weirUntil = 0;
+  assert.equal(applyAction(w, "you", { type: "keel" }).ok, false);
+  const men = band.men;
+  pressBands(w);
+  assert.equal(band.raid.target, "you");
+  assert.equal(band.raid.met, "keel");
+  assert.equal(you.gold, 800);
+  assert.equal(you.grain, 1000);
+  assert.equal(band.men, men - 2);
+  assert.equal(you.keel, 5);
+
+  const weak = newWorld({ seed: 6 });
+  const seat = byId(weak, "you");
+  const foe = weak.bands[0];
+  seat.x = foe.x + 40;
+  seat.y = foe.y;
+  seat.soldiers = 4;
+  seat.elites = 0;
+  seat.buildings.keep = 0;
+  seat.muster = 0;
+  seat.plots = [];
+  seat.gold = 500;
+  seat.grain = 500;
+  seat.peasants = 80;
+  seat.keel = 3;
+  seat.keelUntil = 5;
+  foe.men = 40;
+  pressBands(weak);
+  assert.ok(seat.gold < 500);
+  assert.equal(seat.keel, 0);
+  assert.equal(foe.men, 38);
+
+  const home = newWorld({ seed: 1 });
+  const ruler = byId(home, "you");
+  ruler.soldiers = 30;
+  for (const camp of home.bands) {
+    camp.x = 9000;
+    camp.y = 9000;
+  }
+  assert.equal(applyAction(home, "you", { type: "keel" }).ok, true);
+  for (let i = 0; i < 6; i++) advanceHour(home);
+  assert.equal(home.hour, 6);
+  assert.equal(keelUp(ruler, home.hour), false);
+  assert.equal(ruler.keel, 0);
+  assert.equal(ruler.soldiers, 30);
+
+  const dry = newWorld({ seed: 2 });
+  const inland = byId(dry, "you");
+  inland.plots = inland.plots.filter((tile) => !waterTouch(tile));
+  assert.equal(applyAction(dry, "you", { type: "keel" }).ok, false);
+
+  const trade = (withKeel) => {
+    const realm = newWorld({ seed: 13 });
+    const buyer = byId(realm, "you");
+    buyer.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+    if (withKeel) {
+      buyer.keel = 6;
+      buyer.keelUntil = 4;
+    }
+    const before = buyer.gold;
+    assert.equal(applyAction(realm, "you", { type: "trade", target: "harrow" }).ok, true);
+    return buyer.gold - before;
+  };
+  assert.ok(trade(true) > trade(false));
+
+  const sack = newWorld({ seed: 2 });
+  const camp = byId(sack, "harrow");
+  camp.soldiers = 8;
+  camp.elites = 0;
+  camp.buildings.keep = 0;
+  camp.muster = 0;
+  camp.plots = [];
+  camp.gold = 800;
+  camp.keel = 6;
+  camp.keelUntil = 6;
+  const taken = applyAction(sack, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(taken.ok, true);
+  assert.equal(taken.win, true);
+  assert.equal(keelUp(camp, sack.hour), false);
+  assert.ok(taken.message.includes("burned the keel"));
 });
 
 test("wild holdings push their fences when the gold holds", () => {

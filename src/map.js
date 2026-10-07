@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, patrolUp, quarryPits, roadLive, seasonName, seatPoint, siegeLive, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
+import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, keelUp, leveeUp, patrolUp, quarryPits, roadLive, seasonName, seatPoint, siegeLive, studyCount, terrainKind, timberYards, weirLive, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -216,26 +216,8 @@ function riverDist(x, y) {
   return best;
 }
 
-const HILL_OVALS = [[-900, -700, 520, 180], [400, 500, 640, 200], [-200, 900, 480, 150], [1100, -200, 400, 140]];
-
 function terrainAt(q, r) {
-  const { x, y } = axialToWorld(q, r);
-  const n = hash(`hex:${q},${r}`);
-  const edge = Math.hypot(x, y);
-  if (edge > 2480) return "sea";
-  if (edge > 2140) return "coast";
-  if (riverDist(x, y) < 34) return "river";
-  for (const [hx, hy, rx, ry] of HILL_OVALS) {
-    const nx = (x - hx) / rx;
-    const ny = (y - hy) / ry;
-    const inside = nx * nx + ny * ny;
-    if (inside < 0.28 && n % 3 === 0) return "mount";
-    if (inside < 1) return "hill";
-  }
-  if (n % 11 === 0) return "marsh";
-  if (n % 4 === 0) return "wood";
-  if (n % 5 === 0) return "plain";
-  return "grass";
+  return terrainKind(q, r);
 }
 
 function claimReach(p) {
@@ -454,6 +436,10 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     }
     if (plot && plot.net && weirLive(cell.owner, world.hour)) drawSkiff(ctx, cell.q, cell.r, time);
   }
+  for (const cell of cells) {
+    const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
+    if (plot && plot.keel && keelUp(cell.owner, world.hour)) drawKeel(ctx, cell.q, cell.r, time || 0);
+  }
 }
 
 function wetBeside(q, r) {
@@ -500,6 +486,38 @@ function drawSkiff(ctx, q, r, time) {
   ctx.lineTo(9, -3);
   ctx.lineTo(1, -4);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawKeel(ctx, q, r, time) {
+  const wet = wetBeside(q, r);
+  if (!wet) return;
+  const pos = axialToWorld(wet.q, wet.r);
+  const bob = Math.sin(time * 1.6 + q) * 2;
+  ctx.save();
+  ctx.translate(pos.x, pos.y + bob);
+  ctx.fillStyle = "#3a2a22";
+  ctx.beginPath();
+  ctx.moveTo(-16, 4);
+  ctx.lineTo(16, 4);
+  ctx.lineTo(11, -3);
+  ctx.lineTo(-11, -3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#24180f";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-2, 0);
+  ctx.lineTo(-2, -18);
+  ctx.stroke();
+  ctx.fillStyle = "#9ec4cc";
+  ctx.beginPath();
+  ctx.moveTo(-2, -18);
+  ctx.lineTo(12, -7);
+  ctx.lineTo(-2, -4);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(-14, 1, 5, 2);
   ctx.restore();
 }
 
@@ -1495,9 +1513,31 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (timberYards(p) > 0) drawLogPile(ctx, g, timberYards(p));
   if (quarryPits(p) > 0) drawCairn(ctx, g, quarryPits(p));
   if (patrolUp(p, hour)) drawOutriders(ctx, g, time, p.patrol);
+  if (keelUp(p, hour)) drawKeelMark(ctx, g, time);
   if (siegeLive(p, hour)) drawSiegePennant(ctx, g, time);
   if ((p.standards || 0) > 0) drawStandards(ctx, g, p.standards, time);
   if ((p.pelts || 0) > 0) drawPelt(ctx, g, p.pelts);
+}
+
+function drawKeelMark(ctx, g, time) {
+  const x = g.x + g.r * 0.2;
+  const y = g.y + g.r * 0.42;
+  const bob = Math.sin(time * 1.7) * 1.1;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.strokeStyle = "#3a2a22";
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(0, 4);
+  ctx.lineTo(0, -14);
+  ctx.stroke();
+  ctx.fillStyle = "#9ec4cc";
+  ctx.beginPath();
+  ctx.moveTo(0, -14);
+  ctx.lineTo(11, -5);
+  ctx.lineTo(0, -3);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawOutriders(ctx, g, time, n) {
@@ -2264,7 +2304,7 @@ function drawBands(ctx, world, time) {
       if (!target) continue;
       const [tx, ty] = seatPoint(target);
       ctx.save();
-      ctx.strokeStyle = band.raid.met === "patrol" ? "rgba(226, 192, 120, 0.9)" : "rgba(196, 90, 72, 0.8)";
+      ctx.strokeStyle = band.raid.met === "patrol" ? "rgba(226, 192, 120, 0.9)" : band.raid.met === "keel" ? "rgba(158, 196, 204, 0.95)" : "rgba(196, 90, 72, 0.8)";
       ctx.lineWidth = 2;
       ctx.setLineDash([3, 8]);
       ctx.lineDashOffset = -time * 22;
@@ -2500,6 +2540,98 @@ function drawMarch(ctx, march, time) {
   ctx.fillText(title, lead.x, lead.y - 18);
 }
 
+function drawTown(ctx, x, y, port) {
+  ctx.fillStyle = port ? "#d9d3c4" : "#6a4632";
+  ctx.fillRect(x - 10, y - 6, 12, 10);
+  ctx.fillRect(x + 4, y - 4, 9, 8);
+  ctx.fillStyle = port ? "#e2c078" : "#8d4038";
+  ctx.beginPath();
+  ctx.moveTo(x - 12, y - 6);
+  ctx.lineTo(x - 4, y - 14);
+  ctx.lineTo(x + 4, y - 6);
+  ctx.fill();
+  if (port) {
+    ctx.fillStyle = "#5c4632";
+    ctx.fillRect(x - 16, y + 8, 28, 3);
+    ctx.fillStyle = "#2f7c74";
+    ctx.fillRect(x + 14, y + 6, 8, 6);
+  }
+}
+
+function drawFounder(ctx, x, y, time) {
+  const bob = Math.sin(time * 6) * 1.4;
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(x + 4, y - 16 + bob, 2, 12);
+  ctx.beginPath();
+  ctx.moveTo(x + 6, y - 16 + bob);
+  ctx.lineTo(x + 14, y - 12 + bob);
+  ctx.lineTo(x + 6, y - 8 + bob);
+  ctx.fill();
+  ctx.fillStyle = "#cbb892";
+  ctx.beginPath();
+  ctx.arc(x, y - 6 + bob, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(x - 3, y - 3 + bob, 6, 8);
+}
+
+function drawHull(ctx, x, y, kind, time) {
+  const rock = Math.sin(time * 2 + x) * 1.2;
+  ctx.save();
+  ctx.translate(x, y + rock);
+  ctx.fillStyle = kind === "hulk" || kind === "dromon" ? "#3d3224" : "#6a4632";
+  if (kind === "galley" || kind === "dromon") ctx.fillRect(-16, -4, 32, 8);
+  else if (kind === "hulk") ctx.fillRect(-14, -7, 28, 14);
+  else ctx.fillRect(-10, -4, 20, 8);
+  ctx.fillStyle = "#e2c078";
+  if (kind === "fisher" || kind === "cog" || kind === "dromon") {
+    ctx.beginPath();
+    ctx.moveTo(0, -4);
+    ctx.lineTo(8, -16);
+    ctx.lineTo(0, -16);
+    ctx.fill();
+  }
+  if (kind === "dromon") {
+    ctx.beginPath();
+    ctx.moveTo(-6, -4);
+    ctx.lineTo(-2, -18);
+    ctx.lineTo(-8, -18);
+    ctx.fill();
+  }
+  if (kind === "galley") {
+    ctx.strokeStyle = "#cbb892";
+    ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 5, 4);
+      ctx.lineTo(i * 5 + 6, 9);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawColonies(ctx, world, time) {
+  for (const realm of world.provinces || []) {
+    for (const colony of realm.colonies || []) {
+      const pos = axialToWorld(colony.q, colony.r);
+      drawTown(ctx, pos.x, pos.y, colony.port);
+      ctx.fillStyle = "#1a1612";
+      ctx.font = "12px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText(colony.name, pos.x, pos.y - 22);
+    }
+    for (const founder of realm.founders || []) {
+      const pos = axialToWorld(founder.q, founder.r);
+      drawFounder(ctx, pos.x, pos.y, time);
+    }
+    for (const ship of realm.ships || []) {
+      const pos = axialToWorld(ship.q, ship.r);
+      drawHull(ctx, pos.x, pos.y, ship.kind, time);
+    }
+  }
+}
+
 export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, march, time = 0, hoverId = null, dpr = 1, motes = [], strikes = []) {
   screenTransform(ctx, dpr);
   ctx.clearRect(0, 0, viewW, viewH);
@@ -2515,6 +2647,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   drawRoads(ctx, geoms);
   drawSites(ctx, world);
   drawBands(ctx, world, time);
+  drawColonies(ctx, world, time);
   drawPacts(ctx, world, seatId, time);
   drawCauseways(ctx, world);
   drawSieges(ctx, world, time);

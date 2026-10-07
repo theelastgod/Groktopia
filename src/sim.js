@@ -45,6 +45,7 @@ export const EARN = {
   sally: 41,
   ride: 42,
   patrol: 38,
+  keel: 36,
 };
 
 export const FACTIONS = {
@@ -472,6 +473,8 @@ export function blankProvince(partial) {
     siege: null,
     patrol: 0,
     patrolUntil: 0,
+    keel: 0,
+    keelUntil: 0,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -782,6 +785,7 @@ export const AMBITIONS = [
   { id: "sally", name: "Sally the works", purse: 40, blurb: "Break a siege camp.", match: (action) => action.type === "sally" && action.win },
   { id: "ride", name: "Ride the band", purse: 40, blurb: "Break a wild camp.", match: (action) => action.type === "ride" && action.win },
   { id: "patrol", name: "Post the screen", purse: 40, blurb: "Send outriders against a wild camp.", match: (action) => action.type === "patrol" },
+  { id: "keel", name: "Launch a keel", purse: 40, blurb: "Put a boat on the water.", match: (action) => action.type === "keel" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -843,6 +847,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "ride") result = doRide(world, actor, action.band);
   else if (action.type === "bribe") result = doBribe(world, actor, action.band);
   else if (action.type === "patrol") result = doPatrol(world, actor);
+  else if (action.type === "keel") result = doKeel(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1051,6 +1056,10 @@ function doTrade(world, actor, targetId) {
   if (weirLive(actor, world.hour)) {
     haul = Math.floor(haul * 1.1);
     fed += " Salted fish rides with the cart.";
+  }
+  if (keelUp(actor, world.hour)) {
+    haul = Math.floor(haul * 1.08);
+    fed += " The keel escorts the river reach.";
   }
   actor.gold += haul;
   const earned = grantEarn(actor, EARN.trade, scale, "trade");
@@ -2110,6 +2119,67 @@ function doPatrol(world, actor) {
   return { ok: true, message: `Outriders screen the acres through hour ${actor.patrolUntil - 1}.${purse}` };
 }
 
+export function keelUp(p, hour) {
+  return Boolean(p && (p.keelUntil || 0) > (hour || 0) && (p.keel || 0) >= 3);
+}
+
+export function keelHaul(p, hour) {
+  if (!keelUp(p, hour)) return { gold: 0, grain: 0 };
+  let grain = 14;
+  let gold = 18;
+  if (weirLive(p, hour)) grain += 10;
+  const name = seasonName(hour || 0);
+  if (name === "Frost") {
+    grain = Math.floor(grain * 0.5);
+    gold = Math.floor(gold * 0.6);
+  } else if (name === "High Sun") {
+    grain = Math.floor(grain * 1.15);
+  }
+  return { gold, grain };
+}
+
+function clearKeel(p) {
+  if (!p) return;
+  p.keel = 0;
+  p.keelUntil = 0;
+  for (const tile of p.plots || []) tile.keel = false;
+}
+
+function settleKeel(p, hour) {
+  if (!p || !(p.keelUntil > 0)) return;
+  if (p.keelUntil > (hour || 0)) return;
+  const home = p.keel || 0;
+  clearKeel(p);
+  if (home > 0) p.soldiers += home;
+}
+
+function doKeel(world, actor) {
+  ensurePlots(world);
+  if (keelUp(actor, world.hour)) return fail(`The keel already rides through hour ${actor.keelUntil - 1}.`);
+  settleKeel(actor, world.hour || 0);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if ((actor.soldiers || 0) < 6) return fail("Need 6 soldiers to crew a keel.");
+  if (actor.gold < 200) return fail("A keel wants 200 gold.");
+  const plot = (actor.plots || []).find((tile) => waterTouch(tile));
+  if (!plot) return fail("A keel needs a bought tile on the coast or beside the river.");
+  actor.gold -= 200;
+  actor.soldiers -= 6;
+  actor.orders -= 1;
+  actor.acted = true;
+  for (const tile of actor.plots || []) tile.keel = false;
+  plot.keel = true;
+  actor.keel = 6;
+  actor.keelUntil = (world.hour || 0) + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.keel;
+    notePurse(actor, "keel", EARN.keel);
+    purse = ` Purse +${formatUtopia(EARN.keel)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} launches a keel through hour ${actor.keelUntil - 1}. It hauls fish and coin, escorts a caravan, and can turn a wild ride. A sack burns the hull.${purse}`);
+  return { ok: true, message: `Keel launched through hour ${actor.keelUntil - 1}.${purse}` };
+}
+
 function strikeBand(world, band, target) {
   const hour = world.hour || 0;
   band.raid = { target: target.id, hour, met: "" };
@@ -2136,6 +2206,28 @@ function strikeBand(world, band, target) {
     target.patrolUntil = hour;
     band.men = Math.max(1, band.men - 3);
     log(world, `${band.name} breaks ${spent} outriders of ${target.name} and rides on.`);
+  }
+  if (keelUp(target, hour)) {
+    const screen = target.keel * 22;
+    if (screen >= band.men * 4) {
+      const lost = Math.min(band.men, 3);
+      band.men -= lost;
+      const fallen = Math.min(target.keel, 1);
+      target.keel -= fallen;
+      band.raid.met = "keel";
+      if (target.keel < 3) {
+        clearKeel(target);
+        log(world, `${band.name} meets the keel of ${target.name}. The hull breaks after ${lost} riders fall.`);
+      } else {
+        log(world, `${band.name} meets the keel of ${target.name} and turns aside. ${lost} riders fall. ${fallen} of the crew does not come home.`);
+      }
+      if (band.men < 8) quietBand(world, band, hour, `${band.name} scatters. The camp is ash for six hours.`);
+      return;
+    }
+    const spent = target.keel;
+    clearKeel(target);
+    band.men = Math.max(1, band.men - 2);
+    log(world, `${band.name} breaks the keel of ${target.name}. ${spent} crew are lost, and the camp still comes on.`);
   }
   const bite = band.men * 9;
   if (defense(target) >= bite) {
@@ -2354,9 +2446,17 @@ function doAttack(world, actor, action) {
       pit.crew = "hand";
       face = " and collapsed a quarry";
     }
+    let hull = "";
+    if (keelUp(target, world.hour)) {
+      const plank = Math.min(target.gold, 55);
+      target.gold -= plank;
+      g += plank;
+      clearKeel(target);
+      hull = " and burned the keel";
+    }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -2568,6 +2668,11 @@ function economy(p, hour) {
     p.gold += catchTaken.gold;
     p.grain += catchTaken.grain;
   }
+  if (keelUp(p, hour)) {
+    const catchTaken = keelHaul(p, hour);
+    p.gold += catchTaken.gold;
+    p.grain += catchTaken.grain;
+  }
   if (p.grain < 0) {
     const die = Math.min(p.peasants, Math.max(1, Math.ceil(-p.grain / 4)));
     p.peasants -= die;
@@ -2626,6 +2731,7 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleHospice(p, world.hour);
   for (const p of world.provinces) settleInn(p, world.hour);
   for (const p of world.provinces) settleWeir(p, world.hour);
+  for (const p of world.provinces) settleKeel(p, world.hour);
   for (const p of world.provinces) settleSiege(p, world.hour);
   expireBounties(world);
   pressBands(world);
@@ -2785,6 +2891,9 @@ export function chooseAction(world, agent) {
     if (!weirLive(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.gold >= 400 && agent.peasants >= 40 && agent.orders >= 1 && rng.next() < 0.16) {
       return { type: "weir" };
     }
+    if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
+      return { type: "keel" };
+    }
     if (!agent.vein && agent.gold >= 800 && agent.orders >= 1 && rng.next() < 0.14) return { type: "prospect" };
     if (!(agent.sealUntil > world.hour) && agent.grain >= 4000 && agent.gold >= 200 && agent.orders >= 1 && rng.next() < 0.12) return { type: "seal" };
     if (agent.gold >= 1400 && agent.orders >= 1 && rng.next() < 0.1) {
@@ -2869,6 +2978,11 @@ export function hydrate(raw) {
   data.bands = data.bands && data.bands.length ? data.bands : freshBands();
   const world = { ...data, rng: makeRng(rngState) };
   ensurePlots(world);
+  for (const realm of world.provinces || []) {
+    if (!Array.isArray(realm.founders)) realm.founders = [];
+    if (!Array.isArray(realm.ships)) realm.ships = [];
+    if (!Array.isArray(realm.colonies)) realm.colonies = [];
+  }
   const cap = world.orderCap || 4;
   if (cap < ORDERS) {
     const grant = ORDERS - cap;

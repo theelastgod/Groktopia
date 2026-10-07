@@ -24,6 +24,8 @@ import {
   timberYards,
   quarryPits,
   patrolUp,
+  keelUp,
+  keelHaul,
   stonePrice,
   siegeLive,
   leveeUp,
@@ -631,6 +633,7 @@ function cardFor(actor, selected) {
     ${timberYards(selected) > 0 ? `<p class="muted">${timberYards(selected)} timber ${timberYards(selected) === 1 ? "yard stands" : "yards stand"} on the woods. Each pays 26 gold an hour, and a causeway costs 180 gold. A sack can burn one stack.</p>` : ""}
     ${quarryPits(selected) > 0 ? `<p class="muted">${quarryPits(selected)} ${quarryPits(selected) === 1 ? "quarry cuts" : "quarries cut"} the hills. Each pays 22 gold an hour and 5 defense. Keeps and barracks cost 40 gold less per face. A sack can collapse one pit.</p>` : ""}
     ${(self || fresh) && patrolUp(selected, world.hour) ? `<p class="muted">${selected.patrol} outriders screen the acres through hour ${selected.patrolUntil - 1}. A wild ride that cannot break them turns aside.</p>` : ""}
+    ${(self || fresh) && keelUp(selected, world.hour) ? `<p class="muted">A keel with ${selected.keel} crew rides through hour ${selected.keelUntil - 1}. This hour it hauls ${keelHaul(selected, world.hour).grain} grain and ${keelHaul(selected, world.hour).gold} gold. It escorts caravans, and a sack burns the hull.</p>` : ""}
     ${siegeNote(actor, selected)}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
@@ -663,6 +666,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-timber="1">Cut a timber yard · 170g</button>
         <button class="btn" type="button" data-quarry="1">Open a quarry · 190g · +${formatUtopia(EARN.quarry)}</button>
         ${patrolButton(actor)}
+        ${keelButton(actor)}
       </div>
       <div class="row">${sallyButtons(actor)}</div>
       ${bandAlert(actor)}
@@ -810,6 +814,7 @@ function ledgerLine(actor) {
     ["sallies", book.sally],
     ["rides", book.ride],
     ["outriders", book.patrol],
+    ["keels", book.keel],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1019,6 +1024,11 @@ function relicLine(actor) {
   return `Relics: ${held.map((row) => `${row.name}. ${row.line}`).join(" ")}`;
 }
 
+function keelButton(actor) {
+  if (keelUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Keel through hour ${actor.keelUntil - 1}</button>`;
+  return `<button class="btn primary" type="button" data-keel="1">Launch a keel · 200g · 6 soldiers · +${formatUtopia(EARN.keel)}</button>`;
+}
+
 function patrolButton(actor) {
   if (patrolUp(actor, world.hour)) return `<button class="btn" type="button" disabled>Outriders through hour ${actor.patrolUntil - 1}</button>`;
   return `<button class="btn primary" type="button" data-patrol="1">Post outriders · 150g · 8 soldiers · +${formatUtopia(EARN.patrol)}</button>`;
@@ -1124,10 +1134,10 @@ function bindMap(canvas) {
     canvas.classList.remove("dragging");
     track(event);
     if (moved || !world) return;
+    const point = worldPointFrom(event, canvas);
     const now = performance.now();
     if (hoverId && now - lastTap < 300) focusHolding(hoverId);
     lastTap = now;
-    const point = worldPointFrom(event, canvas);
     const siteHit = hitSite(world.sites, point.x, point.y);
     const bandHit = hitBand(world.bands, point.x, point.y);
     if (!hoverId && (siteHit || bandHit)) {
@@ -1225,6 +1235,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "t" && world) order({ type: "timber" }, "build");
       if (event.key.toLowerCase() === "k" && world) order({ type: "quarry" }, "build");
       if (event.key.toLowerCase() === "o" && world) order({ type: "patrol" }, "march");
+      if (event.key.toLowerCase() === "p" && world) order({ type: "keel" }, "march");
       if (event.key.toLowerCase() === "z" && world && selectedId && selectedId !== seat().id) order({ type: "siege", target: selectedId }, "battle");
       if (event.key.toLowerCase() === "v" && world) {
         const picked = selectedBand && (world.bands || []).find((band) => band.id === selectedBand.id && (band.men || 0) >= 8);
@@ -1378,6 +1389,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.patrol) {
     order({ type: "patrol" }, "march");
+    return;
+  }
+  if (node.dataset.keel) {
+    order({ type: "keel" }, "march");
     return;
   }
   if (node.dataset.siege) {
