@@ -57,6 +57,7 @@ export const EARN = {
   refit: 51,
   mole: 52,
   tow: 53,
+  lee: 54,
 };
 
 export const FACTIONS = {
@@ -886,6 +887,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "wharf") result = doWharf(world, actor, action.colony);
   else if (action.type === "refit") result = doRefit(world, actor, action);
   else if (action.type === "mole") result = doMole(world, actor, action.colony);
+  else if (action.type === "lee") result = doLee(world, actor, action.colony);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2681,6 +2683,33 @@ function doMole(world, actor, colonyId) {
   return { ok: true, message: `Mole raised at ${colony.name}.${purse}` };
 }
 
+function doLee(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A lee needs a port.");
+  const hour = world.hour || 0;
+  if ((colony.leeUntil || 0) > hour) return fail(`${colony.name} already has a lee.`);
+  if (actor.gold < 160) return fail("A lee wants 160 gold.");
+  actor.gold -= 160;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.leeUntil = hour + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.lee;
+    notePurse(actor, "lee", EARN.lee);
+    purse = ` Purse +${formatUtopia(EARN.lee)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a lee at ${colony.name}. For six hours a hull within two hexes is sheltered, and a heavier grapple turns aside.${purse}`);
+  return { ok: true, message: `Lee raised at ${colony.name}.${purse}` };
+}
+
+function leeCover(realm, ship, hour) {
+  if (!realm || !ship) return false;
+  return (realm.colonies || []).some((colony) => colony.port && (colony.leeUntil || 0) > (hour || 0) && hexDist(ship.q, ship.r, colony.q, colony.r) <= 2);
+}
+
 function shoveOff(ship, cq, cr, steps) {
   let left = steps;
   while (left > 0) {
@@ -2786,6 +2815,13 @@ function resolveGrapples(world) {
         continue;
       }
       if (hexDist(ship.q, ship.r, prey.ship.q, prey.ship.r) > 1) continue;
+      const hour = world.hour || 0;
+      if (leeCover(prey.realm, prey.ship, hour) && hullTeeth(ship.kind) > hullTeeth(prey.ship.kind) + coverTeeth(prey.realm, prey.ship)) {
+        ship.prey = null;
+        const home = (prey.realm.colonies || []).find((colony) => colony.port && (colony.leeUntil || 0) > hour);
+        log(world, `${prey.realm.name}'s lee at ${home ? home.name : "the quay"} turns ${realm.name}'s grapple aside.`);
+        continue;
+      }
       const teeth = hullTeeth(ship.kind);
       const theirs = hullTeeth(prey.ship.kind) + coverTeeth(prey.realm, prey.ship);
       if (teeth > theirs) {
@@ -3465,6 +3501,7 @@ function economy(world, p, hour) {
       foodIn += Math.ceil((spec.fish || 0) / 2);
       goldIn += Math.floor((spec.haul || 0) / 2) + 4;
     }
+    if (leeCover(p, ship, hour)) goldIn += 6;
   }
   const foodOut = foodNeed(p);
   p.gold += goldIn;
@@ -3706,6 +3743,10 @@ export function chooseAction(world, agent) {
     }
     if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "keel" };
+    }
+    const leePort = (agent.colonies || []).find((colony) => colony.port && (colony.leeUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hullTeeth(ship.kind) >= WAR_TEETH && hexDist(ship.q, ship.r, colony.q, colony.r) <= 8)));
+    if (leePort && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.16) {
+      return { type: "lee", colony: leePort.id };
     }
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {

@@ -260,7 +260,7 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck. A war hull can escort a trader. A port can raise a mole that shoves enemy hulls off the quay. A hull can tow a wreck home to a wharf.</p>
+        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck. A war hull can escort a trader. A port can raise a mole that shoves enemy hulls off the quay. A hull can tow a wreck home to a wharf. A port can raise a lee that shelters its hulls.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
@@ -832,6 +832,7 @@ function ledgerLine(actor) {
     ["refits", book.refit],
     ["moles", book.mole],
     ["tows", book.tow],
+    ["lees", book.lee],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1048,7 +1049,7 @@ function fleetLine(actor) {
   const towns = actor.colonies || [];
   const rows = [];
   if (towns.length) {
-    const quay = ports.length ? `${ports.length} ${ports.length === 1 ? "port fishes" : "ports fish"} 12 grain an hour and can lay a hull. A wharf pays 8 gold and refits wrecks. A mole shoves enemy hulls off the quay.` : "No quay yet. A coast or a river bank makes a port.";
+    const quay = ports.length ? `${ports.length} ${ports.length === 1 ? "port fishes" : "ports fish"} 12 grain an hour and can lay a hull. A wharf pays 8 gold and refits wrecks. A mole shoves enemy hulls off the quay. A lee shelters hulls beside the quay.` : "No quay yet. A coast or a river bank makes a port.";
     rows.push(`<p class="muted">${towns.map((row) => esc(row.name)).join(", ")}. ${quay}</p>`);
   }
   for (const founder of founders) {
@@ -1094,6 +1095,11 @@ function fleetLine(actor) {
     } else {
       rows.push(`<button class="btn" type="button" data-mole="${esc(port.id)}">Raise a mole at ${esc(port.name)} · 180g · +${formatUtopia(EARN.mole)}</button>`);
     }
+    if ((port.leeUntil || 0) > world.hour) {
+      rows.push(`<p class="muted">${esc(port.name)}'s lee stands through hour ${port.leeUntil - 1}. Hulls within two hexes are sheltered.</p>`);
+    } else {
+      rows.push(`<button class="btn" type="button" data-lee="${esc(port.id)}">Raise a lee at ${esc(port.name)} · 160g · +${formatUtopia(EARN.lee)}</button>`);
+    }
   }
   if (ports.some((row) => row.wharf) && ships.length < 6) {
     for (const wreck of world.wrecks || []) {
@@ -1120,7 +1126,7 @@ function fleetLine(actor) {
   if ((world.wrecks || []).some((row) => (row.until || 0) > world.hour)) {
     rows.push(`<p class="muted">A wreck rides the water. A gold glint marks the timber.</p>`);
   }
-  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf.</p>`);
+  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf. Key . raises a lee.</p>`);
   return rows.join("");
 }
 
@@ -1481,6 +1487,10 @@ function bindMap(canvas) {
         const port = (seat().colonies || []).find((row) => row.port && (row.moleUntil || 0) <= world.hour);
         if (port) order({ type: "mole", colony: port.id }, "build");
       }
+      if (event.key === "." && world && seat()) {
+        const port = (seat().colonies || []).find((row) => row.port && (row.leeUntil || 0) <= world.hour);
+        if (port) order({ type: "lee", colony: port.id }, "build");
+      }
       if (event.key === "\\" && world && seat()) {
         const fleet = seat().ships || [];
         const war = fleet.find((row) => NAVY[row.kind] && NAVY[row.kind].teeth >= 5 && !row.block)
@@ -1687,6 +1697,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.mole) {
     order({ type: "mole", colony: node.dataset.mole }, "build");
+    return;
+  }
+  if (node.dataset.lee) {
+    order({ type: "lee", colony: node.dataset.lee }, "build");
     return;
   }
   if (node.dataset.refit) {

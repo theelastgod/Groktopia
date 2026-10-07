@@ -2679,6 +2679,25 @@ function drawWreck(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawLee(ctx, x, y, time) {
+  const sway = Math.sin(time * 1.6) * 1.5;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "rgba(127, 176, 184, 0.95)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(-10, 6 + sway, 22, Math.PI * 0.2, Math.PI * 1.2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(-10, 6, 28, Math.PI * 0.28, Math.PI * 1.05);
+  ctx.stroke();
+  ctx.fillStyle = "#7fb0b8";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("LEE", -22, -8);
+  ctx.restore();
+}
+
 function drawMole(ctx, x, y, time) {
   const flash = Math.sin(time * 5) > 0.35;
   ctx.save();
@@ -2834,6 +2853,7 @@ function drawColonies(ctx, world, time) {
       drawTown(ctx, pos.x, pos.y, colony.port);
       if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
+      if (colony.port && (colony.leeUntil || 0) > (world.hour || 0)) drawLee(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       ctx.fillStyle = "#1a1612";
       ctx.font = "12px Palatino, Georgia, serif";
