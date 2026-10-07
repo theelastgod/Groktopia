@@ -67,6 +67,7 @@ export const EARN = {
   raid: 61,
   quay: 62,
   armory: 63,
+  dues: 64,
 };
 
 export const FACTIONS = {
@@ -2834,6 +2835,28 @@ function doQuay(world, actor, colonyId) {
   return { ok: true, message: `Quay watch posted at ${colony.name} through hour ${colony.quayUntil - 1}.${purse}` };
 }
 
+function doDues(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("Harbor dues need a port.");
+  const hour = world.hour || 0;
+  if ((colony.duesUntil || 0) > hour) return fail(`${colony.name} already collects harbor dues.`);
+  if (actor.gold < 150) return fail("Harbor dues want 150 gold.");
+  actor.gold -= 150;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.duesUntil = hour + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.dues;
+    notePurse(actor, "dues", EARN.dues);
+    purse = ` Purse +${formatUtopia(EARN.dues)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} opens harbor dues at ${colony.name} through hour ${colony.duesUntil - 1}. An enemy hull within two hexes pays 12 gold.${purse}`);
+  return { ok: true, message: `Harbor dues open at ${colony.name} through hour ${colony.duesUntil - 1}.${purse}` };
+}
+
 function doMole(world, actor, colonyId) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   const colony = (actor.colonies || []).find((row) => row.id === colonyId);
@@ -4032,6 +4055,21 @@ function economy(world, p, hour) {
     hold.realm.gold += skim;
     log(world, `${hold.realm.name} holds ${colony.name} closed. The quay lands no fish${skim ? ` and ${skim} gold is taken` : ""}.`);
   }
+  for (const colony of p.colonies || []) {
+    if (!colony.port || (colony.duesUntil || 0) <= hour) continue;
+    for (const other of world.provinces || []) {
+      if (!other || other.id === p.id) continue;
+      for (const ship of other.ships || []) {
+        if (hexDist(ship.q, ship.r, colony.q, colony.r) > 2) continue;
+        const due = Math.min(other.gold || 0, 12);
+        if (!due) continue;
+        other.gold -= due;
+        p.gold += due;
+        const spec = NAVY[ship.kind];
+        log(world, `${p.name} takes ${due} gold in harbor dues from ${other.name}'s ${spec ? spec.name : "hull"} at ${colony.name}.`);
+      }
+    }
+  }
   for (const ship of p.ships || []) {
     const spec = NAVY[ship.kind];
     if (!spec) continue;
@@ -4298,6 +4336,8 @@ export function chooseAction(world, agent) {
     }
     const quayPort = (agent.colonies || []).find((colony) => colony.port && (colony.quayUntil || 0) <= (world.hour || 0) && (agent.soldiers || 0) >= 8 && agent.gold >= 300 && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hullTeeth(ship.kind) >= WAR_TEETH && hexDist(ship.q, ship.r, colony.q, colony.r) <= 8)));
     if (quayPort && agent.orders >= 1 && rng.next() < 0.14) return { type: "quay", colony: quayPort.id };
+    const duesPort = (agent.colonies || []).find((colony) => colony.port && (colony.duesUntil || 0) <= (world.hour || 0) && agent.gold >= 400 && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
+    if (duesPort && agent.orders >= 1 && rng.next() < 0.12) return { type: "dues", colony: duesPort.id };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };

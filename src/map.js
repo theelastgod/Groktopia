@@ -2879,6 +2879,25 @@ function drawLee(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawDues(ctx, x, y, time) {
+  const wave = Math.sin(time * 2) * 1.2;
+  ctx.save();
+  ctx.translate(x + 16, y + 10);
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(-8, -2, 16, 10);
+  ctx.fillStyle = "#e2c078";
+  ctx.beginPath();
+  ctx.moveTo(-10, -2 + wave);
+  ctx.lineTo(0, -8 + wave);
+  ctx.lineTo(10, -2 + wave);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("DUES", 0, 20);
+  ctx.restore();
+}
+
 function drawQuay(ctx, x, y, time) {
   const bob = Math.sin(time * 3) * 1.4;
   ctx.save();
@@ -3118,6 +3137,7 @@ function drawColonies(ctx, world, time) {
       if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
+      if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.leeUntil || 0) > (world.hour || 0)) drawLee(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.slipUntil || 0) > (world.hour || 0)) drawSlip(ctx, pos.x, pos.y, time);

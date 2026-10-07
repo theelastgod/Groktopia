@@ -1138,6 +1138,11 @@ function fleetLine(actor) {
     if (!port.wharf) {
       rows.push(`<button class="btn" type="button" data-wharf="${esc(port.id)}">Raise a wharf at ${esc(port.name)} · 220g · +${formatUtopia(EARN.wharf)}</button>`);
     }
+    if ((port.duesUntil || 0) > world.hour) {
+      rows.push(`<p class="muted">${esc(port.name)} collects harbor dues through hour ${port.duesUntil - 1}. An enemy hull within two hexes pays 12 gold.</p>`);
+    } else {
+      rows.push(`<button class="btn" type="button" data-dues="${esc(port.id)}">Open harbor dues at ${esc(port.name)} · 150g · +${formatUtopia(EARN.dues)}</button>`);
+    }
     if ((port.quayUntil || 0) > world.hour && (port.quay || 0) > 0) {
       rows.push(`<p class="muted">${esc(port.name)}'s quay watch stands through hour ${port.quayUntil - 1}. ${port.quay} soldiers throw a landing back.</p>`);
     } else {
@@ -1187,7 +1192,7 @@ function fleetLine(actor) {
   if ((world.wrecks || []).some((row) => (row.until || 0) > world.hour)) {
     rows.push(`<p class="muted">A wreck rides the water. A gold glint marks the timber.</p>`);
   }
-  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf. Key . raises a lee. Key - lays nets from a skiff, fisher, or cog. An enemy hull on that water does not sail for four hours and pays 10 gold. Key = slips a boom with a trader within two hexes, and the quay lands its fish that hour. Key / drops a buoy. For five hours your hulls within three hexes sail one hex farther. The grave key sends a skiff, fisher, or cog to a far port with a cargo. The quay pays 32 gold and 20 grain. Key + sends a galley, dromon, or hulk to cut out a lighter hull. The prize joins your fleet and flies a pennant for three hours. The old ruler pays 28 gold plus 8 for each tooth. A lee, or an escort that matches your teeth, turns the cut aside. Key * sends a galley, dromon, or hulk to land a company. Six soldiers board at your port. An enemy quay loses 36 gold and 20 grain, then the company comes home. A mole breaks the landing and two soldiers are lost. Click your own port to put the company ashore. Key ( posts four soldiers as a quay watch for 120 gold. A landing company is thrown back and two soldiers are lost. The quay lands 6 more grain. The watch comes home when the hours end.</p>`);
+  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf. Key . raises a lee. Key - lays nets from a skiff, fisher, or cog. An enemy hull on that water does not sail for four hours and pays 10 gold. Key = slips a boom with a trader within two hexes, and the quay lands its fish that hour. Key / drops a buoy. For five hours your hulls within three hexes sail one hex farther. The grave key sends a skiff, fisher, or cog to a far port with a cargo. The quay pays 32 gold and 20 grain. Key + sends a galley, dromon, or hulk to cut out a lighter hull. The prize joins your fleet and flies a pennant for three hours. The old ruler pays 28 gold plus 8 for each tooth. A lee, or an escort that matches your teeth, turns the cut aside. Key * sends a galley, dromon, or hulk to land a company. Six soldiers board at your port. An enemy quay loses 36 gold and 20 grain, then the company comes home. A mole breaks the landing and two soldiers are lost. Click your own port to put the company ashore. Key ( posts four soldiers as a quay watch for 120 gold. A landing company is thrown back and two soldiers are lost. The quay lands 6 more grain. The watch comes home when the hours end. Key ) opens harbor dues for 150 gold. For five hours an enemy hull within two hexes pays 12 gold. A booth and a DUES label show on the town.</p>`);
   return rows.join("");
 }
 
@@ -1566,6 +1571,10 @@ function bindMap(canvas) {
         const port = (seat().colonies || []).find((row) => row.port && !row.wharf);
         if (port) order({ type: "wharf", colony: port.id }, "build");
       }
+      if (event.key === ")" && world && seat()) {
+        const port = (seat().colonies || []).find((row) => row.port && (row.duesUntil || 0) <= world.hour);
+        if (port) order({ type: "dues", colony: port.id }, "build");
+      }
       if (event.key === "(" && world && seat()) {
         const port = (seat().colonies || []).find((row) => row.port && (row.quayUntil || 0) <= world.hour);
         if (port) order({ type: "quay", colony: port.id }, "build");
@@ -1853,6 +1862,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.wharf) {
     order({ type: "wharf", colony: node.dataset.wharf }, "build");
+    return;
+  }
+  if (node.dataset.dues) {
+    order({ type: "dues", colony: node.dataset.dues }, "build");
     return;
   }
   if (node.dataset.quay) {

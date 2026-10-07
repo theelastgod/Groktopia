@@ -3453,6 +3453,99 @@ test("ages issue bows, guns, cannon, and landcars", () => {
   assert.equal(applyAction(w, "you", { type: "armory", weapon: "bow" }).ok, false);
 });
 
+test("harbor dues take gold from a hull beside the quay", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.dues, 64);
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const hexDist = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  let far = { ...spot };
+  for (let n = 0; n < 4; n++) {
+    let best = null;
+    let bestD = hexDist(far.q, far.r, spot.q, spot.r);
+    for (const [dq, dr] of dirs) {
+      const nq = far.q + dq;
+      const nr = far.r + dr;
+      const kind = terrainKind(nq, nr);
+      if (kind !== "sea" && kind !== "coast" && kind !== "river") continue;
+      const dist = hexDist(nq, nr, spot.q, spot.r);
+      if (dist > bestD) {
+        bestD = dist;
+        best = { q: nq, r: nr };
+      }
+    }
+    if (!best) break;
+    far = best;
+  }
+  assert.ok(hexDist(far.q, far.r, spot.q, spot.r) > 2);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.nets = [];
+    seat.buoys = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const w = newWorld({ seed: 6 });
+  w.bands = [];
+  const you = hush(w, "you");
+  const foe = hush(w, "brine");
+  w.provinces = [you, foe];
+  foe.name = "Salt Ledger";
+  you.colonies = [{ id: "home", name: "Salt Step", q: spot.q, r: spot.r, port: false }];
+  assert.equal(applyAction(w, "you", { type: "dues", colony: "home" }).ok, false);
+  you.colonies[0].port = true;
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "dues", colony: "home" }).ok, false);
+  you.gold = 1000;
+  const opened = applyAction(w, "you", { type: "dues", colony: "home" });
+  assert.equal(opened.ok, true);
+  assert.equal(you.gold, 850);
+  assert.equal(you.colonies[0].duesUntil, 6);
+  assert.equal(you.ledger.dues, EARN.dues);
+  assert.equal(applyAction(w, "you", { type: "dues", colony: "home" }).ok, false);
+  foe.ships = [
+    { id: "galley", kind: "galley", q: spot.q, r: spot.r, destQ: null, destR: null },
+    { id: "skiff", kind: "skiff", q: far.q, r: far.r, destQ: null, destR: null },
+  ];
+  advanceHour(w);
+  assert.equal(you.gold, 850 + 12);
+  assert.equal(foe.gold, 1000 - 12 + 4);
+  assert.equal(you.utopia, EARN.dues + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("harbor dues") && row.text.includes("Salt Ledger") && row.text.includes("Salt Step")));
+  const foeGold = foe.gold;
+  const youGold = you.gold;
+  you.colonies[0].duesUntil = w.hour;
+  advanceHour(w);
+  assert.equal(foe.gold, foeGold + 4);
+  assert.equal(you.gold, youGold);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
