@@ -42,6 +42,8 @@ import {
   timberYards,
   quarryPits,
   stonePrice,
+  siegeLive,
+  growRival,
 } from "../src/sim.js";
 
 test("build spends gold and an acre", () => {
@@ -1542,6 +1544,117 @@ test("a quarry claims nearby stone, cheapens a keep, and a sack collapses one fa
   }
   seat.gold = 4000;
   assert.equal(applyAction(blocked, "you", { type: "quarry" }).ok, false);
+});
+
+test("a siege saps a scouted camp, returns its soldiers, and a march spends the works", () => {
+  const w = newWorld({ seed: 4 });
+  const you = byId(w, "you");
+  const h = byId(w, "harrow");
+  w.provinces = [you, h];
+  h.kind = "human";
+  you.intel.harrow = { hour: 0, offense: 1, defense: 1, gold: 1, grain: 1, soldiers: 1, elites: 0, thieves: 0, mystics: 0 };
+  you.soldiers = 80;
+  you.gold = 5000;
+  const quiet = newWorld({ seed: 4 });
+  const qYou = byId(quiet, "you");
+  const qH = byId(quiet, "harrow");
+  quiet.provinces = [qYou, qH];
+  qH.kind = "human";
+  const purse = you.utopia;
+  const soldiers = you.soldiers;
+  assert.equal(applyAction(w, "you", { type: "siege", target: "harrow" }).ok, true);
+  assert.equal(you.soldiers, soldiers - 8);
+  assert.equal(you.gold, 5000 - 260);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.siege, EARN.siege);
+  assert.equal(you.utopia, purse + EARN.siege);
+  assert.equal(siegeLive(you, w.hour), true);
+  assert.equal(you.siege.until, 4);
+  assert.equal(applyAction(w, "you", { type: "siege", target: "harrow" }).ok, false);
+  const walls = buildingCount(h);
+  advanceHour(w);
+  advanceHour(quiet);
+  assert.equal(h.grain, qH.grain - 36);
+  assert.equal(buildingCount(h), walls - 1);
+  assert.equal(siegeLive(you, w.hour), true);
+  h.kind = "agent";
+  you.orders = ORDERS;
+  const away = you.soldiers;
+  const spent = applyAction(w, "you", { type: "attack", target: "harrow", mode: "seize" });
+  assert.equal(spent.ok, true);
+  assert.equal(spent.win, true);
+  assert.equal(siegeLive(you, w.hour), false);
+  assert.ok(you.soldiers > away);
+  assert.match(spent.message, /siege works joined/);
+
+  const blind = newWorld({ seed: 8 });
+  byId(blind, "you").intel = {};
+  assert.equal(applyAction(blind, "you", { type: "siege", target: "harrow" }).ok, false);
+  const poor = newWorld({ seed: 8 });
+  byId(poor, "you").intel.harrow = { hour: 0, offense: 1, defense: 1 };
+  byId(poor, "you").gold = 20;
+  assert.equal(applyAction(poor, "you", { type: "siege", target: "harrow" }).ok, false);
+  const thin = newWorld({ seed: 8 });
+  byId(thin, "you").intel.harrow = { hour: 0, offense: 1, defense: 1 };
+  byId(thin, "you").soldiers = 12;
+  assert.equal(applyAction(thin, "you", { type: "siege", target: "harrow" }).ok, false);
+
+  const aged = newWorld({ seed: 11 });
+  const seat = byId(aged, "you");
+  const camp = byId(aged, "harrow");
+  aged.provinces = [seat, camp];
+  camp.soldiers = 0;
+  camp.elites = 0;
+  camp.gold = 10;
+  camp.peasants = 10;
+  camp.buildings.keep = 1;
+  camp.grain = 4000;
+  seat.soldiers = 40;
+  seat.siege = { target: "harrow", until: 1, men: 8 };
+  advanceHour(aged);
+  assert.equal(aged.hour, 1);
+  assert.equal(seat.siege, null);
+  assert.equal(seat.soldiers, 48);
+
+  const broke = newWorld({ seed: 12 });
+  const foe = byId(broke, "harrow");
+  foe.soldiers = 12;
+  foe.elites = 0;
+  foe.buildings.keep = 0;
+  foe.siege = { target: "you", until: 6, men: 8 };
+  const home = foe.soldiers;
+  const blow = applyAction(broke, "you", { type: "attack", target: "harrow", mode: "seize" });
+  assert.equal(blow.win, true);
+  assert.equal(foe.siege, null);
+  assert.ok(foe.soldiers <= home);
+  assert.ok(foe.soldiers < home + 8);
+  assert.match(blow.message, /broke the siege works/);
+});
+
+test("wild holdings push their fences when the gold holds", () => {
+  const w = newWorld({ seed: 2 });
+  const moss = byId(w, "moss");
+  const land = moss.land;
+  const plots = moss.plots.length;
+  const fields = moss.buildings.field;
+  moss.gold = 900;
+  assert.equal(growRival(w, moss), true);
+  assert.equal(moss.land, land + 4);
+  assert.equal(moss.gold, 820);
+  assert.ok(moss.plots.length >= plots);
+  assert.equal(moss.buildings.field, fields + 1);
+  assert.ok(buildingCount(moss) <= moss.land);
+  moss.gold = 10;
+  assert.equal(growRival(w, moss), false);
+  assert.equal(moss.land, land + 4);
+  const grown = newWorld({ seed: 15 });
+  const brine = byId(grown, "brine");
+  grown.provinces = [brine];
+  const before = brine.land;
+  brine.gold = 50000;
+  for (let i = 0; i < 3; i++) advanceHour(grown);
+  assert.equal(grown.hour, 3);
+  assert.ok(brine.land >= before + 4);
 });
 
 test("save and load keep the hour and the random stream", () => {

@@ -1,5 +1,5 @@
 /** Overhead realm. World Y grows south. */
-import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, quarryPits, roadLive, seasonName, seatPoint, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
+import { ageName, beaconLit, bountyOn, captiveCount, curfewUp, feastLive, foldLive, hospiceUp, innUp, intelFresh, leveeUp, quarryPits, roadLive, seasonName, seatPoint, siegeLive, studyCount, timberYards, weirLive, worldToAxial } from "./sim.js";
 
 export const HOME = {
   you: [0, 40],
@@ -1481,6 +1481,29 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (weirLive(p, hour)) drawWeirMark(ctx, g, time);
   if (timberYards(p) > 0) drawLogPile(ctx, g, timberYards(p));
   if (quarryPits(p) > 0) drawCairn(ctx, g, quarryPits(p));
+  if (siegeLive(p, hour)) drawSiegePennant(ctx, g, time);
+}
+
+function drawSiegePennant(ctx, g, time) {
+  const x = g.x + g.r * 0.62;
+  const y = g.y - g.r * 0.55;
+  const snap = Math.sin(time * 3.2) * 0.18;
+  ctx.strokeStyle = "#5c4632";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y + 16);
+  ctx.lineTo(x, y - 8);
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(x, y - 8);
+  ctx.rotate(snap);
+  ctx.fillStyle = "#e07a68";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(14, 4);
+  ctx.lineTo(0, 8);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawQuarry(ctx, x, y, time) {
@@ -2124,6 +2147,51 @@ function drawPacts(ctx, world, seatId, time) {
   ctx.restore();
 }
 
+function drawSieges(ctx, world, time) {
+  const hour = world.hour || 0;
+  for (const from of world.provinces) {
+    if (!siegeLive(from, hour)) continue;
+    const other = world.provinces.find((row) => row.id === from.siege.target);
+    if (!other) continue;
+    const a = provinceGeom(from);
+    const b = provinceGeom(other);
+    ctx.save();
+    ctx.strokeStyle = "rgba(224, 122, 104, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 7]);
+    ctx.lineDashOffset = -time * 14;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const t = 0.74;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    ctx.translate(x, y);
+    ctx.rotate(ang);
+    ctx.fillStyle = "#8a5a32";
+    ctx.beginPath();
+    ctx.moveTo(-16, 8);
+    ctx.lineTo(-4, -6);
+    ctx.lineTo(8, 8);
+    ctx.fill();
+    ctx.fillStyle = "#c45a48";
+    ctx.fillRect(-2, -10, 12, 7);
+    const ram = Math.sin(time * 2.4) * 3;
+    ctx.fillStyle = "#5c4632";
+    ctx.fillRect(-18 + ram, -2, 22, 4);
+    ctx.fillStyle = "#3a342c";
+    ctx.beginPath();
+    ctx.arc(6 + ram, 0, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    drawFolk(ctx, x - 10, y + 12, ang, time, "soldier");
+    drawFolk(ctx, x + 8, y + 14, ang, time + 0.4, "soldier");
+  }
+}
+
 function drawInnTraffic(ctx, world, time) {
   const hour = world.hour || 0;
   for (const from of world.provinces) {
@@ -2192,6 +2260,7 @@ const MARCH_INK = {
   bounty: "#e2c078",
   relief: "#d7c4a3",
   road: "#c4b08a",
+  siege: "#e07a68",
   ransom: "#e2c078",
   release: "#f3e6c8",
   trade: "#e2c078",
@@ -2290,6 +2359,7 @@ export function drawRealm(ctx, viewW, viewH, world, seatId, selectedId, cam, mar
   drawSites(ctx, world);
   drawPacts(ctx, world, seatId, time);
   drawCauseways(ctx, world);
+  drawSieges(ctx, world, time);
   drawInnTraffic(ctx, world, time);
   for (const g of geoms) {
     const p = world.provinces.find((row) => row.id === g.id);

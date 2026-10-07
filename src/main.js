@@ -24,6 +24,7 @@ import {
   timberYards,
   quarryPits,
   stonePrice,
+  siegeLive,
   leveeUp,
   roadLive,
   seasonName,
@@ -160,7 +161,7 @@ function act(action, sound) {
 }
 
 function needsMarch(action) {
-  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.type === "bounty" || action.type === "relief" || action.type === "road" || action.spell === "meteor");
+  return action.target && action.target !== seat().id && (action.type === "attack" || action.type === "siege" || action.type === "thief" || action.type === "trade" || action.type === "envoy" || action.type === "tribute" || action.type === "ransom" || action.type === "release" || action.type === "bounty" || action.type === "relief" || action.type === "road" || action.spell === "meteor");
 }
 
 function marchKind(action) {
@@ -171,6 +172,7 @@ function marchKind(action) {
   if (action.type === "bounty") return "bounty";
   if (action.type === "relief") return "relief";
   if (action.type === "road") return "road";
+  if (action.type === "siege") return "siege";
   if (action.type === "envoy") return "envoy";
   if (action.type === "thief") return "thief";
   if (action.spell === "meteor") return "meteor";
@@ -550,6 +552,22 @@ function studyButtons(actor) {
   }).join("");
 }
 
+function siegeNote(actor, selected) {
+  const hour = world.hour || 0;
+  const bits = [];
+  if (siegeLive(actor, hour) && (selected.id === actor.id || actor.siege.target === selected.id)) {
+    const camp = byId(world, actor.siege.target);
+    bits.push(`Your siege works sit outside ${camp ? camp.name : "a camp"} through hour ${actor.siege.until - 1}. They eat grain each hour and sap a soft wall. A march spends the works and hits harder. Key Z pitches them.`);
+  }
+  const incoming = (world.provinces || []).filter((p) => siegeLive(p, hour) && p.siege.target === selected.id);
+  for (const foe of incoming) {
+    if (foe.id === actor.id) continue;
+    bits.push(`${foe.name} has siege works outside this holding through hour ${foe.siege.until - 1}. A winning march breaks the camp.`);
+  }
+  if (!bits.length) return "";
+  return bits.map((line) => `<p class="muted">${esc(line)}</p>`).join("");
+}
+
 function oddsLine(actor, selected) {
   const fresh = intelFresh(actor, selected.id, world.hour);
   if (!fresh) return "Scout to read the garrison. Keys 1, 2, and 3 send seize, sack, and raze.";
@@ -584,6 +602,7 @@ function cardFor(actor, selected) {
     ${weirLive(selected, world.hour) ? `<p class="muted">${selected.weir} nets hold through hour ${selected.weirUntil - 1}. This hour they yield ${weirYield(selected, world.hour).grain} grain and ${weirYield(selected, world.hour).gold} gold. A sack tears them up.</p>` : ""}
     ${timberYards(selected) > 0 ? `<p class="muted">${timberYards(selected)} timber ${timberYards(selected) === 1 ? "yard stands" : "yards stand"} on the woods. Each pays 26 gold an hour, and a causeway costs 180 gold. A sack can burn one stack.</p>` : ""}
     ${quarryPits(selected) > 0 ? `<p class="muted">${quarryPits(selected)} ${quarryPits(selected) === 1 ? "quarry cuts" : "quarries cut"} the hills. Each pays 22 gold an hour and 5 defense. Keeps and barracks cost 40 gold less per face. A sack can collapse one pit.</p>` : ""}
+    ${siegeNote(actor, selected)}
     ${!self && roadLive(actor, selected.id, world.hour) ? `<p class="muted">Your causeway holds through hour ${actor.roads[selected.id] - 1}. Caravans on it haul a quarter more. A march tears the stones up.</p>` : ""}
     ${self ? "" : `<p class="muted">${esc(oddsLine(actor, selected))}</p>`}`;
   if (self) {
@@ -675,6 +694,8 @@ function cardFor(actor, selected) {
       ${fresh ? `<button class="btn" type="button" data-relief="1">Relief · 360 grain</button>` : ""}
       ${fresh && roadLive(actor, selected.id, world.hour) ? `<button class="btn" type="button" disabled>Causeway through hour ${actor.roads[selected.id] - 1}</button>` : ""}
       ${fresh && !roadLive(actor, selected.id, world.hour) ? `<button class="btn primary" type="button" data-road="1">Causeway · ${timberYards(actor) > 0 ? 180 : 220}g · +${formatUtopia(EARN.road)}</button>` : ""}
+      ${fresh && siegeLive(actor, world.hour) && actor.siege.target === selected.id ? `<button class="btn" type="button" disabled>Siege through hour ${actor.siege.until - 1}</button>` : ""}
+      ${fresh && !(siegeLive(actor, world.hour) && actor.siege.target === selected.id) ? `<button class="btn danger" type="button" data-siege="1">Pitch siege · 260g · +${formatUtopia(EARN.siege)}</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn primary" type="button" data-ransom="1">Ransom ${actor.pens[selected.id]}</button>` : ""}
       ${(actor.pens && actor.pens[selected.id]) ? `<button class="btn" type="button" data-release="1">Release ${actor.pens[selected.id]}</button>` : ""}
       <button class="btn" type="button" data-thief="scout">Scout</button>
@@ -752,6 +773,7 @@ function ledgerLine(actor) {
     ["weirs", book.weir],
     ["yards", book.timber],
     ["quarries", book.quarry],
+    ["sieges", book.siege],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1133,6 +1155,7 @@ function bindMap(canvas) {
       if (event.key.toLowerCase() === "g" && world) order({ type: "weir" }, "build");
       if (event.key.toLowerCase() === "t" && world) order({ type: "timber" }, "build");
       if (event.key.toLowerCase() === "k" && world) order({ type: "quarry" }, "build");
+      if (event.key.toLowerCase() === "z" && world && selectedId && selectedId !== seat().id) order({ type: "siege", target: selectedId }, "battle");
       if (event.key.toLowerCase() === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
       if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
@@ -1272,6 +1295,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.quarry) {
     order({ type: "quarry" }, "build");
+    return;
+  }
+  if (node.dataset.siege) {
+    order({ type: "siege", target: selectedId }, "battle");
     return;
   }
   if (node.dataset.inn) {

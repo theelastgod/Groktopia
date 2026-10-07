@@ -41,6 +41,7 @@ export const EARN = {
   weir: 35,
   timber: 34,
   quarry: 37,
+  siege: 39,
 };
 
 export const FACTIONS = {
@@ -465,6 +466,7 @@ export function blankProvince(partial) {
     innUntil: 0,
     weir: 0,
     weirUntil: 0,
+    siege: null,
   };
   const p = { ...base, ...partial };
   if (partial && partial.buildings) p.buildings = { ...base.buildings, ...partial.buildings };
@@ -827,6 +829,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "weir") result = doWeir(world, actor);
   else if (action.type === "timber") result = doTimber(world, actor);
   else if (action.type === "quarry") result = doQuarry(world, actor);
+  else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -1893,6 +1896,107 @@ function onCooldown(actor, target, hour) {
   return last != null && hour - last < COOLDOWN;
 }
 
+export function siegeLive(p, hour) {
+  return Boolean(p && p.siege && p.siege.target && (p.siege.until || 0) > (hour || 0) && (p.siege.men || 0) > 0);
+}
+
+function settleSiege(p, hour) {
+  if (!p || !p.siege) return;
+  if ((p.siege.until || 0) > (hour || 0)) return;
+  p.soldiers += p.siege.men || 0;
+  p.siege = null;
+}
+
+function pressSieges(world) {
+  const hour = world.hour || 0;
+  for (const actor of world.provinces) {
+    if (!siegeLive(actor, hour)) continue;
+    const target = byId(world, actor.siege.target);
+    if (!target) {
+      actor.soldiers += actor.siege.men || 0;
+      actor.siege = null;
+      continue;
+    }
+    const bite = Math.min(target.grain, 36);
+    target.grain -= bite;
+    const push = actor.siege.men * 8 + 24;
+    if (push > defense(target) * 0.35) {
+      const hits = soakedHits(target, hour, 1);
+      if (hits > 0) {
+        const keys = Object.keys(target.buildings).filter((k) => target.buildings[k] > 0);
+        if (keys.length) {
+          const k = keys[Math.floor(world.rng.next() * keys.length)];
+          target.buildings[k] -= 1;
+          log(world, `${actor.name}'s siege works eat ${bite} grain at ${target.name}. A ${k} falls.`);
+        } else {
+          log(world, `${actor.name}'s siege works eat ${bite} grain at ${target.name}.`);
+        }
+      } else {
+        log(world, `${actor.name}'s siege works eat ${bite} grain at ${target.name}. The levee holds the sap.`);
+      }
+    } else {
+      actor.siege.men -= 1;
+      if (actor.siege.men < 4) {
+        const left = actor.siege.men;
+        actor.soldiers += left;
+        actor.siege = null;
+        log(world, `${actor.name}'s siege works eat ${bite} grain, then the wall throws them back. ${left} soldiers limp home.`);
+      } else {
+        log(world, `${actor.name}'s siege works eat ${bite} grain at ${target.name}. The wall drops one sapper.`);
+      }
+    }
+  }
+}
+
+function doSiege(world, actor, targetId) {
+  const target = byId(world, targetId);
+  if (!target || target.id === actor.id) return fail("Pick another province.");
+  if (siegeLive(actor, world.hour)) {
+    const camp = byId(world, actor.siege.target);
+    return fail(`Siege works already sit outside ${camp ? camp.name : "a camp"} through hour ${actor.siege.until - 1}.`);
+  }
+  settleSiege(actor, world.hour || 0);
+  if (actor.kind === "human" && !intelFresh(actor, target.id, world.hour)) return fail("Scout the camp before the works can sit.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 260) return fail("Siege works want 260 gold.");
+  if (actor.soldiers < 18) return fail("Need 18 soldiers. Eight man the works and ten stay home.");
+  if (onCooldown(actor, target, world.hour)) return fail("That province is still under the two-hour truce of your last march.");
+  if (nwFactor(actor, target) <= 0) return fail("Networth sits outside the fair band. No siege.");
+  if (pactLive(actor, target.id, world.hour)) {
+    delete actor.pacts[target.id];
+    if (target.pacts) delete target.pacts[actor.id];
+    log(world, `${actor.name} breaks the pact with ${target.name}.`);
+  }
+  actor.gold -= 260;
+  actor.soldiers -= 8;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.siege = { target: target.id, until: (world.hour || 0) + 4, men: 8 };
+  target.grudge = actor.id;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.siege;
+    notePurse(actor, "siege", EARN.siege);
+    purse = ` Purse +${formatUtopia(EARN.siege)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} pitches siege works outside ${target.name} through hour ${actor.siege.until - 1}. Eight soldiers sap the wall. A march spends the works and hits harder. A winning blow against ${actor.name} breaks the camp.${purse}`);
+  return { ok: true, message: `Siege works through hour ${actor.siege.until - 1}.${purse}` };
+}
+
+export function growRival(world, agent) {
+  if (!agent || agent.kind !== "agent") return false;
+  if (agent.gold < 350 || agent.peasants < 30) return false;
+  if (agent.land >= 380) return false;
+  agent.land += 4;
+  agent.gold -= 80;
+  claimTiles(world, agent, 1);
+  const pref = { harrow: "barracks", sable: "keep", vellum: "spire", quill: "den", brine: "workshop", moss: "field" }[agent.persona] || "field";
+  if (agent.buildings && agent.buildings[pref] != null && freeLand(agent) >= 1) agent.buildings[pref] += 1;
+  const cap = (agent.buildings.hearth || 0) * 16;
+  if (cap > agent.peasants) agent.peasants = Math.min(cap, agent.peasants + 6);
+  return true;
+}
+
 function doAttack(world, actor, action) {
   const target = byId(world, action.target);
   const mode = action.mode;
@@ -1916,7 +2020,13 @@ function doAttack(world, actor, action) {
     return fail("Agents do not stake. March them for the earn.");
   }
 
-  const off = offense(actor);
+  let breach = 1;
+  if (siegeLive(actor, world.hour) && actor.siege.target === target.id) {
+    actor.soldiers += actor.siege.men || 0;
+    actor.siege = null;
+    breach = 1.12;
+  }
+  const off = Math.floor(offense(actor) * breach);
   const defn = defense(target);
   const win = off > defn;
   const ratio = off / Math.max(1, defn);
@@ -2013,6 +2123,11 @@ function doAttack(world, actor, action) {
     if (n > 0 && hits < rawHits) detail += ". The levee took one blow";
   } else {
     detail = "was thrown back";
+  }
+  if (breach > 1) detail += ". The siege works joined the assault";
+  if (win && siegeLive(target, world.hour)) {
+    target.siege = null;
+    detail += " and broke the siege works";
   }
 
   let earned = 0;
@@ -2240,6 +2355,7 @@ function economy(p, hour) {
 
 export function advanceHour(world) {
   for (const p of world.provinces) economy(p, world.hour || 0);
+  pressSieges(world);
   for (const p of world.provinces) {
     if (!beaconLit(p, world.hour || 0)) continue;
     const sweep = watchSweep(world, p);
@@ -2258,7 +2374,15 @@ export function advanceHour(world) {
   for (const p of world.provinces) settleHospice(p, world.hour);
   for (const p of world.provinces) settleInn(p, world.hour);
   for (const p of world.provinces) settleWeir(p, world.hour);
+  for (const p of world.provinces) settleSiege(p, world.hour);
   expireBounties(world);
+  if (world.hour % 3 === 0) {
+    let grown = 0;
+    for (const p of world.provinces) {
+      if (p.kind === "agent" && growRival(world, p)) grown += 1;
+    }
+    if (grown) log(world, `${grown} wild holdings push their fences.`);
+  }
   if (seasonName(world.hour) !== prevSeason) log(world, `${seasonName(world.hour)} comes across the realm.`);
   const agents = world.provinces.filter((p) => p.kind === "agent");
   for (const agent of agents) {
@@ -2334,8 +2458,11 @@ export function chooseAction(world, agent) {
   const site = nearestOpenSite(world, agent);
   if (site && rng.next() < 0.18) return { type: "clear", site: site.id };
   if (agent.persona === "harrow") {
+    if (siegeLive(agent, world.hour)) return trainBias(agent) || buildIf(agent, "barracks") || buildIf(agent, "field");
     const marked = weakestWin(world, agent, (p) => bountyOn(world, p.id, world.hour) && defense(p) < offense(agent) * 1.05);
     if (marked && rng.next() < 0.85) return { type: "attack", target: marked.id, mode: "seize" };
+    const camp = weakestWin(world, agent, (p) => defense(p) < offense(agent) * 1.2 && defense(p) > offense(agent) * 0.55);
+    if (camp && agent.soldiers >= 18 && agent.gold >= 260 && rng.next() < 0.42) return { type: "siege", target: camp.id };
     const prey = weakestWin(world, agent, (p) => defense(p) < offense(agent) * 0.98);
     if (prey && rng.next() < 0.8) return { type: "attack", target: prey.id, mode: "seize" };
     return trainBias(agent) || buildIf(agent, "barracks") || buildIf(agent, "field");
@@ -2343,11 +2470,20 @@ export function chooseAction(world, agent) {
   if (agent.persona === "sable") {
     const ownsStone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (quarryPits(agent) < 2 && ownsStone && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.18) return { type: "quarry" };
+    if (siegeLive(agent, world.hour)) {
+      if (agent.aether > 70 && agent.spells.bulwark <= 0 && agent.mystics > 0 && agent.orders > 0 && rng.next() < 0.4) {
+        return { type: "spell", spell: "bulwark" };
+      }
+      return buildIf(agent, "keep") || trainBias(agent) || buildIf(agent, "barracks");
+    }
     if (agent.grudge) {
       const foe = byId(world, agent.grudge);
       if (foe && nwFactor(agent, foe) > 0 && !onCooldown(agent, foe, world.hour) && offense(agent) > defense(foe) * 0.9) {
         agent.grudge = null;
         return { type: "attack", target: foe.id, mode: "seize" };
+      }
+      if (foe && nwFactor(agent, foe) > 0 && !onCooldown(agent, foe, world.hour) && agent.soldiers >= 18 && agent.gold >= 260 && offense(agent) > defense(foe) * 0.62 && rng.next() < 0.45) {
+        return { type: "siege", target: foe.id };
       }
     }
     if (agent.aether > 70 && agent.spells.bulwark <= 0 && agent.mystics > 0 && agent.orders > 0 && rng.next() < 0.4) {
