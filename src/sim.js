@@ -75,6 +75,7 @@ export const EARN = {
   look: 69,
   pale: 70,
   cooper: 71,
+  pan: 72,
 };
 
 export const FACTIONS = {
@@ -945,6 +946,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "wheel") result = doWheel(world, actor);
   else if (action.type === "look") result = doLook(world, actor);
   else if (action.type === "pale") result = doPale(world, actor);
+  else if (action.type === "pan") result = doPan(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -1955,6 +1957,36 @@ function doPale(world, actor) {
   }
   log(world, `${actor.name} raises ${sites.length} palisade ${sites.length === 1 ? "stake" : "stakes"}. Each adds 4 to the wall and pays 4 gold an hour. A sack breaks one.${purse}`);
   return { ok: true, message: `${sites.length} stakes raised.${purse}` };
+}
+
+function saltGround(tile) {
+  if (!tile) return false;
+  const kind = terrainKind(tile.q, tile.r);
+  if (kind === "marsh") return true;
+  return waterTouch(tile);
+}
+
+function doPan(world, actor) {
+  ensurePlots(world);
+  const held = (actor.plots || []).filter((tile) => tile.crew === "pan").length;
+  if (held >= 2) return fail("Two salt pans already dry on the shore.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 150) return fail("A salt pan wants 150 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && saltGround(tile));
+  if (!plot) return fail("A salt pan needs a hand or an open lot on marsh, coast, or a river bank.");
+  actor.gold -= 150;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "pan";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.pan;
+    notePurse(actor, "pan", EARN.pan);
+    purse = ` Purse +${formatUtopia(EARN.pan)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} cuts a salt pan on a ${kind} tile. It pays 16 gold an hour. A sack spoils one pan.${purse}`);
+  return { ok: true, message: `Salt pan on the ${kind} tile.${purse}` };
 }
 
 export function stonePrice(actor, key) {
@@ -4221,6 +4253,15 @@ function doAttack(world, actor, action) {
       paleTile.crew = "hand";
       stake = " and broke a palisade stake";
     }
+    let crust = "";
+    const pan = (target.plots || []).find((tile) => tile.crew === "pan");
+    if (pan) {
+      const cake = Math.min(target.gold, 28);
+      target.gold -= cake;
+      g += cake;
+      pan.crew = "hand";
+      crust = " and spoiled a salt pan";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4231,7 +4272,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4435,6 +4476,7 @@ function economy(world, p, hour) {
     }
     else if (tile.crew === "look") goldIn += 6;
     else if (tile.crew === "pale") goldIn += 4;
+    else if (tile.crew === "pan") goldIn += 16;
   }
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
@@ -4750,6 +4792,9 @@ export function chooseAction(world, agent) {
     if (!ferryLive && ferryPair(agent) && agent.gold >= 600 && agent.orders >= 1 && rng.next() < 0.1) return { type: "ferry" };
     const cooperPort = (agent.colonies || []).find((colony) => colony.port && !colony.cooper);
     if (cooperPort && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.1) return { type: "cooper", colony: cooperPort.id };
+    const pans = (agent.plots || []).filter((tile) => tile.crew === "pan").length;
+    const brineWet = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && saltGround(tile));
+    if (pans < 2 && brineWet && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "pan" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };

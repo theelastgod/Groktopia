@@ -4095,6 +4095,88 @@ test("a palisade stakes the edge and a sack breaks one", () => {
   assert.ok(raid.log.some((row) => row.text.includes("broke a palisade stake")));
 });
 
+test("a salt pan pays from wet ground and a sack spoils one", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.pan, 72);
+  assert.equal(EARN.cooper, 71);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  const wet = (you.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && waterTouch(tile));
+  assert.ok(wet);
+  let dry = null;
+  let wet2 = null;
+  for (let q = -24; q <= 24 && (!dry || !wet2); q++) {
+    for (let r = -24; r <= 24; r++) {
+      const kind = terrainKind(q, r);
+      const tile = { q, r };
+      if (!dry && kind === "grass" && !waterTouch(tile)) dry = tile;
+      if (!wet2 && waterTouch(tile) && (q !== wet.q || r !== wet.r)) wet2 = tile;
+    }
+  }
+  assert.ok(dry);
+  assert.ok(wet2);
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.muster = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.ferries = [];
+  you.plots = [{ q: dry.q, r: dry.r, crew: "hand" }];
+  you.grain = 5000;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.studies = {};
+  you.marks = {};
+  you.relics = {};
+  you.spells = { bulwark: 0, fury: 0, shade: 0 };
+  assert.equal(applyAction(w, "you", { type: "pan" }).ok, false);
+  you.plots = [{ q: wet.q, r: wet.r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "pan" }).ok, false);
+  you.gold = 1000;
+  const first = applyAction(w, "you", { type: "pan" });
+  assert.equal(first.ok, true, first.message);
+  assert.equal(you.plots[0].crew, "pan");
+  assert.equal(you.gold, 850);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.pan, EARN.pan);
+  you.plots.push({ q: wet2.q, r: wet2.r, crew: "hand" });
+  const second = applyAction(w, "you", { type: "pan" });
+  assert.equal(second.ok, true, second.message);
+  assert.equal(you.plots.filter((tile) => tile.crew === "pan").length, 2);
+  assert.equal(you.gold, 700);
+  assert.equal(you.ledger.pan, EARN.pan * 2);
+  assert.equal(applyAction(w, "you", { type: "pan" }).ok, false);
+  advanceHour(w);
+  assert.equal(you.gold, 732);
+  assert.equal(you.grain, 5000);
+  assert.equal(you.utopia, EARN.pan * 2 + EARN.hourActive);
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.plots = [{ q: wet.q, r: wet.r, crew: "pan" }, { q: wet2.q, r: wet2.r, crew: "pan" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots.filter((tile) => tile.crew === "pan").length, 1);
+  assert.ok(raid.log.some((row) => row.text.includes("spoiled a salt pan")));
+});
+
 test("a port cooperage pays gold and cuts the next hull", () => {
   assert.equal(ORDERS, 10);
   assert.equal(TICK_MS, 60 * 1000);
