@@ -76,6 +76,7 @@ export const EARN = {
   pale: 70,
   cooper: 71,
   pan: 72,
+  grove: 73,
 };
 
 export const FACTIONS = {
@@ -947,6 +948,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "look") result = doLook(world, actor);
   else if (action.type === "pale") result = doPale(world, actor);
   else if (action.type === "pan") result = doPan(world, actor);
+  else if (action.type === "grove") result = doGrove(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -1987,6 +1989,35 @@ function doPan(world, actor) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} cuts a salt pan on a ${kind} tile. It pays 16 gold an hour. A sack spoils one pan.${purse}`);
   return { ok: true, message: `Salt pan on the ${kind} tile.${purse}` };
+}
+
+function fieldGround(tile) {
+  if (!tile) return false;
+  const kind = terrainKind(tile.q, tile.r);
+  return kind === "grass" || kind === "plain";
+}
+
+function doGrove(world, actor) {
+  ensurePlots(world);
+  const held = (actor.plots || []).filter((tile) => tile.crew === "grove").length;
+  if (held >= 2) return fail("Two groves already stand in the fields.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 160) return fail("A grove wants 160 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A grove needs a hand or an open lot on grass or plain.");
+  actor.gold -= 160;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "grove";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.grove;
+    notePurse(actor, "grove", EARN.grove);
+    purse = ` Purse +${formatUtopia(EARN.grove)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} plants a grove on a ${kind} tile. It pays 24 grain and 4 gold an hour. A sack burns one grove.${purse}`);
+  return { ok: true, message: `Grove on the ${kind} tile.${purse}` };
 }
 
 export function stonePrice(actor, key) {
@@ -4262,6 +4293,15 @@ function doAttack(world, actor, action) {
       pan.crew = "hand";
       crust = " and spoiled a salt pan";
     }
+    let ashes = "";
+    const grove = (target.plots || []).find((tile) => tile.crew === "grove");
+    if (grove) {
+      const fruit = Math.min(target.grain, 34);
+      target.grain -= fruit;
+      f += fruit;
+      grove.crew = "hand";
+      ashes = " and burned a grove";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4272,7 +4312,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4477,6 +4517,10 @@ function economy(world, p, hour) {
     else if (tile.crew === "look") goldIn += 6;
     else if (tile.crew === "pale") goldIn += 4;
     else if (tile.crew === "pan") goldIn += 16;
+    else if (tile.crew === "grove") {
+      foodIn += 24;
+      goldIn += 4;
+    }
   }
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
@@ -4938,6 +4982,9 @@ export function chooseAction(world, agent) {
     if (!hospiceUp(agent, world.hour) && agent.gold >= 500 && agent.grain >= 800 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "hospice" };
     }
+    const groves = (agent.plots || []).filter((tile) => tile.crew === "grove").length;
+    const field = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+    if (groves < 2 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "grove" };
     const wheels = tideWheels(agent);
     const wetLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
     if (wheels < 1 && wetLot && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) return { type: "wheel" };

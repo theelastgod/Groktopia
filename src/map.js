@@ -330,6 +330,30 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawGrove(ctx, x, y, time) {
+  const bob = Math.sin(time * 1.6 + y) * 1.1;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.fillStyle = "#2f6a3a";
+  ctx.beginPath();
+  ctx.arc(-7, -2, 6, 0, Math.PI * 2);
+  ctx.arc(6, -1, 7, 0, Math.PI * 2);
+  ctx.arc(0, 4, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c4483a";
+  ctx.beginPath();
+  ctx.arc(-8, -3, 1.4, 0, Math.PI * 2);
+  ctx.arc(5, -4, 1.4, 0, Math.PI * 2);
+  ctx.arc(8, 1, 1.4, 0, Math.PI * 2);
+  ctx.arc(-1, 3, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7d9a62";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("GROVE", 0, 18);
+  ctx.restore();
+}
+
 function drawPan(ctx, x, y, time) {
   const glint = 0.45 + Math.sin(time * 2.4 + x) * 0.2;
   ctx.save();
@@ -585,6 +609,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "look") drawLookout(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "pale") { /* stakes already drawn */ }
     else if (plot && plot.crew === "pan") { /* pans already drawn */ }
+    else if (plot && plot.crew === "grove") drawGrove(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
