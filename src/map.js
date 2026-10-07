@@ -2672,6 +2672,10 @@ function drawWreck(ctx, x, y, time) {
   ctx.moveTo(-2, 0);
   ctx.lineTo(6, -12);
   ctx.stroke();
+  ctx.fillStyle = "#e2c078";
+  ctx.beginPath();
+  ctx.arc(8, -7 + Math.sin(time * 4) * 1.2, 2.4, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 
@@ -2718,6 +2722,24 @@ function drawColonies(ctx, world, time) {
       ctx.font = "700 11px Palatino, Georgia, serif";
       ctx.textAlign = "center";
       ctx.fillText("BLOCKADE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
+    }
+    for (const ship of realm.ships || []) {
+      if (!ship.salvage) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(ship.salvage.q, ship.salvage.r);
+      ctx.strokeStyle = "rgba(226, 192, 120, 0.9)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 5]);
+      ctx.lineDashOffset = -time * 14;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#e2c078";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("SALVAGE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
     }
   }
   for (const realm of world.provinces || []) {

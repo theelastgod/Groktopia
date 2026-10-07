@@ -2256,6 +2256,53 @@ test("a war hull blockades a port, cuts the fish, and takes gold while it sits",
   assert.equal(you.ships[0].block, null);
 });
 
+test("a hull salvages a wreck and takes the timber", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.salvage, 48);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.plots = [];
+  you.colonies = [];
+  you.founders = [];
+  you.gold = 1000;
+  you.grain = 5000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.kind = "human";
+  you.ships = [{ id: "fish", kind: "fisher", q: 34, r: -18, destQ: null, destR: null }];
+  assert.equal(applyAction(w, "you", { type: "salvage", ship: "fish", q: 36, r: -18 }).ok, false);
+  assert.equal(you.orders, ORDERS);
+  w.wrecks = [{ q: 36, r: -18, kind: "fisher", gold: 40 + NAVY.fisher.teeth * 12, until: 6 }];
+  const sent = applyAction(w, "you", { type: "salvage", ship: "fish", q: 36, r: -18 });
+  assert.equal(sent.ok, true);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.deepEqual(you.ships[0].salvage, { q: 36, r: -18 });
+  assert.equal(applyAction(w, "you", { type: "direct", unit: "ship", id: "fish", q: 35, r: -18 }).ok, true);
+  assert.equal(you.ships[0].salvage, null);
+  assert.equal(w.wrecks.length, 1);
+  assert.equal(applyAction(w, "you", { type: "salvage", ship: "fish", q: 36, r: -18 }).ok, true);
+  advanceHour(w);
+  assert.equal(you.ships[0].q, 36);
+  assert.equal(you.ships[0].r, -18);
+  assert.equal(you.ships[0].salvage, null);
+  assert.equal(w.wrecks.length, 0);
+  assert.equal(you.gold, 1000 + 40 + NAVY.fisher.teeth * 12);
+  assert.equal(you.ledger.salvage, EARN.salvage);
+  assert.equal(you.utopia, EARN.salvage + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("salvages a wrecked Fisher")));
+});
+
 test("wild holdings push their fences when the gold holds", () => {
   const w = newWorld({ seed: 2 });
   const moss = byId(w, "moss");

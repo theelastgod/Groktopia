@@ -51,6 +51,7 @@ export const EARN = {
   hull: 43,
   prize: 46,
   block: 47,
+  salvage: 48,
 };
 
 export const FACTIONS = {
@@ -874,6 +875,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "hull") result = doHull(world, actor, action.hull);
   else if (action.type === "grapple") result = doGrapple(world, actor, action);
   else if (action.type === "blockade") result = doBlockade(world, actor, action);
+  else if (action.type === "salvage") result = doSalvage(world, actor, action);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2314,6 +2316,7 @@ function doDirect(world, actor, action) {
     if (!sailKind(kind)) return fail("A hull only takes sea, coast, or river.");
     ship.prey = null;
     ship.block = null;
+    ship.salvage = null;
     ship.destQ = q;
     ship.destR = r;
   } else {
@@ -2380,6 +2383,7 @@ function doGrapple(world, actor, action) {
   if (!prey || prey.realm.id === actor.id) return fail("Name another ruler's hull.");
   if (!sailKind(terrainKind(prey.ship.q, prey.ship.r))) return fail("That hull is not on the water.");
   own.block = null;
+  own.salvage = null;
   own.prey = { owner: prey.realm.id, id: prey.ship.id };
   own.destQ = prey.ship.q;
   own.destR = prey.ship.r;
@@ -2410,6 +2414,7 @@ function doBlockade(world, actor, action) {
   const berth = waterBeside(mark.colony.q, mark.colony.r);
   if (!berth) return fail("That port has no water to close.");
   own.prey = null;
+  own.salvage = null;
   own.block = { owner: mark.realm.id, id: mark.colony.id };
   own.destQ = berth.q;
   own.destR = berth.r;
@@ -2442,14 +2447,72 @@ function blockadeAt(world, victim, colony) {
   return found;
 }
 
+function wreckGold(kind) {
+  return 40 + hullTeeth(kind) * 12;
+}
+
+function liveWreck(world, q, r) {
+  const hour = world.hour || 0;
+  return (world.wrecks || []).find((row) => row.q === q && row.r === r && (row.until || 0) > hour) || null;
+}
+
 function dropWreck(world, ship) {
   world.wrecks = world.wrecks || [];
   world.wrecks.push({
     q: ship.q,
     r: ship.r,
     kind: ship.kind,
+    gold: wreckGold(ship.kind),
     until: (world.hour || 0) + 4,
   });
+}
+
+function doSalvage(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === action.ship);
+  if (!own) return fail("That hull is not yours.");
+  const q = action.q | 0;
+  const r = action.r | 0;
+  const wreck = liveWreck(world, q, r);
+  if (!wreck) return fail("No wreck rides there.");
+  if (!sailKind(terrainKind(q, r))) return fail("A hull cannot reach that wreck.");
+  own.prey = null;
+  own.block = null;
+  own.salvage = { q, r };
+  own.destQ = q;
+  own.destR = r;
+  actor.orders -= 1;
+  actor.acted = true;
+  const spec = NAVY[own.kind];
+  const sunk = NAVY[wreck.kind];
+  log(world, `${actor.name} sends the ${spec ? spec.name : "hull"} after a wrecked ${sunk ? sunk.name : "hull"}.`);
+  return { ok: true, message: `${spec ? spec.name : "Hull"} is bound for the wreck.` };
+}
+
+function resolveSalvage(world) {
+  const hour = world.hour || 0;
+  for (const realm of world.provinces || []) {
+    for (const ship of realm.ships || []) {
+      if (!ship.salvage) continue;
+      const wreck = (world.wrecks || []).find((row) => row.q === ship.q && row.r === ship.r && (row.until || 0) > hour);
+      if (!wreck) {
+        if (ship.q === ship.salvage.q && ship.r === ship.salvage.r) ship.salvage = null;
+        continue;
+      }
+      const take = Number.isFinite(wreck.gold) ? wreck.gold : wreckGold(wreck.kind);
+      realm.gold += take;
+      let purse = "";
+      if (realm.kind === "human") {
+        realm.utopia += EARN.salvage;
+        notePurse(realm, "salvage", EARN.salvage);
+        purse = ` Purse +${formatUtopia(EARN.salvage)} $UTOPIA.`;
+      }
+      const spec = NAVY[wreck.kind];
+      log(world, `${realm.name} salvages a wrecked ${spec ? spec.name : "hull"} for ${take} gold.${purse}`);
+      world.wrecks = (world.wrecks || []).filter((row) => row !== wreck);
+      ship.salvage = null;
+    }
+  }
 }
 
 function payPrize(world, winner, loser, sunk) {
@@ -2500,8 +2563,6 @@ function resolveGrapples(world) {
       if (ship.prey && !findHull(world, ship.prey.owner, ship.prey.id)) ship.prey = null;
     }
   }
-  const hour = world.hour || 0;
-  world.wrecks = (world.wrecks || []).filter((row) => (row.until || 0) > hour);
 }
 
 function sailHour(world) {
@@ -2534,6 +2595,13 @@ function sailHour(world) {
           ship.destQ = berth.q;
           ship.destR = berth.r;
         }
+      } else if (ship.salvage) {
+        const wreck = liveWreck(world, ship.salvage.q, ship.salvage.r);
+        if (!wreck) ship.salvage = null;
+        else {
+          ship.destQ = wreck.q;
+          ship.destR = wreck.r;
+        }
       }
       if (ship.destQ == null) continue;
       const spec = NAVY[ship.kind];
@@ -2548,6 +2616,9 @@ function sailHour(world) {
     }
   }
   resolveGrapples(world);
+  resolveSalvage(world);
+  const hour = world.hour || 0;
+  world.wrecks = (world.wrecks || []).filter((row) => (row.until || 0) > hour);
 }
 
 export function keelUp(p, hour) {
@@ -3345,6 +3416,11 @@ export function chooseAction(world, agent) {
     }
     if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "keel" };
+    }
+    const salvor = (agent.ships || []).find((row) => !row.prey && !row.block && !row.salvage);
+    const wreck = salvor && (world.wrecks || []).find((row) => (row.until || 0) > (world.hour || 0) && hexDist(salvor.q, salvor.r, row.q, row.r) <= 12);
+    if (salvor && wreck && agent.orders >= 1 && rng.next() < 0.22) {
+      return { type: "salvage", ship: salvor.id, q: wreck.q, r: wreck.r };
     }
     const hunter = (agent.ships || []).find((row) => hullTeeth(row.kind) >= WAR_TEETH && !row.prey && !row.block);
     if (hunter && !hunter.block && agent.orders >= 1 && rng.next() < 0.18) {
