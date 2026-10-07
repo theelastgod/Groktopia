@@ -1,6 +1,6 @@
 /** Groktopia realm rules. Original numbers. Earn unit is cents of $UTOPIA (100 = 1). */
 
-export const ORDERS = 4;
+export const ORDERS = 10;
 export const MIN_LAND = 40;
 export const COOLDOWN = 2;
 
@@ -526,6 +526,7 @@ export function newWorld(opts = {}) {
   const world = {
     seed,
     hour: 0,
+    orderCap: ORDERS,
     seat: "you",
     burned: 0,
     provinces: [you, ...agents],
@@ -2363,6 +2364,14 @@ export function hydrate(raw) {
   data.sites = data.sites && data.sites.length ? data.sites : freshSites();
   const world = { ...data, rng: makeRng(rngState) };
   ensurePlots(world);
+  const cap = world.orderCap || 4;
+  if (cap < ORDERS) {
+    const grant = ORDERS - cap;
+    for (const p of world.provinces || []) {
+      if (typeof p.orders === "number") p.orders += grant;
+    }
+    world.orderCap = ORDERS;
+  }
   return world;
 }
 
@@ -2480,6 +2489,7 @@ export function createOpenRealm(seed = 1) {
   const world = {
     seed,
     hour: 0,
+    orderCap: ORDERS,
     seat: null,
     burned: 0,
     closed: false,
