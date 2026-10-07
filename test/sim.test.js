@@ -3339,6 +3339,85 @@ test("a war hull lands a company on an enemy quay", () => {
   assert.equal(applyAction(w, "you", { type: "raid", ship: "galley", owner: "you", colony: "home" }).ok, false);
 });
 
+test("a quay watch throws a landing back and then comes home", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.quay, 62);
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.nets = [];
+    seat.buoys = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const w = newWorld({ seed: 5 });
+  w.bands = [];
+  const you = hush(w, "you");
+  const foe = hush(w, "brine");
+  w.provinces = [you, foe];
+  you.colonies = [{ id: "home", name: "Salt Step", q: spot.q, r: spot.r, port: false }];
+  assert.equal(applyAction(w, "you", { type: "quay", colony: "home" }).ok, false);
+  you.colonies[0].port = true;
+  you.soldiers = 3;
+  assert.equal(applyAction(w, "you", { type: "quay", colony: "home" }).ok, false);
+  you.soldiers = 4;
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "quay", colony: "home" }).ok, false);
+  you.gold = 1000;
+  const posted = applyAction(w, "you", { type: "quay", colony: "home" });
+  assert.equal(posted.ok, true);
+  assert.equal(you.soldiers, 0);
+  assert.equal(you.gold, 880);
+  assert.equal(you.colonies[0].quay, 4);
+  assert.equal(you.colonies[0].quayUntil, 6);
+  assert.equal(you.ledger.quay, EARN.quay);
+  assert.equal(applyAction(w, "you", { type: "quay", colony: "home" }).ok, false);
+  foe.ships = [{ id: "galley", kind: "galley", q: spot.q, r: spot.r, destQ: null, destR: null, marines: 6 }];
+  foe.orders = ORDERS;
+  const raid = applyAction(w, "brine", { type: "raid", ship: "galley", owner: "you", colony: "home" });
+  assert.equal(raid.ok, true);
+  const foeGold = foe.gold;
+  advanceHour(w);
+  assert.equal(you.grain, 5000 + 18);
+  assert.equal(you.colonies[0].quay, 3);
+  assert.equal(foe.ships[0].marines, 4);
+  assert.equal(foe.soldiers, 0);
+  assert.equal(foe.gold, foeGold + 4);
+  assert.equal(foe.ledger.raid || 0, 0);
+  assert.equal(you.utopia, EARN.quay + EARN.hourActive);
+  assert.ok(w.log.some((row) => row.text.includes("quay watch throws") && row.text.includes("Salt Step")));
+  you.colonies[0].quayUntil = w.hour;
+  advanceHour(w);
+  assert.equal(you.soldiers, 3);
+  assert.equal(you.colonies[0].quay, 0);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

@@ -65,6 +65,7 @@ export const EARN = {
   cut: 59,
   tile: 60,
   raid: 61,
+  quay: 62,
 };
 
 export const FACTIONS = {
@@ -904,6 +905,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "cargo") result = doCargo(world, actor, action);
   else if (action.type === "cut") result = doCut(world, actor, action);
   else if (action.type === "raid") result = doRaid(world, actor, action);
+  else if (action.type === "quay") result = doQuay(world, actor, action.colony);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2755,6 +2757,43 @@ function doRefit(world, actor, action) {
   return { ok: true, message: `${spec.name} refit at ${yard.name}.${purse}` };
 }
 
+function settleQuay(p, hour) {
+  if (!p) return;
+  for (const colony of p.colonies || []) {
+    if (!(colony.quayUntil > 0)) continue;
+    if (colony.quayUntil > hour) continue;
+    const home = colony.quay || 0;
+    colony.quay = 0;
+    colony.quayUntil = 0;
+    if (home > 0) p.soldiers += home;
+  }
+}
+
+function doQuay(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A quay watch needs a port.");
+  const hour = world.hour || 0;
+  if ((colony.quayUntil || 0) > hour) return fail(`${colony.name} already has a quay watch.`);
+  if ((actor.soldiers || 0) < 4) return fail("Need 4 soldiers to post a quay watch.");
+  if (actor.gold < 120) return fail("A quay watch wants 120 gold.");
+  actor.gold -= 120;
+  actor.soldiers -= 4;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.quay = 4;
+  colony.quayUntil = hour + 6;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.quay;
+    notePurse(actor, "quay", EARN.quay);
+    purse = ` Purse +${formatUtopia(EARN.quay)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} posts 4 soldiers on ${colony.name} through hour ${colony.quayUntil - 1}. A landing company is thrown back, and the quay lands 6 more grain.${purse}`);
+  return { ok: true, message: `Quay watch posted at ${colony.name} through hour ${colony.quayUntil - 1}.${purse}` };
+}
+
 function doMole(world, actor, colonyId) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   const colony = (actor.colonies || []).find((row) => row.id === colonyId);
@@ -3006,6 +3045,16 @@ function landRaid(world, realm, ship) {
     ship.raid = null;
     shoveOff(ship, mark.colony.q, mark.colony.r, 1);
     log(world, `${mark.colony.name}'s mole breaks ${realm.name}'s landing. ${lost} soldiers are lost.`);
+    return;
+  }
+  if ((mark.colony.quayUntil || 0) > hour && (mark.colony.quay || 0) > 0) {
+    const lost = Math.min(company, 2);
+    ship.marines = company - lost;
+    ship.raid = null;
+    mark.colony.quay -= 1;
+    if (mark.colony.quay <= 0) mark.colony.quayUntil = hour;
+    shoveOff(ship, mark.colony.q, mark.colony.r, 1);
+    log(world, `${mark.colony.name}'s quay watch throws ${realm.name}'s company back. ${lost} soldiers are lost.`);
     return;
   }
   const gold = Math.min(mark.realm.gold || 0, 36);
@@ -3934,6 +3983,7 @@ function economy(world, p, hour) {
     if (colony.wharf) goldIn += 8;
     if (!hold || (colony.slipUntil || 0) > hour) {
       foodIn += 12;
+      if ((colony.quayUntil || 0) > hour && (colony.quay || 0) > 0) foodIn += 6;
       if (hold) log(world, `${p.name} slips the boom at ${colony.name}. The quay lands its fish.`);
       continue;
     }
@@ -4022,6 +4072,7 @@ export function advanceHour(world) {
   world.hour += 1;
   for (const p of world.provinces) settleMuster(p, world.hour);
   for (const p of world.provinces) settlePatrol(p, world.hour);
+  for (const p of world.provinces) settleQuay(p, world.hour);
   for (const p of world.provinces) settleVein(p, world.hour);
   for (const p of world.provinces) settleSmith(p, world.hour);
   for (const p of world.provinces) settleSeal(p, world.hour);
@@ -4205,6 +4256,8 @@ export function chooseAction(world, agent) {
     if (leePort && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.16) {
       return { type: "lee", colony: leePort.id };
     }
+    const quayPort = (agent.colonies || []).find((colony) => colony.port && (colony.quayUntil || 0) <= (world.hour || 0) && (agent.soldiers || 0) >= 8 && agent.gold >= 300 && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hullTeeth(ship.kind) >= WAR_TEETH && hexDist(ship.q, ship.r, colony.q, colony.r) <= 8)));
+    if (quayPort && agent.orders >= 1 && rng.next() < 0.14) return { type: "quay", colony: quayPort.id };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };

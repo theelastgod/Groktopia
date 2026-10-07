@@ -2832,6 +2832,27 @@ function drawLee(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawQuay(ctx, x, y, time) {
+  const bob = Math.sin(time * 3) * 1.4;
+  ctx.save();
+  ctx.translate(x - 20, y + 8 + bob);
+  ctx.strokeStyle = "#cbb892";
+  ctx.lineWidth = 1.3;
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(i * 4, 8);
+    ctx.lineTo(i * 4 + 1, -6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#2f5c6e";
+  ctx.fillRect(-2, 6, 16, 3);
+  ctx.fillStyle = "#2f5c6e";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("WATCH", 6, 22);
+  ctx.restore();
+}
+
 function drawMole(ctx, x, y, time) {
   const flash = Math.sin(time * 5) > 0.35;
   ctx.save();
@@ -3049,6 +3070,7 @@ function drawColonies(ctx, world, time) {
       drawTown(ctx, pos.x, pos.y, colony.port);
       if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
+      if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.leeUntil || 0) > (world.hour || 0)) drawLee(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.slipUntil || 0) > (world.hour || 0)) drawSlip(ctx, pos.x, pos.y, time);
