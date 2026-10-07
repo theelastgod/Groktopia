@@ -644,7 +644,7 @@ function cardFor(actor, selected) {
   if (self) {
     const builds = Object.entries(BUILDINGS).map(([key, spec]) => {
       const cost = stonePrice(actor, key);
-      return `<button class="btn" type="button" data-build="${key}">${esc(spec.name)} ${actor.buildings[key]} · ${cost}g</button>`;
+      return `<button class="btn" type="button" data-build="${key}">${esc(spec.name)} ${actor.buildings[key]} · ${cost}g · on a tile</button>`;
     }).join("");
     let explore = 300 + actor.land * 3;
     if (actor.studies && actor.studies.charter) explore = Math.floor(explore * 0.85);
@@ -654,7 +654,7 @@ function cardFor(actor, selected) {
     }).join("");
     return `${head}
       <p class="muted">${esc(armsLine(actor))}</p>
-      <p class="muted">Click a structure to raise it on your acres. Soldiers ${actor.soldiers}/${soldierCap(actor)} · ${esc(f.elite)} ${actor.elites}/${eliteCap(actor)} · thieves ${actor.thieves}/${thiefCap(actor)} · mystics ${actor.mystics}/${mysticCap(actor)}. Food need ${foodNeed(actor)}. Aether ${actor.aether}.</p>
+      <p class="muted">Buy a tile beside your acres, then click a structure and the tile to raise it there. Soldiers ${actor.soldiers}/${soldierCap(actor)} · ${esc(f.elite)} ${actor.elites}/${eliteCap(actor)} · thieves ${actor.thieves}/${thiefCap(actor)} · mystics ${actor.mystics}/${mysticCap(actor)}. Food need ${foodNeed(actor)}. Aether ${actor.aether}.</p>
       <div class="row">${builds}</div>
       <div class="row">
         <button class="btn" type="button" data-train="soldier">Draft 10</button>
@@ -662,6 +662,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-train="thief">Train 2 thieves</button>
         <button class="btn" type="button" data-train="disband">Release 10</button>
         <button class="btn primary" type="button" id="explore">Settle 10 acres · 2 tiles · ${explore}g</button>
+        <button class="btn" type="button" data-buy="1">Buy a tile · click the map · +${formatUtopia(EARN.tile)}</button>
         <button class="btn" type="button" data-arm="foot">Foot · 80g</button>
         <button class="btn" type="button" data-arm="rider">Riders · 240g</button>
         <button class="btn" type="button" data-arm="engine">Catapults · 380g</button>
@@ -828,6 +829,7 @@ function ledgerLine(actor) {
     ["blockades", book.block],
     ["salvage", book.salvage],
     ["convoys", book.convoy],
+    ["tiles", book.tile],
     ["wharves", book.wharf],
     ["refits", book.refit],
     ["moles", book.mole],
@@ -1378,6 +1380,10 @@ function bindMap(canvas) {
           return;
         }
         order({ type: "convoy", ship: course.id, hull: hit.id }, "build");
+      } else if (course.unit === "buy" || course.unit === "raise") {
+        const axial = worldToAxial(point.x, point.y);
+        if (course.unit === "buy") order({ type: "buy", q: axial.q, r: axial.r }, "build");
+        else order({ type: "build", building: course.building, q: axial.q, r: axial.r }, "build");
       } else {
         const axial = worldToAxial(point.x, point.y);
         order({ type: "direct", unit: course.unit, id: course.id, q: axial.q, r: axial.r }, "build");
@@ -1445,7 +1451,7 @@ function bindMap(canvas) {
       const rect = mini.getBoundingClientRect();
       const sx = (event.clientX - rect.left) * (mini.width / rect.width);
       const sy = (event.clientY - rect.top) * (mini.height / rect.height);
-      const scale = mini.width / 13000;
+      const scale = mini.width / 24000;
       goal.x = (sx - mini.width / 2) / scale;
       goal.y = (sy - mini.height / 2) / scale;
     });
@@ -1649,7 +1655,15 @@ app.addEventListener("click", async (event) => {
     return;
   }
   if (node.dataset.build) {
-    order({ type: "build", building: node.dataset.build }, "build");
+    aim = { unit: "raise", building: node.dataset.build };
+    note("Click one of your tiles.");
+    paint();
+    return;
+  }
+  if (node.dataset.buy) {
+    aim = { unit: "buy" };
+    note("Click open ground beside your acres.");
+    paint();
     return;
   }
   if (node.id === "explore") {

@@ -63,6 +63,7 @@ export const EARN = {
   buoy: 57,
   cargo: 58,
   cut: 59,
+  tile: 60,
 };
 
 export const FACTIONS = {
@@ -324,9 +325,9 @@ export function terrainKind(q, r) {
   const { x, y } = axialToWorld(q, r);
   const n = hash(`hex:${q},${r}`);
   const edge = Math.hypot(x, y);
-  if (edge > 6400) return "sea";
-  if (edge > 6000) return "coast";
-  if (edge > 4200) return outerLand(n);
+  if (edge > 11600) return "sea";
+  if (edge > 11000) return "coast";
+  if (edge > 5600) return outerLand(n);
   if (edge > 3000) return "sea";
   if (edge > 2140) return "coast";
   if (riverDist(x, y) < 34) return "river";
@@ -845,9 +846,10 @@ export function applyAction(world, actorId, action) {
   const actor = byId(world, actorId);
   if (!actor) return fail("No such province.");
   let result = fail("Unknown order.");
-  if (action.type === "build") result = doBuild(world, actor, action.building);
+  if (action.type === "build") result = doBuild(world, actor, action.building, action);
   else if (action.type === "train") result = doTrain(world, actor, action);
   else if (action.type === "explore") result = doExplore(world, actor);
+  else if (action.type === "buy") result = doBuy(world, actor, action);
   else if (action.type === "arm") result = doArm(world, actor, action.unit);
   else if (action.type === "study") result = doStudy(world, actor, action.study);
   else if (action.type === "doctrine") result = doDoctrine(world, actor, action.doctrine);
@@ -910,18 +912,78 @@ export function applyAction(world, actorId, action) {
   return result;
 }
 
-function doBuild(world, actor, key) {
+function tilePrice(actor) {
+  let cost = 90 + (actor.plots || []).length * 6;
+  if (actor.studies && actor.studies.charter) cost = Math.floor(cost * 0.85);
+  return cost;
+}
+
+function touchesRealm(actor, q, r) {
+  const [x, y] = seatPoint(actor);
+  const seat = worldToAxial(x, y);
+  if (hexDist(q, r, seat.q, seat.r) <= 1) return true;
+  for (const tile of actor.plots || []) {
+    if (hexDist(q, r, tile.q, tile.r) <= 1) return true;
+  }
+  for (const colony of actor.colonies || []) {
+    if (hexDist(q, r, colony.q, colony.r) <= 1) return true;
+  }
+  return false;
+}
+
+function doBuy(world, actor, action) {
+  ensurePlots(world);
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const q = action.q | 0;
+  const r = action.r | 0;
+  const kind = terrainKind(q, r);
+  if (kind === "sea") return fail("Open sea cannot be bought.");
+  if (takenPlots(world).has(plotKey(q, r))) return fail("That tile is already held.");
+  if (!touchesRealm(actor, q, r)) return fail("Buy ground that touches your acres.");
+  const cost = tilePrice(actor);
+  if (actor.gold < cost) return fail(`That tile wants ${cost} gold.`);
+  actor.gold -= cost;
+  actor.orders -= 1;
+  actor.land += 4;
+  actor.acted = true;
+  actor.plots = actor.plots || [];
+  const tile = { q, r, crew: "hand" };
+  actor.plots.push(tile);
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.tile;
+    notePurse(actor, "tile", EARN.tile);
+    purse = ` Purse +${formatUtopia(EARN.tile)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} buys a ${kind} tile for ${cost} gold. A building can stand on it.${purse}`);
+  return { ok: true, message: `Bought a ${kind} tile for ${cost} gold.${purse}` };
+}
+
+function doBuild(world, actor, key, action) {
   const spec = BUILDINGS[key];
   if (!spec) return fail("Unknown building.");
+  let plot = null;
+  if (action && action.q != null && action.r != null) {
+    const q = action.q | 0;
+    const r = action.r | 0;
+    plot = (actor.plots || []).find((tile) => tile.q === q && tile.r === r);
+    if (!plot) return fail("Buy that tile before you raise a building.");
+    if (plot.structure) return fail("A building already stands on that tile.");
+    if (plot.crew && plot.crew !== "hand") return fail("That tile is already worked.");
+    const kind = terrainKind(q, r);
+    if (kind === "sea" || kind === "mount") return fail("That ground will not hold a building.");
+  }
   if (freeLand(actor) < 1) return fail("No empty acres.");
   const cost = stonePrice(actor, key);
   if (actor.gold < cost) return fail(`Need ${cost} gold for a ${spec.name.slice(0, -1).toLowerCase()}.`);
   actor.gold -= cost;
   actor.buildings[key] += 1;
+  if (plot) plot.structure = key;
   actor.acted = true;
   const cut = (key === "keep" || key === "barracks") && quarryPits(actor) > 0 ? " Quarry stone cheapened it." : "";
-  log(world, `${actor.name} raises a ${spec.name.slice(0, -1).toLowerCase()} (${cost} gold).${cut}`);
-  return { ok: true, message: `Built. ${cost} gold.${cut}` };
+  const where = plot ? ` on a ${terrainKind(plot.q, plot.r)} tile` : "";
+  log(world, `${actor.name} raises a ${spec.name.slice(0, -1).toLowerCase()}${where} (${cost} gold).${cut}`);
+  return { ok: true, message: `Built${where}. ${cost} gold.${cut}` };
 }
 
 function doTrain(world, actor, action) {

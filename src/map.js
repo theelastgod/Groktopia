@@ -365,6 +365,45 @@ function drawYields(ctx, x, y, kind) {
   }
 }
 
+function drawStructure(ctx, x, y, key, time) {
+  const bob = Math.sin(time * 1.6 + x) * 0.35;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  if (key === "field") {
+    ctx.fillStyle = "#c4a15a";
+    ctx.fillRect(-9, -2, 18, 7);
+    ctx.fillStyle = "#7d9a72";
+    ctx.fillRect(-8, -6, 3, 5);
+    ctx.fillRect(-2, -7, 3, 6);
+    ctx.fillRect(4, -6, 3, 5);
+  } else if (key === "keep" || key === "barracks") {
+    ctx.fillStyle = "#8d4a3a";
+    ctx.fillRect(-8, -10, 16, 14);
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(-2, -16, 4, 6);
+  } else if (key === "spire" || key === "chapel") {
+    ctx.fillStyle = "#7d9a72";
+    ctx.beginPath();
+    ctx.moveTo(0, -16);
+    ctx.lineTo(8, 4);
+    ctx.lineTo(-8, 4);
+    ctx.fill();
+  } else if (key === "workshop" || key === "den") {
+    ctx.fillStyle = "#3d3224";
+    ctx.fillRect(-9, -6, 18, 11);
+    ctx.fillStyle = "#a14a3c";
+    ctx.fillRect(3, -12, 3, 6);
+  } else {
+    ctx.fillStyle = "#cbb892";
+    ctx.beginPath();
+    ctx.moveTo(-8, 4);
+    ctx.lineTo(0, -8);
+    ctx.lineTo(8, 4);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawHexMap(ctx, cam, viewW, viewH, world, time) {
   const b = viewBounds(cam, viewW, viewH);
   const corners = [[b.left, b.top], [b.right, b.top], [b.left, b.bottom], [b.right, b.bottom]];
@@ -427,7 +466,8 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     drawHexFeature(ctx, cell.kind, cell.pos.x, cell.pos.y, hash(cell.key));
     if (cam.z >= 1 && cell.owner) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
     const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
-    if (plot && plot.crew === "hamlet") drawHamlet(ctx, cell.pos.x, cell.pos.y);
+    if (plot && plot.structure) drawStructure(ctx, cell.pos.x, cell.pos.y, plot.structure, time || 0);
+    else if (plot && plot.crew === "hamlet") drawHamlet(ctx, cell.pos.x, cell.pos.y);
     else if (plot && plot.crew === "timber") drawTimberCamp(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "quarry") drawQuarry(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
@@ -2159,7 +2199,7 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
   sky.addColorStop(1, "#12180f");
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, width, height);
-  const scale = width / 13000;
+  const scale = width / 24000;
   const to = (x, y) => [width / 2 + x * scale, height / 2 + y * scale];
   ctx.strokeStyle = "rgba(28, 89, 100, 0.55)";
   ctx.lineWidth = 2;
@@ -2167,7 +2207,10 @@ export function drawMini(ctx, width, height, world, seatId, cam) {
   ctx.arc(width / 2, height / 2, 3000 * scale, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(width / 2, height / 2, 4200 * scale, 0, Math.PI * 2);
+  ctx.arc(width / 2, height / 2, 5600 * scale, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(width / 2, height / 2, 11000 * scale, 0, Math.PI * 2);
   ctx.stroke();
   ctx.strokeStyle = "#1c5964";
   ctx.lineWidth = 3;

@@ -63,6 +63,48 @@ test("build spends gold and an acre", () => {
   assert.equal(you.land - buildingCount(you), free - 1);
 });
 
+test("a bought tile can hold one building", () => {
+  const w = newWorld({ seed: 3 });
+  const you = byId(w, "you");
+  w.provinces = [you];
+  w.bands = [];
+  you.gold = 5000;
+  you.orders = ORDERS;
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  const held = new Set(you.plots.map((tile) => `${tile.q},${tile.r}`));
+  let spot = null;
+  for (const tile of you.plots) {
+    for (const [dq, dr] of dirs) {
+      const q = tile.q + dq;
+      const r = tile.r + dr;
+      const kind = terrainKind(q, r);
+      if (held.has(`${q},${r}`) || kind === "sea" || kind === "mount") continue;
+      spot = { q, r };
+      break;
+    }
+    if (spot) break;
+  }
+  assert.ok(spot);
+  const plots = you.plots.length;
+  const land = you.land;
+  const cost = 90 + plots * 6;
+  const bought = applyAction(w, "you", { type: "buy", q: spot.q, r: spot.r });
+  assert.equal(bought.ok, true, bought.message);
+  assert.equal(you.gold, 5000 - cost);
+  assert.equal(you.land, land + 4);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.tile, EARN.tile);
+  assert.equal(you.plots.length, plots + 1);
+  assert.equal(applyAction(w, "you", { type: "buy", q: 130, r: -65 }).ok, false);
+  const fields = you.buildings.field;
+  const raised = applyAction(w, "you", { type: "build", building: "field", q: spot.q, r: spot.r });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.buildings.field, fields + 1);
+  assert.equal(you.plots.find((tile) => tile.q === spot.q && tile.r === spot.r).structure, "field");
+  assert.equal(applyAction(w, "you", { type: "build", building: "hearth", q: spot.q, r: spot.r }).ok, false);
+  assert.equal(applyAction(w, "you", { type: "build", building: "field", q: spot.q + 3, r: spot.r + 3 }).ok, false);
+});
+
 test("empty acres block construction", () => {
   const w = newWorld({ seed: 1 });
   const you = byId(w, "you");
@@ -1953,9 +1995,10 @@ test("a founder plants a port, and a directed fisher works the ocean", () => {
   assert.equal(NAVY.galley.speed, 3);
   assert.equal(NAVY.hulk.speed, 1);
   assert.equal(terrainKind(36, -18), "sea");
-  assert.equal(terrainKind(70, -35), "sea");
+  assert.equal(terrainKind(52, -26), "sea");
+  assert.equal(terrainKind(130, -65), "sea");
   assert.equal(terrainKind(-2, 5), "hill");
-  const far = terrainKind(52, -26);
+  const far = terrainKind(70, -35);
   assert.ok(["grass", "plain", "wood", "hill", "mount"].includes(far));
 
   const quiet = (seed = 4) => {
