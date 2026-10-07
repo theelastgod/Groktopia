@@ -2790,6 +2790,24 @@ function drawColonies(ctx, world, time) {
       ctx.fillText("SALVAGE", (a.x + b.x) / 2, (a.y + b.y) / 2 - 8);
     }
     for (const ship of realm.ships || []) {
+      if (!ship.tow) continue;
+      const a = axialToWorld(ship.q, ship.r);
+      const b = axialToWorld(ship.tow.q, ship.tow.r);
+      ctx.strokeStyle = "rgba(203, 184, 146, 0.95)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([2, 3]);
+      ctx.lineDashOffset = -time * 8;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#cbb892";
+      ctx.font = "700 11px Palatino, Georgia, serif";
+      ctx.textAlign = "center";
+      ctx.fillText("TOW", (a.x + b.x) / 2, (a.y + b.y) / 2 - 16);
+    }
+    for (const ship of realm.ships || []) {
       if (!ship.escort) continue;
       const trader = (realm.ships || []).find((row) => row.id === ship.escort);
       if (!trader) continue;

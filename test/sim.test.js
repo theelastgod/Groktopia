@@ -2538,6 +2538,88 @@ test("a mole shoves a blockading hull off the quay", () => {
   assert.ok(w.log.some((row) => row.text.includes("shoves") && row.text.includes("Salt Step")));
 });
 
+test("a hull tows a wreck toward a wharf", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.tow, 53);
+  const hexDist = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  let far = { ...spot };
+  for (let i = 0; i < 6; i++) {
+    let best = null;
+    let bestD = hexDist(far.q, far.r, spot.q, spot.r);
+    for (const [dq, dr] of dirs) {
+      const nq = far.q + dq;
+      const nr = far.r + dr;
+      const kind = terrainKind(nq, nr);
+      if (kind !== "sea" && kind !== "coast" && kind !== "river") continue;
+      const dist = hexDist(nq, nr, spot.q, spot.r);
+      if (dist > bestD) {
+        bestD = dist;
+        best = { q: nq, r: nr };
+      }
+    }
+    if (!best) break;
+    far = best;
+  }
+  assert.ok(hexDist(far.q, far.r, spot.q, spot.r) >= 4);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = hush(w, "you");
+  w.provinces = [you];
+  you.colonies = [{ id: "c", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  you.ships = [{ id: "fish", kind: "fisher", q: far.q, r: far.r, destQ: null, destR: null }];
+  w.wrecks = [{ q: far.q, r: far.r, kind: "cog", gold: 76, until: 8 }];
+  assert.equal(applyAction(w, "you", { type: "tow", ship: "fish", q: far.q, r: far.r }).ok, false);
+  you.colonies[0].wharf = true;
+  const sent = applyAction(w, "you", { type: "tow", ship: "fish", q: far.q, r: far.r });
+  assert.equal(sent.ok, true);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.tow, EARN.tow);
+  assert.deepEqual(you.ships[0].tow, { q: far.q, r: far.r });
+  const start = hexDist(far.q, far.r, spot.q, spot.r);
+  advanceHour(w);
+  const mid = hexDist(w.wrecks[0].q, w.wrecks[0].r, spot.q, spot.r);
+  assert.equal(mid, start - 1);
+  assert.equal(you.ships[0].q, w.wrecks[0].q);
+  assert.equal(you.ships[0].r, w.wrecks[0].r);
+  assert.deepEqual(you.ships[0].tow, { q: w.wrecks[0].q, r: w.wrecks[0].r });
+  you.orders = 1;
+  assert.equal(applyAction(w, "you", { type: "direct", unit: "ship", id: "fish", q: far.q, r: far.r }).ok, true);
+  assert.equal(you.ships[0].tow, null);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
