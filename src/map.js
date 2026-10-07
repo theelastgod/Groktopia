@@ -2566,6 +2566,19 @@ function drawTown(ctx, x, y, port) {
   }
 }
 
+function drawSlip(ctx, x, y, time) {
+  const dart = Math.sin(time * 4) * 10;
+  ctx.save();
+  ctx.translate(x + dart, y + 16);
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(-9, -2, 18, 4);
+  ctx.fillStyle = "#7fb0b8";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("SLIP", 0, -8);
+  ctx.restore();
+}
+
 function drawBoom(ctx, x, y, time) {
   const sway = Math.sin(time * 2) * 1.2;
   ctx.strokeStyle = "#24180f";
@@ -2874,6 +2887,7 @@ function drawColonies(ctx, world, time) {
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.leeUntil || 0) > (world.hour || 0)) drawLee(ctx, pos.x, pos.y, time);
       if (colony.port && portHeld(world, realm.id, colony)) drawBoom(ctx, pos.x, pos.y, time);
+      if (colony.port && (colony.slipUntil || 0) > (world.hour || 0)) drawSlip(ctx, pos.x, pos.y, time);
       ctx.fillStyle = "#1a1612";
       ctx.font = "12px Palatino, Georgia, serif";
       ctx.textAlign = "center";

@@ -59,6 +59,7 @@ export const EARN = {
   tow: 53,
   lee: 54,
   net: 55,
+  slip: 56,
 };
 
 export const FACTIONS = {
@@ -891,6 +892,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "mole") result = doMole(world, actor, action.colony);
   else if (action.type === "lee") result = doLee(world, actor, action.colony);
   else if (action.type === "net") result = doNet(world, actor, action.ship);
+  else if (action.type === "slip") result = doSlip(world, actor, action);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2732,6 +2734,31 @@ function doNet(world, actor, shipId) {
   return { ok: true, message: `Nets laid at ${own.q},${own.r}.${purse}` };
 }
 
+function doSlip(world, actor, action) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === action.ship);
+  if (!own) return fail("That hull is not yours.");
+  if (hullTeeth(own.kind) >= WAR_TEETH) return fail("A galley, dromon, or hulk is too heavy to slip a boom.");
+  const colony = (actor.colonies || []).find((row) => row.id === action.colony);
+  if (!colony || !colony.port) return fail("Name one of your ports.");
+  const hour = world.hour || 0;
+  if ((colony.slipUntil || 0) > hour) return fail(`${colony.name} already slipped the boom.`);
+  if (!blockadeAt(world, actor, colony)) return fail("No hull holds that quay.");
+  if (hexDist(own.q, own.r, colony.q, colony.r) > 2) return fail("The trader must be within two hexes of the port.");
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.slipUntil = hour + 1;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.slip;
+    notePurse(actor, "slip", EARN.slip);
+    purse = ` Purse +${formatUtopia(EARN.slip)} $UTOPIA.`;
+  }
+  const spec = NAVY[own.kind];
+  log(world, `${actor.name} slips ${colony.name} with the ${spec ? spec.name : "hull"}. The quay will land its fish this hour.${purse}`);
+  return { ok: true, message: `${colony.name} slipped the boom.${purse}` };
+}
+
 function netHolder(world, realm, ship, hour) {
   for (const other of world.provinces || []) {
     if (!other || other.id === realm.id) continue;
@@ -3533,8 +3560,9 @@ function economy(world, p, hour) {
     if (!colony.port) continue;
     const hold = blockadeAt(world, p, colony);
     if (colony.wharf) goldIn += 8;
-    if (!hold) {
+    if (!hold || (colony.slipUntil || 0) > hour) {
       foodIn += 12;
+      if (hold) log(world, `${p.name} slips the boom at ${colony.name}. The quay lands its fish.`);
       continue;
     }
     const skim = Math.min(p.gold, 18);
@@ -3795,6 +3823,11 @@ export function chooseAction(world, agent) {
     }
     if (!keelUp(agent, world.hour) && (agent.plots || []).some((tile) => waterTouch(tile)) && agent.soldiers >= 20 && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "keel" };
+    }
+    const closed = (agent.colonies || []).find((colony) => colony.port && (colony.slipUntil || 0) <= (world.hour || 0) && blockadeAt(world, agent, colony));
+    const runner = closed && (agent.ships || []).find((row) => hullTeeth(row.kind) < WAR_TEETH && hexDist(row.q, row.r, closed.q, closed.r) <= 2);
+    if (closed && runner && agent.orders >= 1 && rng.next() < 0.35) {
+      return { type: "slip", ship: runner.id, colony: closed.id };
     }
     const leePort = (agent.colonies || []).find((colony) => colony.port && (colony.leeUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hullTeeth(ship.kind) >= WAR_TEETH && hexDist(ship.q, ship.r, colony.q, colony.r) <= 8)));
     if (leePort && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.16) {
