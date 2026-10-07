@@ -60,6 +60,7 @@ export const EARN = {
   lee: 54,
   net: 55,
   slip: 56,
+  buoy: 57,
 };
 
 export const FACTIONS = {
@@ -519,6 +520,7 @@ export function blankProvince(partial) {
   p.ships = partial && Array.isArray(partial.ships) ? partial.ships.map((row) => ({ ...row })) : [];
   p.colonies = partial && Array.isArray(partial.colonies) ? partial.colonies.map((row) => ({ ...row })) : [];
   p.nets = partial && Array.isArray(partial.nets) ? partial.nets.map((row) => ({ ...row })) : [];
+  p.buoys = partial && Array.isArray(partial.buoys) ? partial.buoys.map((row) => ({ ...row })) : [];
   return p;
 }
 
@@ -893,6 +895,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "lee") result = doLee(world, actor, action.colony);
   else if (action.type === "net") result = doNet(world, actor, action.ship);
   else if (action.type === "slip") result = doSlip(world, actor, action);
+  else if (action.type === "buoy") result = doBuoy(world, actor, action.ship);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2759,6 +2762,33 @@ function doSlip(world, actor, action) {
   return { ok: true, message: `${colony.name} slipped the boom.${purse}` };
 }
 
+function doBuoy(world, actor, shipId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const own = (actor.ships || []).find((row) => row.id === shipId);
+  if (!own) return fail("That hull is not yours.");
+  if (!sailKind(terrainKind(own.q, own.r))) return fail("Drop a buoy on sea, coast, or river.");
+  const hour = world.hour || 0;
+  actor.buoys = (actor.buoys || []).filter((row) => (row.until || 0) > hour);
+  if (actor.buoys.length >= 2) return fail("Two buoys are already lit.");
+  if (actor.buoys.some((row) => row.q === own.q && row.r === own.r)) return fail("A buoy already burns on that water.");
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.buoys.push({ q: own.q, r: own.r, until: hour + 6 });
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.buoy;
+    notePurse(actor, "buoy", EARN.buoy);
+    purse = ` Purse +${formatUtopia(EARN.buoy)} $UTOPIA.`;
+  }
+  const spec = NAVY[own.kind];
+  log(world, `${actor.name} drops a buoy from the ${spec ? spec.name : "hull"}. For five hours your hulls within three hexes sail one hex farther.${purse}`);
+  return { ok: true, message: `Buoy lit at ${own.q},${own.r}.${purse}` };
+}
+
+function buoyLit(realm, ship, hour) {
+  return (realm.buoys || []).some((row) => (row.until || 0) > (hour || 0) && hexDist(ship.q, ship.r, row.q, row.r) <= 3);
+}
+
 function netHolder(world, realm, ship, hour) {
   for (const other of world.provinces || []) {
     if (!other || other.id === realm.id) continue;
@@ -3001,7 +3031,7 @@ function sailHour(world) {
       }
       if (ship.destQ == null) continue;
       const spec = NAVY[ship.kind];
-      let left = spec ? spec.speed : 1;
+      let left = (spec ? spec.speed : 1) + (buoyLit(realm, ship, world.hour || 0) ? 1 : 0);
       while (left > 0 && (ship.q !== ship.destQ || ship.r !== ship.destR)) {
         const next = stepToward(ship.q, ship.r, ship.destQ, ship.destR, (q, r) => sailKind(terrainKind(q, r)));
         if (next.q === ship.q && next.r === ship.r) break;
@@ -3017,6 +3047,7 @@ function sailHour(world) {
   world.wrecks = (world.wrecks || []).filter((row) => (row.until || 0) > hour);
   for (const realm of world.provinces || []) {
     realm.nets = (realm.nets || []).filter((row) => (row.until || 0) > hour);
+    realm.buoys = (realm.buoys || []).filter((row) => (row.until || 0) > hour);
   }
 }
 
@@ -3855,6 +3886,12 @@ export function chooseAction(world, agent) {
     if (layer && nearFoe && !netHere && liveNets.length < 3 && agent.orders >= 1 && rng.next() < 0.15) {
       return { type: "net", ship: layer.id };
     }
+    const marker = (agent.ships || []).find((row) => sailKind(terrainKind(row.q, row.r)));
+    const liveBuoys = (agent.buoys || []).filter((row) => (row.until || 0) > (world.hour || 0));
+    const buoyHere = marker && liveBuoys.some((row) => row.q === marker.q && row.r === marker.r);
+    if (marker && !buoyHere && liveBuoys.length < 2 && agent.orders >= 1 && rng.next() < 0.12) {
+      return { type: "buoy", ship: marker.id };
+    }
     const salvor = (agent.ships || []).find((row) => !row.prey && !row.block && !row.salvage && !row.escort && !row.tow);
     const wreck = salvor && (world.wrecks || []).find((row) => (row.until || 0) > (world.hour || 0) && hexDist(salvor.q, salvor.r, row.q, row.r) <= 12);
     if (salvor && wreck && agent.orders >= 1 && rng.next() < 0.22) {
@@ -3984,6 +4021,7 @@ export function hydrate(raw) {
     if (!Array.isArray(realm.ships)) realm.ships = [];
     if (!Array.isArray(realm.colonies)) realm.colonies = [];
     if (!Array.isArray(realm.nets)) realm.nets = [];
+    if (!Array.isArray(realm.buoys)) realm.buoys = [];
   }
   if (!Array.isArray(world.wrecks)) world.wrecks = [];
   const cap = world.orderCap || 4;

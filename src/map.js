@@ -2668,6 +2668,23 @@ function drawHull(ctx, x, y, kind, time, hunting) {
   ctx.restore();
 }
 
+function drawBuoy(ctx, x, y, time) {
+  const blink = Math.sin(time * 5) > 0;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(-2, -2, 4, 14);
+  ctx.fillStyle = blink ? "#e2c078" : "#a68445";
+  ctx.beginPath();
+  ctx.arc(0, -6, blink ? 4 : 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("BUOY", 0, -16);
+  ctx.restore();
+}
+
 function drawNet(ctx, x, y, time) {
   ctx.save();
   ctx.translate(x, y);
@@ -2903,6 +2920,11 @@ function drawColonies(ctx, world, time) {
     }
   }
   for (const realm of world.provinces || []) {
+    for (const buoy of realm.buoys || []) {
+      if ((buoy.until || 0) <= (world.hour || 0)) continue;
+      const pos = axialToWorld(buoy.q, buoy.r);
+      drawBuoy(ctx, pos.x, pos.y, time);
+    }
     for (const net of realm.nets || []) {
       if ((net.until || 0) <= (world.hour || 0)) continue;
       const pos = axialToWorld(net.q, net.r);

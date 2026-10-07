@@ -260,7 +260,7 @@ function gate() {
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
-        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck. A war hull can escort a trader. A port can raise a mole that shoves enemy hulls off the quay. A hull can tow a wreck home to a wharf. A port can raise a lee that shelters its hulls. A skiff, fisher, or cog can lay nets that hold an enemy hull, or slip a boom and land the port's fish.</p>
+        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck. A war hull can escort a trader. A port can raise a mole that shoves enemy hulls off the quay. A hull can tow a wreck home to a wharf. A port can raise a lee that shelters its hulls. A skiff, fisher, or cog can lay nets that hold an enemy hull, or slip a boom and land the port's fish. Any hull can drop a buoy that lets your ships sail farther.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
           <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
@@ -835,6 +835,7 @@ function ledgerLine(actor) {
     ["lees", book.lee],
     ["nets", book.net],
     ["slips", book.slip],
+    ["buoys", book.buoy],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1080,6 +1081,7 @@ function fleetLine(actor) {
       course = `escorting the ${tradeName}`;
     }
     rows.push(`<button class="btn" type="button" data-direct="ship" data-id="${esc(ship.id)}">Direct ${esc(spec ? spec.name : ship.kind)} · ${course}</button>`);
+    rows.push(`<button class="btn" type="button" data-buoy="${esc(ship.id)}">Drop a buoy from the ${esc(spec ? spec.name : ship.kind)} · +${formatUtopia(EARN.buoy)}</button>`);
     rows.push(`<button class="btn" type="button" data-salvage="${esc(ship.id)}">Salvage with the ${esc(spec ? spec.name : ship.kind)} · click a wreck</button>`);
     rows.push(`<button class="btn" type="button" data-tow="${esc(ship.id)}">Tow with the ${esc(spec ? spec.name : ship.kind)} · click a wreck</button>`);
     if (spec && spec.teeth < 5) {
@@ -1139,7 +1141,7 @@ function fleetLine(actor) {
   if ((world.wrecks || []).some((row) => (row.until || 0) > world.hour)) {
     rows.push(`<p class="muted">A wreck rides the water. A gold glint marks the timber.</p>`);
   }
-  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf. Key . raises a lee. Key - lays nets from a skiff, fisher, or cog. An enemy hull on that water does not sail for four hours and pays 10 gold. Key = slips a boom with a trader within two hexes, and the quay lands its fish that hour.</p>`);
+  rows.push(`<p class="muted">A galley, dromon, or hulk can close on another hull. Heavier teeth take the gold and sink it. The same hull can blockade a port: the quay lands no fish and 18 gold is taken each hour it sits within two hexes. Any hull can salvage a wreck for its timber. A war hull can escort a skiff, fisher, or cog. Within two hexes the haul is heavier and the trader has three more teeth. A port can raise a wharf. The yard pays 8 gold an hour and refits a wreck within three hexes for half the hull. A mole stands for five hours and shoves an enemy hull off the quay, taking 14 gold. Key X grapples. Key \\ blockades. Key ; salvages. Key [ escorts. Key ] raises a wharf. Key ' raises a mole. Key , tows a wreck toward a wharf. Key . raises a lee. Key - lays nets from a skiff, fisher, or cog. An enemy hull on that water does not sail for four hours and pays 10 gold. Key = slips a boom with a trader within two hexes, and the quay lands its fish that hour. Key / drops a buoy. For five hours your hulls within three hexes sail one hex farther.</p>`);
   return rows.join("");
 }
 
@@ -1508,6 +1510,10 @@ function bindMap(canvas) {
         const hull = (seat().ships || []).find((row) => NAVY[row.kind] && NAVY[row.kind].teeth < 5);
         if (hull) order({ type: "net", ship: hull.id }, "build");
       }
+      if (event.key === "/" && world && seat()) {
+        const hull = (seat().ships || []).find((row) => NAVY[row.kind]);
+        if (hull) order({ type: "buoy", ship: hull.id }, "build");
+      }
       if (event.key === "=" && world && seat()) {
         const me = seat();
         const span = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
@@ -1712,6 +1718,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.net) {
     order({ type: "net", ship: node.dataset.net }, "build");
+    return;
+  }
+  if (node.dataset.buoy) {
+    order({ type: "buoy", ship: node.dataset.buoy }, "build");
     return;
   }
   if (node.dataset.slip) {
