@@ -71,6 +71,7 @@ export const EARN = {
   lamp: 65,
   chain: 66,
   ferry: 67,
+  wheel: 68,
 };
 
 export const FACTIONS = {
@@ -937,6 +938,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "weir") result = doWeir(world, actor);
   else if (action.type === "timber") result = doTimber(world, actor);
   else if (action.type === "quarry") result = doQuarry(world, actor);
+  else if (action.type === "wheel") result = doWheel(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -1853,6 +1855,32 @@ function doQuarry(world, actor) {
 
 export function quarryPits(p) {
   return (p && p.plots ? p.plots : []).filter((tile) => tile.crew === "quarry").length;
+}
+
+export function tideWheels(p) {
+  return (p && p.plots ? p.plots : []).filter((tile) => tile.crew === "wheel").length;
+}
+
+function doWheel(world, actor) {
+  ensurePlots(world);
+  if (tideWheels(actor) >= 1) return fail("A tide wheel already turns.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 210) return fail("A tide wheel wants 210 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
+  if (!plot) return fail("A tide wheel needs a hand or an open lot on the coast or beside the river.");
+  actor.gold -= 210;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "wheel";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.wheel;
+    notePurse(actor, "wheel", EARN.wheel);
+    purse = ` Purse +${formatUtopia(EARN.wheel)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} raises a tide wheel on a ${kind} tile. It pays 28 grain and 12 gold an hour. A sack breaks the wheel.${purse}`);
+  return { ok: true, message: `Tide wheel on the ${kind} tile.${purse}` };
 }
 
 export function stonePrice(actor, key) {
@@ -4054,6 +4082,15 @@ function doAttack(world, actor, action) {
       pit.crew = "hand";
       face = " and collapsed a quarry";
     }
+    let spoke = "";
+    const wheel = (target.plots || []).find((tile) => tile.crew === "wheel");
+    if (wheel) {
+      const meal = Math.min(target.grain, 36);
+      target.grain -= meal;
+      f += meal;
+      wheel.crew = "hand";
+      spoke = " and broke the tide wheel";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4064,7 +4101,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4262,6 +4299,10 @@ function economy(world, p, hour) {
     }
     else if (tile.crew === "timber") goldIn += 26;
     else if (tile.crew === "quarry") goldIn += 22;
+    else if (tile.crew === "wheel") {
+      foodIn += 28;
+      goldIn += 12;
+    }
   }
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
@@ -4710,6 +4751,9 @@ export function chooseAction(world, agent) {
     if (!hospiceUp(agent, world.hour) && agent.gold >= 500 && agent.grain >= 800 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "hospice" };
     }
+    const wheels = tideWheels(agent);
+    const wetLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
+    if (wheels < 1 && wetLot && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) return { type: "wheel" };
     const hamlets = (agent.plots || []).filter((tile) => tile.crew === "hamlet").length;
     if (hamlets < 2 && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.18) return { type: "hamlet" };
     const yards = timberYards(agent);

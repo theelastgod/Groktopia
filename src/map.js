@@ -330,6 +330,32 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawWheel(ctx, x, y, time) {
+  const spin = time * 1.8;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "#6a4632";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 8, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.save();
+  ctx.rotate(spin);
+  ctx.strokeStyle = "#e2c078";
+  ctx.beginPath();
+  ctx.moveTo(-9, 0);
+  ctx.lineTo(9, 0);
+  ctx.moveTo(0, -9);
+  ctx.lineTo(0, 9);
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "#7fb0b8";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("WHEEL", 0, 18);
+  ctx.restore();
+}
+
 function drawHamlet(ctx, x, y) {
   ctx.fillStyle = "#8a5a32";
   ctx.fillRect(x - 12, y - 2, 9, 7);
@@ -492,6 +518,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
   for (const cell of cells) {
     const plot = cell.owner && (cell.owner.plots || []).find((tile) => tile.q === cell.q && tile.r === cell.r);
     if (plot && plot.keel && keelUp(cell.owner, world.hour)) drawKeel(ctx, cell.q, cell.r, time || 0);
+    if (plot && plot.crew === "wheel") drawWheel(ctx, cell.pos.x, cell.pos.y, time || 0);
   }
 }
 
