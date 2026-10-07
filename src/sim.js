@@ -70,6 +70,7 @@ export const EARN = {
   dues: 64,
   lamp: 65,
   chain: 66,
+  ferry: 67,
 };
 
 export const FACTIONS = {
@@ -926,6 +927,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "dues") result = doDues(world, actor, action.colony);
   else if (action.type === "lamp") result = doLamp(world, actor, action.colony);
   else if (action.type === "chain") result = doChain(world, actor, action.colony);
+  else if (action.type === "ferry") result = doFerry(world, actor);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
@@ -2905,6 +2907,61 @@ function doChain(world, actor, colonyId) {
   return { ok: true, message: `Chain stretched at ${colony.name} through hour ${colony.chainUntil - 1}.${purse}` };
 }
 
+function portBerth(colony) {
+  if (!colony || !colony.port) return null;
+  if (sailKind(terrainKind(colony.q, colony.r))) return { q: colony.q, r: colony.r };
+  return waterBeside(colony.q, colony.r);
+}
+
+function ferryPair(actor) {
+  const ports = (actor.colonies || []).filter((row) => portBerth(row));
+  let best = null;
+  let bestD = 1;
+  for (let i = 0; i < ports.length; i++) {
+    for (let j = i + 1; j < ports.length; j++) {
+      const a = portBerth(ports[i]);
+      const b = portBerth(ports[j]);
+      const dist = hexDist(a.q, a.r, b.q, b.r);
+      if (dist > bestD) {
+        bestD = dist;
+        best = { from: ports[i], to: ports[j], a, b };
+      }
+    }
+  }
+  return best;
+}
+
+function doFerry(world, actor) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const hour = world.hour || 0;
+  actor.ferries = (actor.ferries || []).filter((row) => (row.until || 0) > hour);
+  if (actor.ferries.length) return fail("A ferry is already on the water.");
+  const pair = ferryPair(actor);
+  if (!pair) return fail("A ferry needs two ports more than one hex apart.");
+  if (actor.gold < 280) return fail("A ferry wants 280 gold.");
+  actor.gold -= 280;
+  actor.orders -= 1;
+  actor.acted = true;
+  actor.ferries.push({
+    id: `f${hour}-${pair.from.id}`,
+    from: pair.from.id,
+    to: pair.to.id,
+    q: pair.a.q,
+    r: pair.a.r,
+    destQ: pair.b.q,
+    destR: pair.b.r,
+    until: hour + 8,
+  });
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.ferry;
+    notePurse(actor, "ferry", EARN.ferry);
+    purse = ` Purse +${formatUtopia(EARN.ferry)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} runs a ferry between ${pair.from.name} and ${pair.to.name} through hour ${hour + 7}. Each landing pays 18 gold and 14 grain.${purse}`);
+  return { ok: true, message: `Ferry running between ${pair.from.name} and ${pair.to.name} through hour ${hour + 7}.${purse}` };
+}
+
 function doMole(world, actor, colonyId) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   const colony = (actor.colonies || []).find((row) => row.id === colonyId);
@@ -3578,11 +3635,54 @@ function sailHour(world) {
   resolveCuts(world);
   resolveGrapples(world);
   resolveSalvage(world);
+  sailFerries(world);
   const hour = world.hour || 0;
   world.wrecks = (world.wrecks || []).filter((row) => (row.until || 0) > hour);
   for (const realm of world.provinces || []) {
     realm.nets = (realm.nets || []).filter((row) => (row.until || 0) > hour);
     realm.buoys = (realm.buoys || []).filter((row) => (row.until || 0) > hour);
+  }
+}
+
+function landFerry(world, realm, ferry) {
+  const here = (realm.colonies || []).find((colony) => {
+    const berth = portBerth(colony);
+    return berth && berth.q === ferry.q && berth.r === ferry.r;
+  });
+  if (!here) return;
+  realm.gold += 18;
+  realm.grain += 14;
+  log(world, `${realm.name}'s ferry lands at ${here.name}. The quay pays 18 gold and 14 grain.`);
+  const nextId = here.id === ferry.to ? ferry.from : ferry.to;
+  const next = (realm.colonies || []).find((colony) => colony.id === nextId);
+  const berth = next && portBerth(next);
+  if (!berth || (berth.q === ferry.q && berth.r === ferry.r)) {
+    ferry.until = world.hour || 0;
+    return;
+  }
+  ferry.from = here.id;
+  ferry.to = next.id;
+  ferry.destQ = berth.q;
+  ferry.destR = berth.r;
+}
+
+function sailFerries(world) {
+  const hour = world.hour || 0;
+  for (const realm of world.provinces || []) {
+    for (const ferry of realm.ferries || []) {
+      if ((ferry.until || 0) <= hour) continue;
+      if (ferry.destQ == null) continue;
+      let left = 2;
+      while (left > 0 && (ferry.q !== ferry.destQ || ferry.r !== ferry.destR)) {
+        const next = stepToward(ferry.q, ferry.r, ferry.destQ, ferry.destR, (q, r) => sailKind(terrainKind(q, r)));
+        if (next.q === ferry.q && next.r === ferry.r) break;
+        ferry.q = next.q;
+        ferry.r = next.r;
+        left -= 1;
+      }
+      if (ferry.q === ferry.destQ && ferry.r === ferry.destR) landFerry(world, realm, ferry);
+    }
+    realm.ferries = (realm.ferries || []).filter((row) => (row.until || 0) > hour);
   }
 }
 
@@ -4424,6 +4524,8 @@ export function chooseAction(world, agent) {
     if (lampPort && agent.orders >= 1 && rng.next() < 0.12) return { type: "lamp", colony: lampPort.id };
     const chainPort = (agent.colonies || []).find((colony) => colony.port && (colony.chainUntil || 0) <= (world.hour || 0) && agent.gold >= 520 && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 2)));
     if (chainPort && agent.orders >= 1 && rng.next() < 0.14) return { type: "chain", colony: chainPort.id };
+    const ferryLive = (agent.ferries || []).some((row) => (row.until || 0) > (world.hour || 0));
+    if (!ferryLive && ferryPair(agent) && agent.gold >= 600 && agent.orders >= 1 && rng.next() < 0.1) return { type: "ferry" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };

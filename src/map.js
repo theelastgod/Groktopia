@@ -2714,6 +2714,26 @@ function drawFounder(ctx, x, y, time) {
   ctx.fillRect(x - 3, y - 3 + bob, 6, 8);
 }
 
+function drawFerry(ctx, x, y, time) {
+  const rock = Math.sin(time * 2.4 + x) * 1.4;
+  ctx.save();
+  ctx.translate(x, y + rock);
+  ctx.fillStyle = "#2f5c6e";
+  ctx.fillRect(-12, -3, 24, 7);
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(-1, -14, 2, 12);
+  ctx.beginPath();
+  ctx.moveTo(1, -14);
+  ctx.lineTo(10, -8);
+  ctx.lineTo(1, -4);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 11px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("FERRY", 0, 16);
+  ctx.restore();
+}
+
 function drawHull(ctx, x, y, kind, time, hunting) {
   const rock = Math.sin(time * 2 + x) * 1.2;
   ctx.save();
@@ -3197,6 +3217,21 @@ function drawColonies(ctx, world, time) {
     for (const founder of realm.founders || []) {
       const pos = axialToWorld(founder.q, founder.r);
       drawFounder(ctx, pos.x, pos.y, time);
+    }
+    for (const ferry of realm.ferries || []) {
+      if ((ferry.until || 0) <= (world.hour || 0)) continue;
+      const pos = axialToWorld(ferry.q, ferry.r);
+      const goal = axialToWorld(ferry.destQ, ferry.destR);
+      ctx.strokeStyle = "rgba(226, 192, 120, 0.75)";
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([3, 5]);
+      ctx.lineDashOffset = -time * 12;
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(goal.x, goal.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      drawFerry(ctx, pos.x, pos.y, time);
     }
     for (const ship of realm.ships || []) {
       const pos = axialToWorld(ship.q, ship.r);

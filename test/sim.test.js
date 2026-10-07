@@ -3743,6 +3743,116 @@ test("a harbor chain holds an enemy hull and lets your own sail", () => {
   assert.equal(hexDist(held.q, held.r, spot.q, spot.r), 3);
 });
 
+test("a ferry runs between two ports and pays when it lands", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.ferry, 67);
+  const hexDist = (aq, ar, bq, br) => (Math.abs(aq - bq) + Math.abs(ar - br) + Math.abs(aq + ar - (bq + br))) / 2;
+  let spot = null;
+  for (let q = -40; q <= 40 && !spot; q++) {
+    for (let r = -40; r <= 40; r++) {
+      if (terrainKind(q, r) === "coast") {
+        spot = { q, r };
+        break;
+      }
+    }
+  }
+  assert.ok(spot);
+  const dirs = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+  let cursor = { ...spot };
+  const path = [{ ...cursor }];
+  for (let n = 0; n < 3; n++) {
+    let best = null;
+    let bestD = hexDist(cursor.q, cursor.r, spot.q, spot.r);
+    for (const [dq, dr] of dirs) {
+      const nq = cursor.q + dq;
+      const nr = cursor.r + dr;
+      const kind = terrainKind(nq, nr);
+      if (kind !== "sea" && kind !== "coast" && kind !== "river") continue;
+      const dist = hexDist(nq, nr, spot.q, spot.r);
+      if (dist > bestD) {
+        bestD = dist;
+        best = { q: nq, r: nr };
+      }
+    }
+    assert.ok(best);
+    cursor = best;
+    path.push({ ...cursor });
+  }
+  const far = path[3];
+  assert.equal(hexDist(far.q, far.r, spot.q, spot.r), 3);
+  const hush = (realm, id) => {
+    const seat = byId(realm, id);
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.plots = [];
+    seat.colonies = [];
+    seat.founders = [];
+    seat.ships = [];
+    seat.ferries = [];
+    seat.nets = [];
+    seat.buoys = [];
+    seat.grain = 5000;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return seat;
+  };
+  const w = newWorld({ seed: 11 });
+  w.bands = [];
+  const you = hush(w, "you");
+  w.provinces = [you];
+  you.colonies = [{ id: "home", name: "Salt Step", q: spot.q, r: spot.r, port: true }];
+  assert.equal(applyAction(w, "you", { type: "ferry" }).ok, false);
+  you.colonies.push({ id: "near", name: "Reed Haven", q: path[1].q, r: path[1].r, port: true });
+  assert.equal(applyAction(w, "you", { type: "ferry" }).ok, false);
+  you.colonies[1] = { id: "far", name: "Reed Haven", q: far.q, r: far.r, port: true };
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "ferry" }).ok, false);
+  you.gold = 1000;
+  const ran = applyAction(w, "you", { type: "ferry" });
+  assert.equal(ran.ok, true);
+  assert.equal(you.gold, 720);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ferries.length, 1);
+  assert.equal(you.ferries[0].until, w.hour + 8);
+  assert.equal(you.ferries[0].q, spot.q);
+  assert.equal(you.ferries[0].destQ, far.q);
+  assert.equal(you.ledger.ferry, EARN.ferry);
+  assert.equal(applyAction(w, "you", { type: "ferry" }).ok, false);
+  advanceHour(w);
+  assert.equal(hexDist(you.ferries[0].q, you.ferries[0].r, spot.q, spot.r), 2);
+  assert.equal(you.gold, 720);
+  assert.equal(you.grain, 5024);
+  assert.equal(you.utopia, EARN.ferry + EARN.hourActive);
+  advanceHour(w);
+  assert.equal(you.ferries[0].q, far.q);
+  assert.equal(you.ferries[0].r, far.r);
+  assert.equal(you.ferries[0].from, "far");
+  assert.equal(you.ferries[0].to, "home");
+  assert.equal(you.gold, 738);
+  assert.equal(you.grain, 5062);
+  assert.ok(w.log.some((row) => row.text.includes("runs a ferry") && row.text.includes("Salt Step") && row.text.includes("Reed Haven")));
+  assert.ok(w.log.some((row) => row.text.includes("ferry lands") && row.text.includes("Reed Haven")));
+  const gold = you.gold;
+  const grain = you.grain;
+  advanceHour(w);
+  assert.equal(hexDist(you.ferries[0].q, you.ferries[0].r, far.q, far.r), 2);
+  assert.equal(you.gold, gold);
+  assert.equal(you.grain, grain + 24);
+  you.ferries[0].until = w.hour;
+  advanceHour(w);
+  assert.equal(you.ferries.length, 0);
+  assert.equal(you.gold, gold);
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
