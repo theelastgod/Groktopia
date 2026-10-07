@@ -42,6 +42,7 @@ export const EARN = {
   timber: 34,
   quarry: 37,
   siege: 39,
+  sally: 41,
 };
 
 export const FACTIONS = {
@@ -773,6 +774,7 @@ export const AMBITIONS = [
   { id: "weir", name: "Set the nets", purse: 35, blurb: "Stake a weir on the water.", match: (action) => action.type === "weir" },
   { id: "timber", name: "Cut a yard", purse: 35, blurb: "Raise a timber yard on a wood tile.", match: (action) => action.type === "timber" },
   { id: "quarry", name: "Open a pit", purse: 35, blurb: "Cut a quarry into a hill tile.", match: (action) => action.type === "quarry" },
+  { id: "sally", name: "Sally the works", purse: 40, blurb: "Break a siege camp.", match: (action) => action.type === "sally" && action.win },
 ];
 
 function rollAmbition(actor, hour) {
@@ -830,10 +832,14 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "timber") result = doTimber(world, actor);
   else if (action.type === "quarry") result = doQuarry(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
+  else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "attack") result = doAttack(world, actor, action);
   else if (action.type === "spell") result = doSpell(world, actor, action);
   else if (action.type === "thief") result = doThief(world, actor, action);
-  if (result.ok) meetAmbition(world, actor, action);
+  if (result.ok) {
+    if (result.win) action.win = true;
+    meetAmbition(world, actor, action);
+  }
   return result;
 }
 
@@ -1983,6 +1989,45 @@ function doSiege(world, actor, targetId) {
   return { ok: true, message: `Siege works through hour ${actor.siege.until - 1}.${purse}` };
 }
 
+function doSally(world, actor, besiegerId) {
+  const foe = byId(world, besiegerId);
+  if (!foe || foe.id === actor.id) return fail("Pick the camp that is sieging you.");
+  if (!siegeLive(foe, world.hour) || foe.siege.target !== actor.id) return fail("Those works are not outside your wall.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.soldiers < 8) return fail("Need 8 soldiers to sally.");
+  actor.orders -= 1;
+  actor.acted = true;
+  const wall = defense(actor);
+  const camp = foe.siege.men * 14 + 30;
+  if (wall >= camp) {
+    const loot = Math.min(foe.gold, 80);
+    foe.gold -= loot;
+    actor.gold += loot;
+    foe.siege = null;
+    actor.standards = (actor.standards || 0) + 1;
+    actor.grudge = foe.id;
+    let purse = "";
+    if (actor.kind === "human") {
+      actor.utopia += EARN.sally;
+      notePurse(actor, "sally", EARN.sally);
+      purse = ` Purse +${formatUtopia(EARN.sally)} $UTOPIA.`;
+    }
+    log(world, `${actor.name} sallies and breaks ${foe.name}'s siege works, taking ${loot} gold and a banner.${purse}`);
+    return { ok: true, win: true, message: `The works break. ${loot} gold and a banner.${purse}` };
+  }
+  const lost = Math.min(actor.soldiers, 6);
+  actor.soldiers -= lost;
+  foe.siege.men = Math.max(0, foe.siege.men - 2);
+  if (foe.siege.men < 4) {
+    foe.soldiers += foe.siege.men;
+    foe.siege = null;
+    log(world, `${actor.name} sallies and loses ${lost} soldiers. ${foe.name}'s works collapse.`);
+    return { ok: true, win: false, message: `The sally fails. ${lost} soldiers fall, and the works collapse.` };
+  }
+  log(world, `${actor.name} sallies and loses ${lost} soldiers. ${foe.name}'s works still stand.`);
+  return { ok: true, win: false, message: `The sally fails. ${lost} soldiers fall. The works still stand.` };
+}
+
 export function growRival(world, agent) {
   if (!agent || agent.kind !== "agent") return false;
   if (agent.gold < 350 || agent.peasants < 30) return false;
@@ -2437,6 +2482,10 @@ function nearestOpenSite(world, agent) {
 
 export function chooseAction(world, agent) {
   const rng = world.rng;
+  const camped = world.provinces.find((p) => siegeLive(p, world.hour) && p.siege.target === agent.id);
+  if (camped && agent.orders >= 1 && agent.soldiers >= 8 && defense(agent) >= camped.siege.men * 14 + 30 && rng.next() < 0.6) {
+    return { type: "sally", target: camped.id };
+  }
   const penned = Object.entries(agent.pens || {}).find((row) => row[1] > 0);
   if (penned && agent.orders >= 1) {
     const held = byId(world, penned[0]);

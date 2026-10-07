@@ -1482,6 +1482,33 @@ function drawHoldings(ctx, p, g, time, known, hour) {
   if (timberYards(p) > 0) drawLogPile(ctx, g, timberYards(p));
   if (quarryPits(p) > 0) drawCairn(ctx, g, quarryPits(p));
   if (siegeLive(p, hour)) drawSiegePennant(ctx, g, time);
+  if ((p.standards || 0) > 0) drawStandards(ctx, g, p.standards, time);
+}
+
+function drawStandards(ctx, g, n, time) {
+  const x = g.x - g.r * 0.1;
+  const y = g.y - g.r * 0.78;
+  const count = Math.max(1, Math.min(3, n));
+  for (let i = 0; i < count; i++) {
+    const ox = (i - (count - 1) / 2) * 9;
+    const snap = Math.sin(time * 2.6 + i) * 0.12;
+    ctx.save();
+    ctx.translate(x + ox, y);
+    ctx.rotate(snap);
+    ctx.strokeStyle = "#5c4632";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(0, 16);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+    ctx.fillStyle = i % 2 ? "#e2c078" : "#c45a48";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(11, 3);
+    ctx.lineTo(0, 7);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawSiegePennant(ctx, g, time) {
@@ -2261,6 +2288,7 @@ const MARCH_INK = {
   relief: "#d7c4a3",
   road: "#c4b08a",
   siege: "#e07a68",
+  sally: "#f3e6c8",
   ransom: "#e2c078",
   release: "#f3e6c8",
   trade: "#e2c078",

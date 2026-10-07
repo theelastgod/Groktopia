@@ -1631,6 +1631,50 @@ test("a siege saps a scouted camp, returns its soldiers, and a march spends the 
   assert.match(blow.message, /broke the siege works/);
 });
 
+test("a sally breaks the siege works and hangs the banner", () => {
+  const w = newWorld({ seed: 6 });
+  const you = byId(w, "you");
+  const h = byId(w, "harrow");
+  h.siege = { target: "you", until: 6, men: 8 };
+  h.soldiers = 40;
+  h.gold = 500;
+  const purse = you.utopia;
+  const gold = you.gold;
+  const res = applyAction(w, "you", { type: "sally", target: "harrow" });
+  assert.equal(res.ok, true);
+  assert.equal(res.win, true);
+  assert.equal(h.siege, null);
+  assert.equal(h.soldiers, 40);
+  assert.equal(you.standards, 1);
+  assert.equal(you.gold, gold + 80);
+  assert.equal(h.gold, 420);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.sally, EARN.sally);
+  assert.equal(you.utopia, purse + EARN.sally);
+  assert.equal(applyAction(w, "you", { type: "sally", target: "harrow" }).ok, false);
+
+  const weak = newWorld({ seed: 7 });
+  const seat = byId(weak, "you");
+  const foe = byId(weak, "sable");
+  foe.siege = { target: "you", until: 5, men: 8 };
+  seat.soldiers = 8;
+  seat.elites = 0;
+  seat.buildings.keep = 0;
+  seat.muster = 0;
+  for (const tile of seat.plots || []) {
+    if (tile.crew === "foot" || tile.crew === "quarry") tile.crew = "hand";
+  }
+  const before = seat.soldiers;
+  const lost = applyAction(weak, "you", { type: "sally", target: "sable" });
+  assert.equal(lost.ok, true);
+  assert.equal(lost.win, false);
+  assert.equal(siegeLive(foe, weak.hour), true);
+  assert.equal(foe.siege.men, 6);
+  assert.equal(seat.soldiers, before - 6);
+  assert.equal(seat.ledger.sally, undefined);
+  assert.equal(seat.standards || 0, 0);
+});
+
 test("wild holdings push their fences when the gold holds", () => {
   const w = newWorld({ seed: 2 });
   const moss = byId(w, "moss");
