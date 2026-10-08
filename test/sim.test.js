@@ -7321,6 +7321,135 @@ test("a boot bench stitches a tannery hide and takes dye and grease", () => {
   assert.ok(raid.log.some((row) => row.text.includes("stole the boots")));
 });
 
+test("a brewhouse drinks malted grain and jars it at a pot bank", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.brew, 98);
+  assert.equal(EARN.boot, 97);
+  const flats = [];
+  let marsh = null;
+  for (let q = -50; q <= 50 && (flats.length < 3 || !marsh); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 3) flats.push({ q, r });
+      if (!marsh && kind === "marsh") marsh = { q, r };
+    }
+  }
+  assert.equal(flats.length, 3);
+  assert.ok(marsh);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.fold = 0;
+    seat.foldUntil = 0;
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: marsh.q, r: marsh.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "brew" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "brew" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "brew" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "brew" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "brew" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.match(raised.message, /Brewhouse/);
+  assert.equal(you.plots[0].crew, "brew");
+  assert.equal(you.gold, 835);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.brew, EARN.brew);
+  assert.equal(applyAction(w.realm, "you", { type: "brew" }).ok, false);
+
+  const empty = hush(5);
+  empty.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "brew" }];
+  empty.seat.grain = 40;
+  advanceHour(empty.realm);
+  assert.equal(empty.seat.gold, 1003);
+  assert.equal(empty.seat.grain, 40);
+  assert.equal(empty.realm.log.some((row) => row.text.includes("brews")), false);
+
+  const thin = hush(6);
+  thin.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "brew" },
+    { q: flats[1].q, r: flats[1].r, crew: "malt" },
+  ];
+  advanceHour(thin.realm);
+  assert.equal(thin.seat.gold, 1007);
+  assert.equal(thin.seat.grain, 0);
+  assert.equal(thin.realm.log.some((row) => row.text.includes("brews")), false);
+
+  const ale = hush(7);
+  ale.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "brew" },
+    { q: flats[1].q, r: flats[1].r, crew: "malt" },
+  ];
+  ale.seat.grain = 40;
+  advanceHour(ale.realm);
+  assert.equal(ale.seat.gold, 1034);
+  assert.equal(ale.seat.grain, 22);
+  assert.ok(ale.realm.log.some((row) => row.text.includes("brews the malt for 16 gold")));
+
+  const jarred = hush(8);
+  jarred.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "brew" },
+    { q: flats[1].q, r: flats[1].r, crew: "malt" },
+    { q: flats[2].q, r: flats[2].r, crew: "pot" },
+  ];
+  jarred.seat.grain = 40;
+  advanceHour(jarred.realm);
+  assert.equal(jarred.seat.gold, 1045);
+  assert.equal(jarred.seat.grain, 22);
+  assert.ok(jarred.realm.log.some((row) => row.text.includes("brews the malt into jars for 23 gold")));
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "brew" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("broached the barrels")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
