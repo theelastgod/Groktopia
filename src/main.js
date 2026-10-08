@@ -73,6 +73,8 @@ let selectedBand = null;
 let aim = null;
 let stake = 100;
 let soundOn = true;
+let trailerAt = 0;
+let trailerMuted = true;
 let wallet = "";
 let chainBalance = null;
 let mint = { symbol: "UTOPIA", mint: "", decimals: 6, cluster: "mainnet-beta" };
@@ -113,6 +115,22 @@ function saveSession() {
 
 function nowServer() {
   return Date.now() + skew;
+}
+
+function mountTrailer() {
+  const video = document.querySelector("#trailer");
+  if (!video) return;
+  video.muted = trailerMuted;
+  const resume = () => {
+    const end = Number.isFinite(video.duration) ? video.duration : 45;
+    if (trailerAt > 0.25 && trailerAt < end - 0.35) {
+      try { video.currentTime = trailerAt; } catch { /* seek before the file is ready */ }
+    }
+    video.play().catch(() => {});
+  };
+  video.addEventListener("timeupdate", () => { trailerAt = video.currentTime; });
+  if (video.readyState >= 1) resume();
+  else video.addEventListener("loadedmetadata", resume, { once: true });
 }
 
 function bootAudio() {
@@ -256,11 +274,15 @@ function gate() {
       </div>
     </header>
     <section class="hero">
-      <img class="hero-art" src="/public/art/banner.jpg" alt="A walled riverside province at dusk">
+      <figure class="hero-film">
+        <video id="trailer" class="hero-art" poster="/public/art/banner.jpg" src="/public/trailer.mp4" autoplay muted playsinline preload="auto"></video>
+        <button class="btn hero-sound" id="trailer-sound" type="button">${trailerMuted ? "Hear the score" : "Quiet"}</button>
+      </figure>
       <div class="hero-copy">
         <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
         <p class="eyebrow">Play to earn $UTOPIA</p>
         <h1>Groktopia</h1>
+        <p class="earn-line">The purse is the in-game ledger. An active hour pays ${formatUtopia(EARN.hourActive)} $UTOPIA. Settling pays ${formatUtopia(EARN.settle)}. A study, a civic, and a fair march pay their own lines. One hundred cents is 1.00.</p>
         <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck. A war hull can escort a trader. A port can raise a mole that shoves enemy hulls off the quay. A hull can tow a wreck home to a wharf. A port can raise a lee that shelters its hulls. A skiff, fisher, or cog can lay nets that hold an enemy hull, or slip a boom and land the port's fish. Any hull can drop a buoy that lets your ships sail farther. A skiff, fisher, or cog can carry a cargo to one of your ports. A port can stretch a chain that holds an enemy hull in the mouth. Two ports can run a ferry that lands gold and grain.</p>
         <ul class="pillars">
           <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
@@ -316,6 +338,7 @@ function render() {
     document.body.classList.remove("playing");
     cancelAnimationFrame(raf);
     app.innerHTML = gate();
+    mountTrailer();
     return;
   }
   document.body.classList.add("playing");
@@ -1760,6 +1783,15 @@ app.addEventListener("click", async (event) => {
   if (node.id === "resume") {
     const saved = JSON.parse(localStorage.getItem(SESSION) || "null");
     if (saved?.realmId && saved.token) connectSocket(saved);
+    return;
+  }
+  if (node.id === "trailer-sound") {
+    const video = document.querySelector("#trailer");
+    if (!video) return;
+    trailerMuted = !trailerMuted;
+    video.muted = trailerMuted;
+    node.textContent = trailerMuted ? "Hear the score" : "Quiet";
+    video.play().catch(() => {});
     return;
   }
   if (node.id === "again") {

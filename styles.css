@@ -186,12 +186,24 @@ img { max-width: 100%; display: block; }
     rgba(16, 13, 10, 0.72);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
 }
+.hero-film { position: relative; margin: 0; }
 .hero-art {
   width: 100%;
   height: min(460px, 62vh);
   object-fit: cover;
   border-radius: 14px;
   border: 1px solid rgba(226, 192, 120, 0.28);
+  background: #120e0b;
+}
+.hero-sound {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+}
+.earn-line {
+  color: var(--paper);
+  margin: 0 0 10px;
+  line-height: 1.45;
 }
 .hero-copy { padding: 8px 8px 8px 4px; }
 .eyebrow {
