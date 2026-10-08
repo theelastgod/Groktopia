@@ -6602,6 +6602,126 @@ test("a dye works colors reed and hide", () => {
   assert.ok(raid.log.some((row) => row.text.includes("rinsed the dye works")));
 });
 
+test("a pot bank throws quarry clay and takes glaze from a salt pan", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.pot, 92);
+  assert.equal(EARN.dye, 91);
+  const flats = [];
+  let hill = null;
+  let marsh = null;
+  let wood = null;
+  for (let q = -50; q <= 50 && (flats.length < 2 || !hill || !marsh || !wood); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 2) flats.push({ q, r });
+      if (!hill && (kind === "hill" || kind === "mount")) hill = { q, r };
+      if (!marsh && kind === "marsh") marsh = { q, r };
+      if (!wood && kind === "wood") wood = { q, r };
+    }
+  }
+  assert.equal(flats.length, 2);
+  assert.ok(hill && marsh && wood);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.fold = 0;
+    seat.foldUntil = 0;
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: hill.q, r: hill.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "pot" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "pot" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "pot" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "pot" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "pot" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "pot");
+  assert.equal(you.gold, 830);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.pot, EARN.pot);
+  assert.equal(applyAction(w.realm, "you", { type: "pot" }).ok, false);
+
+  const empty = hush(5);
+  empty.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "pot" }];
+  advanceHour(empty.realm);
+  assert.equal(empty.seat.gold, 1004);
+  assert.equal(empty.seat.grain, 0);
+  assert.equal(empty.realm.log.some((row) => row.text.includes("throws")), false);
+
+  const clay = hush(6);
+  clay.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "pot" },
+    { q: hill.q, r: hill.r, crew: "quarry" },
+  ];
+  advanceHour(clay.realm);
+  assert.equal(clay.seat.gold, 1037);
+  assert.equal(clay.seat.grain, 0);
+  assert.ok(clay.realm.log.some((row) => row.text.includes("throws quarry clay for 15 gold")));
+
+  const glazed = hush(7);
+  glazed.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "pot" },
+    { q: hill.q, r: hill.r, crew: "quarry" },
+    { q: wood.q, r: wood.r, crew: "char" },
+    { q: marsh.q, r: marsh.r, crew: "pan" },
+  ];
+  advanceHour(glazed.realm);
+  assert.equal(glazed.seat.gold, 1073);
+  assert.equal(glazed.seat.grain, 0);
+  assert.ok(glazed.realm.log.some((row) => row.text.includes("throws glazed clay by the hearth for 29 gold")));
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "pot" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("smashed the pot bank")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

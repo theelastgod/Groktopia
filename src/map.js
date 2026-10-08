@@ -365,6 +365,37 @@ function drawDye(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawPot(ctx, x, y, time) {
+  const spin = time * 2.4;
+  const glow = 0.4 + Math.sin(time * 4) * 0.25;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#6a4638";
+  ctx.beginPath();
+  ctx.moveTo(-8, 6);
+  ctx.lineTo(-5, -4);
+  ctx.lineTo(5, -4);
+  ctx.lineTo(8, 6);
+  ctx.fill();
+  ctx.fillStyle = `rgba(224, 122, 60, ${glow})`;
+  ctx.fillRect(-3, -2, 6, 4);
+  ctx.strokeStyle = "#3a2a22";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(8, 2, 4, spin, spin + Math.PI * 1.4);
+  ctx.stroke();
+  ctx.fillStyle = "#c6a15a";
+  ctx.beginPath();
+  ctx.ellipse(-9, 4, 2.2, 3, 0, 0, Math.PI * 2);
+  ctx.ellipse(-4, 6, 2, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("POT", 0, 18);
+  ctx.restore();
+}
+
 function drawTan(ctx, x, y, time) {
   const sway = Math.sin(time * 1.5 + x) * 0.12;
   ctx.save();
@@ -1036,6 +1067,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "churn") drawChurn(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "tan") drawTan(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "dye") drawDye(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "pot") drawPot(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
