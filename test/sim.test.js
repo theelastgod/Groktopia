@@ -4281,6 +4281,99 @@ test("a sail mills grain on a hill and a sack topples it", () => {
   assert.ok(raid.log.some((row) => row.text.includes("toppled the sail")));
 });
 
+test("a cistern banks spare grain and a sack cracks it", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.cistern, 77);
+  assert.equal(EARN.sail, 76);
+  let grass = null;
+  let hill = null;
+  let marsh = null;
+  for (let q = -40; q <= 40 && (!grass || !hill || !marsh); q++) {
+    for (let r = -40; r <= 40; r++) {
+      const kind = terrainKind(q, r);
+      if (!grass && kind === "grass") grass = { q, r };
+      if (!hill && kind === "hill") hill = { q, r };
+      if (!marsh && kind === "marsh") marsh = { q, r };
+    }
+  }
+  assert.ok(grass);
+  assert.ok(hill);
+  assert.ok(marsh);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.muster = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.plots = [{ q: hill.q, r: hill.r, crew: "lot" }];
+  you.grain = 100;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.studies = {};
+  you.marks = {};
+  you.relics = {};
+  you.spells = { bulwark: 0, fury: 0, shade: 0 };
+  assert.equal(applyAction(w, "you", { type: "cistern" }).ok, false);
+  you.plots = [{ q: grass.q, r: grass.r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w, "you", { type: "cistern" }).ok, false);
+  you.plots = [{ q: marsh.q, r: marsh.r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "cistern" }).ok, false);
+  you.gold = 1000;
+  const dug = applyAction(w, "you", { type: "cistern" });
+  assert.equal(dug.ok, true, dug.message);
+  assert.equal(you.plots[0].crew, "cistern");
+  assert.equal(you.plots[0].store, 0);
+  assert.equal(you.gold, 820);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.cistern, EARN.cistern);
+  assert.equal(applyAction(w, "you", { type: "cistern" }).ok, false);
+  advanceHour(w);
+  assert.equal(you.grain, 90);
+  assert.equal(you.plots[0].store, 10);
+  assert.equal(you.gold, 820);
+  assert.equal(you.utopia, EARN.cistern + EARN.hourActive);
+  you.grain = 0;
+  you.plots[0].store = 30;
+  advanceHour(w);
+  assert.equal(you.grain, 20);
+  assert.equal(you.plots[0].store, 10);
+  you.grain = 100;
+  you.plots[0].store = 80;
+  advanceHour(w);
+  assert.equal(you.plots[0].store, 80);
+  assert.equal(you.grain, 104);
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 200;
+  vic.plots = [{ q: grass.q, r: grass.r, crew: "cistern", store: 50 }];
+  const before = atk.grain;
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.equal(vic.plots[0].store, 0);
+  assert.ok(atk.grain - before >= 50);
+  assert.ok(raid.log.some((row) => row.text.includes("cracked the cistern")));
+});
+
 test("a ropewalk pays gold and lets a hull sail one hex farther", () => {
   assert.equal(ORDERS, 10);
   assert.equal(TICK_MS, 60 * 1000);

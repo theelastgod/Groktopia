@@ -80,6 +80,7 @@ export const EARN = {
   rope: 74,
   bell: 75,
   sail: 76,
+  cistern: 77,
 };
 
 export const FACTIONS = {
@@ -954,6 +955,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "grove") result = doGrove(world, actor);
   else if (action.type === "bell") result = doBell(world, actor);
   else if (action.type === "sail") result = doSail(world, actor);
+  else if (action.type === "cistern") result = doCistern(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2067,6 +2069,51 @@ function doSail(world, actor) {
   }
   log(world, `${actor.name} raises a sail on a hill. While the stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. A sack topples it.${purse}`);
   return { ok: true, message: `Sail on the hill.${purse}` };
+}
+
+function wellGround(tile) {
+  if (!tile) return false;
+  const kind = terrainKind(tile.q, tile.r);
+  return kind === "grass" || kind === "plain" || kind === "marsh";
+}
+
+function doCistern(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "cistern")) return fail("A cistern already holds under the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 180) return fail("A cistern wants 180 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && wellGround(tile));
+  if (!plot) return fail("A cistern needs a hand or an open lot on grass, plain, or marsh.");
+  actor.gold -= 180;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "cistern";
+  plot.store = 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.cistern;
+    notePurse(actor, "cistern", EARN.cistern);
+    purse = ` Purse +${formatUtopia(EARN.cistern)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} digs a cistern on a ${kind} tile. Spare grain above 48 fills it, ten a hour, up to 80. Below 24 grain it gives back up to 20. A full cistern seeps 4 grain. A sack cracks it.${purse}`);
+  return { ok: true, message: `Cistern on the ${kind} tile.${purse}` };
+}
+
+function tendCistern(p) {
+  const well = (p.plots || []).find((tile) => tile.crew === "cistern");
+  if (!well) return;
+  well.store = well.store || 0;
+  if ((p.grain || 0) >= 48 && well.store < 80) {
+    const take = Math.min(10, 80 - well.store, p.grain);
+    p.grain -= take;
+    well.store += take;
+  } else if ((p.grain || 0) < 24 && well.store > 0) {
+    const give = Math.min(20, well.store, 24 - p.grain);
+    well.store -= give;
+    p.grain += give;
+  }
+  if (well.store >= 80) p.grain += 4;
 }
 
 function grindSail(p) {
@@ -4413,6 +4460,15 @@ function doAttack(world, actor, action) {
       sail.crew = "hand";
       vanes = " and toppled the sail";
     }
+    let cracked = "";
+    const well = (target.plots || []).find((tile) => tile.crew === "cistern");
+    if (well) {
+      const spilled = well.store || 0;
+      f += spilled;
+      well.store = 0;
+      well.crew = "hand";
+      cracked = " and cracked the cistern";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4423,7 +4479,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${clapper}${vanes}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${clapper}${vanes}${cracked}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4697,6 +4753,7 @@ function economy(world, p, hour) {
     p.gold += catchTaken.gold;
     p.grain += catchTaken.grain;
   }
+  tendCistern(p);
   if (p.grain < 0) {
     const die = Math.min(p.peasants, Math.max(1, Math.ceil(-p.grain / 4)));
     p.peasants -= die;
@@ -5101,6 +5158,9 @@ export function chooseAction(world, agent) {
     if (!hospiceUp(agent, world.hour) && agent.gold >= 500 && agent.grain >= 800 && agent.orders >= 1 && rng.next() < 0.12) {
       return { type: "hospice" };
     }
+    const welled = (agent.plots || []).some((tile) => tile.crew === "cistern");
+    const wellLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && wellGround(tile));
+    if (!welled && wellLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "cistern" };
     const sailed = (agent.plots || []).some((tile) => tile.crew === "sail");
     const hillLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "hill");
     if (!sailed && hillLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) return { type: "sail" };

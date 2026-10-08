@@ -330,6 +330,31 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawCistern(ctx, x, y, time, store) {
+  const held = Math.max(0, Math.min(80, store || 0));
+  const ripple = Math.sin(time * 2.2 + x) * 0.6;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "#6a5648";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 11, 6, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "#3a4c58";
+  ctx.beginPath();
+  ctx.ellipse(0, 2 + ripple, 8, 3 + held / 40, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(226, 192, 120, 0.7)";
+  ctx.beginPath();
+  ctx.ellipse(-2, 1, 3, 1.2, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7fb0b8";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("WELL", 0, 18);
+  ctx.restore();
+}
+
 function drawSail(ctx, x, y, time) {
   const spin = time * 1.4;
   ctx.save();
@@ -674,6 +699,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "grove") drawGrove(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "bell") drawBell(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "sail") drawSail(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "cistern") drawCistern(ctx, cell.pos.x, cell.pos.y, time || 0, plot.store || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
