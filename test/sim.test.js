@@ -5866,6 +5866,140 @@ test("a reed bed pays the marsh, feeds a hearth, and a sack drowns one", () => {
   assert.ok(raid.log.some((row) => row.text.includes("drowned a reed bed")));
 });
 
+test("a malt house turns grain into gold and takes reeds and vines", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.malt, 86);
+  assert.equal(EARN.reed, 85);
+  const flats = [];
+  let hill = null;
+  let marsh = null;
+  let wood = null;
+  for (let q = -50; q <= 50 && (flats.length < 2 || !hill || !marsh || !wood); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 2) flats.push({ q, r });
+      if (!hill && kind === "hill") hill = { q, r };
+      if (!marsh && kind === "marsh") marsh = { q, r };
+      if (!wood && kind === "wood") wood = { q, r };
+    }
+  }
+  assert.equal(flats.length, 2);
+  assert.ok(hill && marsh && wood);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: hill.q, r: hill.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "malt" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "malt" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }, { q: flats[1].q, r: flats[1].r, crew: "hand" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "malt" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "malt" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "malt" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "malt");
+  assert.equal(you.gold, 820);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.malt, EARN.malt);
+  assert.equal(applyAction(w.realm, "you", { type: "malt" }).ok, false);
+
+  const thin = hush(5);
+  thin.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "malt" }];
+  advanceHour(thin.realm);
+  assert.equal(thin.seat.gold, 1004);
+  assert.equal(thin.seat.grain, 0);
+
+  const fat = hush(6);
+  fat.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "malt" }];
+  fat.seat.grain = 30;
+  advanceHour(fat.realm);
+  assert.equal(fat.seat.gold, 1018);
+  assert.equal(fat.seat.grain, 20);
+  assert.ok(fat.realm.log.some((row) => row.text.includes("malts 10 grain into 18 gold")));
+
+  const thatched = hush(7);
+  thatched.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "malt" },
+    { q: marsh.q, r: marsh.r, crew: "reed" },
+  ];
+  thatched.seat.grain = 30;
+  advanceHour(thatched.realm);
+  assert.equal(thatched.seat.gold, 1030);
+  assert.equal(thatched.seat.grain, 40);
+  assert.ok(thatched.realm.log.some((row) => row.text.includes("malts 10 grain into 24 gold")));
+
+  const vined = hush(8);
+  vined.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "malt" },
+    { q: hill.q, r: hill.r, crew: "vine" },
+  ];
+  advanceHour(vined.realm);
+  assert.equal(vined.seat.gold, 1026);
+  assert.equal(vined.seat.grain, 6);
+
+  const drunk = hush(9);
+  drunk.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "malt" },
+    { q: wood.q, r: wood.r, crew: "char" },
+  ];
+  drunk.seat.grain = 40;
+  advanceHour(drunk.realm);
+  assert.equal(drunk.seat.gold, 1034);
+  assert.equal(drunk.seat.grain, 28);
+  assert.equal(drunk.realm.log.some((row) => row.text.includes("malts 10 grain")), false);
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "malt" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("spoiled the malt house")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

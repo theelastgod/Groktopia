@@ -330,6 +330,40 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawMalt(ctx, x, y, time) {
+  const turn = time * 1.4;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#8a4a3a";
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 10, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6a3830";
+  ctx.beginPath();
+  ctx.moveTo(-8, 2);
+  ctx.lineTo(0, -8);
+  ctx.lineTo(8, 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.save();
+  ctx.translate(0, -8);
+  ctx.rotate(turn);
+  ctx.strokeStyle = "#f3e6c8";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-6, 0);
+  ctx.lineTo(6, 0);
+  ctx.moveTo(0, -4);
+  ctx.quadraticCurveTo(5, -1, 0, 3);
+  ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("MALT", 0, 18);
+  ctx.restore();
+}
+
 function drawReed(ctx, x, y, time) {
   const sway = Math.sin(time * 1.6 + x) * 0.18;
   ctx.save();
@@ -852,6 +886,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "cistern") drawCistern(ctx, cell.pos.x, cell.pos.y, time || 0, plot.store || 0);
     else if (plot && plot.crew === "char") drawChar(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "reed") drawReed(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "malt") drawMalt(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

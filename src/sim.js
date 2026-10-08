@@ -89,6 +89,7 @@ export const EARN = {
   vine: 83,
   char: 84,
   reed: 85,
+  malt: 86,
 };
 
 export const FACTIONS = {
@@ -900,6 +901,7 @@ export const AMBITIONS = [
   { id: "founder", name: "Send a founder", purse: 40, blurb: "Raise a founder for a new town.", match: (action) => action.type === "founder" },
   { id: "char", name: "Bank a hearth", purse: 35, blurb: "Bank a charcoal hearth in the woods.", match: (action) => action.type === "char" },
   { id: "reed", name: "Cut a reed bed", purse: 35, blurb: "Cut a reed bed in the marsh.", match: (action) => action.type === "reed" },
+  { id: "malt", name: "Raise a malt house", purse: 35, blurb: "Raise a malt house on open ground.", match: (action) => action.type === "malt" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -971,6 +973,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "cistern") result = doCistern(world, actor);
   else if (action.type === "char") result = doChar(world, actor);
   else if (action.type === "reed") result = doReed(world, actor);
+  else if (action.type === "malt") result = doMalt(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2225,6 +2228,42 @@ function doReed(world, actor) {
   }
   log(world, `${actor.name} cuts a reed bed in the marsh. It pays 20 grain and 6 gold an hour. A tide wheel adds 8 grain to each bed. One bed feeds a charcoal hearth for 14 gold, and two beds feed it for 22, with no grain spent. A sack drowns one bed.${purse}`);
   return { ok: true, message: `Reed bed in the marsh.${purse}` };
+}
+
+function doMalt(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "malt")) return fail("A malt house already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 180) return fail("A malt house wants 180 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
+  if (!plot) return fail("A malt house needs a hand or an open lot on grass or plain.");
+  actor.gold -= 180;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "malt";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.malt;
+    notePurse(actor, "malt", EARN.malt);
+    purse = ` Purse +${formatUtopia(EARN.malt)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a malt house. While stores hold 30 grain it malts 10 into 18 gold. A reed bed adds 6 gold and a vineyard adds 8. A thin store pays 4 gold. The charcoal hearth drinks first. A sack spoils the floor.${purse}`);
+  return { ok: true, message: `Malt house on the open ground.${purse}` };
+}
+
+function maltHouse(world, p) {
+  const house = (p.plots || []).find((tile) => tile.crew === "malt");
+  if (!house) return;
+  const reed = (p.plots || []).some((tile) => tile.crew === "reed");
+  const vine = (p.plots || []).some((tile) => tile.crew === "vine");
+  const bonus = (reed ? 6 : 0) + (vine ? 8 : 0);
+  if ((p.grain || 0) >= 30) {
+    p.grain -= 10;
+    p.gold += 18 + bonus;
+    log(world, `${p.name}'s malt house malts 10 grain into ${18 + bonus} gold.`);
+    return;
+  }
+  p.gold += 4 + bonus;
 }
 
 function burnChar(world, p) {
@@ -4803,6 +4842,15 @@ function doAttack(world, actor, action) {
       reedBed.crew = "hand";
       drowned = " and drowned a reed bed";
     }
+    let spoiled = "";
+    const maltFloor = (target.plots || []).find((tile) => tile.crew === "malt");
+    if (maltFloor) {
+      const mash = Math.min(target.gold, 24);
+      target.gold -= mash;
+      g += mash;
+      maltFloor.crew = "hand";
+      spoiled = " and spoiled the malt house";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4813,7 +4861,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5140,6 +5188,7 @@ function economy(world, p, hour) {
   grindSail(p);
   pressVines(world, p);
   burnChar(world, p);
+  maltHouse(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5574,6 +5623,9 @@ export function chooseAction(world, agent) {
     const reeds = (agent.plots || []).filter((tile) => tile.crew === "reed").length;
     const marshLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "marsh");
     if (reeds < 2 && marshLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "reed" };
+    const malted = (agent.plots || []).some((tile) => tile.crew === "malt");
+    const flatLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
+    if (!malted && flatLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "malt" };
     const pits = quarryPits(agent);
     const stone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (pits < 1 && stone && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) return { type: "quarry" };
