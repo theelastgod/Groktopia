@@ -886,6 +886,7 @@ function ledgerLine(actor) {
     ["sails", book.sail],
     ["cisterns", book.cistern],
     ["smokehouses", book.smoke],
+    ["fishmongers", book.monger],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1196,6 +1197,11 @@ function fleetLine(actor) {
       rows.push(`<p class="muted">${esc(port.name)}'s smokehouse pays 4 gold an hour and holds ${port.cured || 0} cured fish, up to 48. An open quay cures 8. A closed quay feeds 12 from the racks. Key &lt; raises one.</p>`);
     } else {
       rows.push(`<button class="btn" type="button" data-smoke="${esc(port.id)}">Raise a smokehouse at ${esc(port.name)} · 200g · +${formatUtopia(EARN.smoke)}</button>`);
+    }
+    if (port.monger) {
+      rows.push(`<p class="muted">${esc(port.name)}'s fishmonger pays 3 gold an hour. An open quay sells up to 8 cured fish above a reserve of 16, at 3 gold each. A closed quay keeps the racks.</p>`);
+    } else {
+      rows.push(`<button class="btn" type="button" data-monger="${esc(port.id)}">Open a fishmonger at ${esc(port.name)} · 210g · +${formatUtopia(EARN.monger)}</button>`);
     }
     if ((port.lampUntil || 0) > world.hour) {
       rows.push(`<p class="muted">${esc(port.name)}'s lamp burns through hour ${port.lampUntil - 1}. Enemy hulls within four hexes sail one hex slower.</p>`);
@@ -1631,6 +1637,10 @@ function bindMap(canvas) {
         const port = (seat().colonies || []).find((row) => row.port && !row.smoke);
         if (port) order({ type: "smoke", colony: port.id }, "build");
       }
+      if (event.key === "}" && world && seat()) {
+        const port = (seat().colonies || []).find((row) => row.port && !row.monger);
+        if (port) order({ type: "monger", colony: port.id }, "build");
+      }
       if (event.key.toLowerCase() === "u" && world) order({ type: "founder" }, "build");
       if (event.key.toLowerCase() === "x" && world && seat()) {
         const fleet = seat().ships || [];
@@ -2023,6 +2033,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.smoke) {
     order({ type: "smoke", colony: node.dataset.smoke }, "build");
+    return;
+  }
+  if (node.dataset.monger) {
+    order({ type: "monger", colony: node.dataset.monger }, "build");
     return;
   }
   if (node.dataset.lamp) {

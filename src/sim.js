@@ -82,6 +82,7 @@ export const EARN = {
   sail: 76,
   cistern: 77,
   smoke: 78,
+  monger: 79,
 };
 
 export const FACTIONS = {
@@ -975,6 +976,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "cooper") result = doCooper(world, actor, action.colony);
   else if (action.type === "rope") result = doRope(world, actor, action.colony);
   else if (action.type === "smoke") result = doSmoke(world, actor, action.colony);
+  else if (action.type === "monger") result = doMonger(world, actor, action.colony);
   else if (action.type === "refit") result = doRefit(world, actor, action);
   else if (action.type === "mole") result = doMole(world, actor, action.colony);
   else if (action.type === "lee") result = doLee(world, actor, action.colony);
@@ -3159,6 +3161,27 @@ function doSmoke(world, actor, colonyId) {
   return { ok: true, message: `Smokehouse raised at ${colony.name}.${purse}` };
 }
 
+function doMonger(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A fishmonger needs a port.");
+  if (colony.monger) return fail(`${colony.name} already has a fishmonger.`);
+  if (actor.gold < 210) return fail("A fishmonger wants 210 gold.");
+  actor.gold -= 210;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.monger = true;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.monger;
+    notePurse(actor, "monger", EARN.monger);
+    purse = ` Purse +${formatUtopia(EARN.monger)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} opens a fishmonger at ${colony.name}. The boards pay 3 gold an hour. An open quay sells up to 8 cured fish above a reserve of 16, at 3 gold each. A closed quay keeps the racks. A landing smashes the stall.${purse}`);
+  return { ok: true, message: `Fishmonger open at ${colony.name}.${purse}` };
+}
+
 function doRefit(world, actor, action) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   if ((actor.ships || []).length >= 6) return fail("Six hulls already ride for this holding.");
@@ -3643,13 +3666,18 @@ function landRaid(world, realm, ship) {
     if (spilled) realm.grain += spilled;
     racks = spilled ? ` The smokehouse is smashed and ${spilled} cured grain is taken.` : " The smokehouse is smashed.";
   }
+  let boards = "";
+  if (mark.colony.monger) {
+    mark.colony.monger = false;
+    boards = " The fishmonger is smashed.";
+  }
   let purse = "";
   if (realm.kind === "human" && (gold > 0 || grain > 0)) {
     realm.utopia += EARN.raid;
     notePurse(realm, "raid", EARN.raid);
     purse = ` Purse +${formatUtopia(EARN.raid)} $UTOPIA.`;
   }
-  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${staves}${coils}${racks}${purse}`);
+  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${staves}${coils}${racks}${boards}${purse}`);
 }
 
 function chainHold(world, realm, ship, hour) {
@@ -4729,6 +4757,7 @@ function economy(world, p, hour) {
     if (colony.cooper) goldIn += 10;
     if (colony.rope) goldIn += 6;
     if (colony.smoke) goldIn += 4;
+    if (colony.monger) goldIn += 3;
     if (!hold || (colony.slipUntil || 0) > hour) {
       let fish = 12;
       if ((colony.quayUntil || 0) > hour && (colony.quay || 0) > 0) fish += 6;
@@ -4737,6 +4766,14 @@ function economy(world, p, hour) {
         const cure = Math.min(8, fish, room);
         colony.cured = (colony.cured || 0) + cure;
         fish -= cure;
+      }
+      if (colony.monger) {
+        const sold = Math.min(8, Math.max(0, (colony.cured || 0) - 16));
+        if (sold > 0) {
+          colony.cured -= sold;
+          goldIn += sold * 3;
+          log(world, `${p.name} sells ${sold} cured fish at ${colony.name}.`);
+        }
       }
       foodIn += fish;
       if (hold) log(world, `${p.name} slips the boom at ${colony.name}. The quay lands its fish.`);
@@ -5061,6 +5098,8 @@ export function chooseAction(world, agent) {
     if (ropePort && agent.gold >= 450 && agent.orders >= 1 && rng.next() < 0.1) return { type: "rope", colony: ropePort.id };
     const smokePort = (agent.colonies || []).find((colony) => colony.port && !colony.smoke);
     if (smokePort && agent.gold >= 480 && agent.orders >= 1 && rng.next() < 0.1) return { type: "smoke", colony: smokePort.id };
+    const mongerPort = (agent.colonies || []).find((colony) => colony.port && colony.smoke && !colony.monger);
+    if (mongerPort && agent.gold >= 520 && agent.orders >= 1 && rng.next() < 0.1) return { type: "monger", colony: mongerPort.id };
     const pans = (agent.plots || []).filter((tile) => tile.crew === "pan").length;
     const brineWet = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && saltGround(tile));
     if (pans < 2 && brineWet && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "pan" };

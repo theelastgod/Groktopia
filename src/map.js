@@ -3333,6 +3333,24 @@ function drawSmoke(ctx, x, y, time, cured) {
   ctx.restore();
 }
 
+function drawMonger(ctx, x, y, time) {
+  const sway = Math.sin(time * 2.1) * 1.4;
+  ctx.save();
+  ctx.translate(x - 20, y + 16);
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(-9, 0, 18, 7);
+  ctx.fillStyle = "#c4a15a";
+  ctx.beginPath();
+  ctx.ellipse(-5, -1 + sway * 0.2, 3, 2, 0, 0, Math.PI * 2);
+  ctx.ellipse(2, -2, 3.2, 2.1, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#7d9a72";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("FISH", 0, 16);
+  ctx.restore();
+}
+
 function drawRope(ctx, x, y, time) {
   const spin = Math.sin(time * 1.8) * 0.2;
   ctx.save();
@@ -3524,6 +3542,7 @@ function drawColonies(ctx, world, time) {
       if (colony.port && colony.cooper) drawCooper(ctx, pos.x, pos.y, time);
       if (colony.port && colony.rope) drawRope(ctx, pos.x, pos.y, time);
       if (colony.port && colony.smoke) drawSmoke(ctx, pos.x, pos.y, time, colony.cured || 0);
+      if (colony.port && colony.monger) drawMonger(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);
