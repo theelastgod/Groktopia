@@ -90,6 +90,7 @@ export const EARN = {
   char: 84,
   reed: 85,
   malt: 86,
+  dove: 87,
 };
 
 export const FACTIONS = {
@@ -902,6 +903,7 @@ export const AMBITIONS = [
   { id: "char", name: "Bank a hearth", purse: 35, blurb: "Bank a charcoal hearth in the woods.", match: (action) => action.type === "char" },
   { id: "reed", name: "Cut a reed bed", purse: 35, blurb: "Cut a reed bed in the marsh.", match: (action) => action.type === "reed" },
   { id: "malt", name: "Raise a malt house", purse: 35, blurb: "Raise a malt house on open ground.", match: (action) => action.type === "malt" },
+  { id: "dove", name: "Raise a dovecote", purse: 35, blurb: "Raise a dovecote on open ground.", match: (action) => action.type === "dove" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -974,6 +976,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "char") result = doChar(world, actor);
   else if (action.type === "reed") result = doReed(world, actor);
   else if (action.type === "malt") result = doMalt(world, actor);
+  else if (action.type === "dove") result = doDove(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2249,6 +2252,27 @@ function doMalt(world, actor) {
   }
   log(world, `${actor.name} raises a malt house. While stores hold 30 grain it malts 10 into 18 gold. A reed bed adds 6 gold and a vineyard adds 8. A thin store pays 4 gold. The charcoal hearth drinks first. A sack spoils the floor.${purse}`);
   return { ok: true, message: `Malt house on the open ground.${purse}` };
+}
+
+function doDove(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "dove")) return fail("A dovecote already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 170) return fail("A dovecote wants 170 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
+  if (!plot) return fail("A dovecote needs a hand or an open lot on grass or plain.");
+  actor.gold -= 170;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "dove";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.dove;
+    notePurse(actor, "dove", EARN.dove);
+    purse = ` Purse +${formatUtopia(EARN.dove)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a dovecote. It pays 14 grain and 5 gold an hour. A bell brings the birds home for 8 more grain. A wild ride loses 2 people to the doves. A sack topples the cote.${purse}`);
+  return { ok: true, message: `Dovecote on the open ground.${purse}` };
 }
 
 function maltHouse(world, p) {
@@ -4509,7 +4533,7 @@ function strikeBand(world, band, target) {
   }
   let gold = Math.min(target.gold, Math.floor((36 + band.men) * cut));
   const grain = Math.min(target.grain, Math.floor((50 + band.men * 2) * cut));
-  const folk = Math.min(target.peasants, Math.floor((6 + Math.floor(band.men / 8)) * cut));
+  let folk = Math.min(target.peasants, Math.floor((6 + Math.floor(band.men / 8)) * cut));
   let smoke = "";
   if ((target.plots || []).some((tile) => tile.crew === "char")) {
     const choke = Math.min(gold, 12);
@@ -4518,13 +4542,19 @@ function strikeBand(world, band, target) {
     band.men -= fallen;
     if (fallen) smoke = ` The charcoal smoke takes ${fallen} riders.`;
   }
+  let lifted = "";
+  if ((target.plots || []).some((tile) => tile.crew === "dove")) {
+    const saved = Math.min(folk, 2);
+    folk -= saved;
+    if (saved) lifted = ` The doves carry ${saved} people clear.`;
+  }
   target.gold -= gold;
   target.grain -= grain;
   band.hoard = (band.hoard || 0) + Math.floor(gold / 2);
   target.peasants -= folk;
   target.soldiers = Math.max(0, (target.soldiers || 0) - Math.min(target.soldiers || 0, 2));
   const toll = tolled ? " The bell saves half." : "";
-  log(world, `${band.name} rides through ${target.name}, taking ${gold} gold and ${grain} grain. ${folk} people fall.${toll}${smoke}`);
+  log(world, `${band.name} rides through ${target.name}, taking ${gold} gold and ${grain} grain. ${folk} people fall.${toll}${smoke}${lifted}`);
 }
 
 export function pressBands(world) {
@@ -4851,6 +4881,15 @@ function doAttack(world, actor, action) {
       maltFloor.crew = "hand";
       spoiled = " and spoiled the malt house";
     }
+    let cote = "";
+    const dovecote = (target.plots || []).find((tile) => tile.crew === "dove");
+    if (dovecote) {
+      const birds = Math.min(target.gold, 20);
+      target.gold -= birds;
+      g += birds;
+      dovecote.crew = "hand";
+      cote = " and toppled the dovecote";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4861,7 +4900,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5084,6 +5123,10 @@ function economy(world, p, hour) {
       foodIn += 20;
       goldIn += 6;
     }
+    else if (tile.crew === "dove") {
+      foodIn += 14;
+      goldIn += 5;
+    }
   }
   const groveCount = (p.plots || []).filter((tile) => tile.crew === "grove").length;
   if (groveCount && (p.plots || []).some((tile) => tile.crew === "hive")) foodIn += 10 * groveCount;
@@ -5091,6 +5134,7 @@ function economy(world, p, hour) {
   if (vineCount && (p.plots || []).some((tile) => tile.crew === "hive")) goldIn += 8 * vineCount;
   const reedCount = (p.plots || []).filter((tile) => tile.crew === "reed").length;
   if (reedCount && tideWheels(p) > 0) foodIn += 8 * reedCount;
+  if ((p.plots || []).some((tile) => tile.crew === "dove") && (p.plots || []).some((tile) => tile.crew === "bell")) foodIn += 8;
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
     const hold = blockadeAt(world, p, colony);
@@ -5626,6 +5670,8 @@ export function chooseAction(world, agent) {
     const malted = (agent.plots || []).some((tile) => tile.crew === "malt");
     const flatLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
     if (!malted && flatLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "malt" };
+    const coted = (agent.plots || []).some((tile) => tile.crew === "dove");
+    if (!coted && flatLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "dove" };
     const pits = quarryPits(agent);
     const stone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (pits < 1 && stone && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) return { type: "quarry" };
@@ -5828,6 +5874,21 @@ export function humanCount(world) {
   return world.provinces.filter((p) => p.kind === "human").length;
 }
 
+export function cleanWallet(value) {
+  const text = String(value || "").trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text)) return "";
+  return text;
+}
+
+export function bindWallet(world, seatId, address) {
+  const province = byId(world, seatId);
+  if (!province || province.kind !== "human") return { ok: false, message: "No seat." };
+  const wallet = cleanWallet(address);
+  if (!wallet) return { ok: false, message: "That is not a Solana address." };
+  province.wallet = wallet;
+  return { ok: true, wallet };
+}
+
 export function claimSeat(world, opts) {
   if (world.closed) return { ok: false, message: "This age is over." };
   if (humanCount(world) >= MAX_HUMANS) return { ok: false, message: "This realm is full." };
@@ -5845,6 +5906,8 @@ export function claimSeat(world, opts) {
     x: spot[0],
     y: spot[1],
   });
+  const wallet = cleanWallet(opts.wallet);
+  if (wallet) province.wallet = wallet;
   province.seatedHour = world.hour || 0;
   rollAmbition(province, world.hour || 0);
   world.provinces.push(province);
@@ -5871,6 +5934,9 @@ export function standings(world) {
       kind: p.kind,
       networth: networth(p),
       utopia: p.utopia,
+      place: p.place || 0,
+      placePay: p.placePay || 0,
+      wallet: p.wallet || "",
     }))
     .sort((a, b) => b.networth - a.networth || b.utopia - a.utopia);
 }
@@ -5883,7 +5949,11 @@ export function closeAge(world) {
     const province = byId(world, row.id);
     const pay = bonus[index] ?? 100;
     province.utopia += pay;
+    province.place = index + 1;
+    province.placePay = pay;
     notePurse(province, "place", pay);
+    const marked = province.wallet ? ` Marked for ${province.wallet.slice(0, 4)}…${province.wallet.slice(-4)}.` : "";
+    log(world, `${province.name} places ${index + 1} and wins ${formatUtopia(pay)} $UTOPIA.${marked}`);
   });
   world.closed = true;
   log(world, "The two-hour age is over. Placement is paid in $UTOPIA.");

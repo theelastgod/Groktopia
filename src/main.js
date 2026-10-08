@@ -575,7 +575,15 @@ function paint() {
   if (veil) {
     if (meta.status === "ended") {
       veil.hidden = false;
-      veil.innerHTML = `<div class="veil-card"><h2>The age is over</h2><p>Two hours on the clock. Placement is already in the $UTOPIA purses.</p><ol>${standings.filter((row) => row.kind === "human").map((row, index) => `<li>${index + 1}. ${esc(row.ruler)} of ${esc(row.name)} · networth ${row.networth}</li>`).join("")}</ol><button class="btn primary" type="button" id="again">Find another realm</button></div>`;
+      const humans = standings.filter((row) => row.kind === "human");
+      const mine = humans.find((row) => row.id === p.id);
+      const prize = mine
+        ? `You placed ${placeWord(humans.indexOf(mine) + 1)} and won ${formatUtopia(mine.placePay || 0)} $UTOPIA. Your purse is ${formatUtopia(mine.utopia || 0)}.`
+        : "Placement is in the $UTOPIA purses.";
+      const marked = mine && mine.wallet
+        ? ` Marked for ${esc(mine.wallet.slice(0, 4))}…${esc(mine.wallet.slice(-4))}.`
+        : " Connect Phantom to mark the win to an address.";
+      veil.innerHTML = `<div class="veil-card"><h2>The age is over</h2><p>${prize}${marked} The purse is the matched ledger on this page. This page never asks for a seed phrase.</p><ol>${humans.map((row, index) => `<li>${index + 1}. ${esc(row.ruler)} of ${esc(row.name)} · ${formatUtopia(row.utopia || 0)} $UTOPIA${row.placePay ? ` · place ${formatUtopia(row.placePay)}` : ""}</li>`).join("")}</ol><div class="row"><button class="btn primary" type="button" id="receipt">Download purse</button><button class="btn" type="button" id="again">Find another realm</button></div></div>`;
     } else if (meta.status !== "live") {
       veil.hidden = false;
       veil.innerHTML = `<div class="veil-card"><h2>The age is opening</h2><p>${meta.humans || 1} of ${meta.maxHumans || 12} players. Seats stay open, and the hours already on the clock belong to whoever is here.</p></div>`;
@@ -725,6 +733,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-char="1">Bank a charcoal hearth · 200g · +${formatUtopia(EARN.char)}</button>
         <button class="btn" type="button" data-reed="1">Cut a reed bed · 160g · +${formatUtopia(EARN.reed)}</button>
         <button class="btn" type="button" data-malt="1">Raise a malt house · 180g · +${formatUtopia(EARN.malt)}</button>
+        <button class="btn" type="button" data-dove="1">Raise a dovecote · 170g · +${formatUtopia(EARN.dove)}</button>
         <button class="btn" type="button" data-founder="1">Raise a founder · 260g · +${formatUtopia(EARN.founder)}</button>
         ${fleetLine(actor)}
         ${patrolButton(actor)}
@@ -913,6 +922,7 @@ function ledgerLine(actor) {
     ["charcoal", book.char],
     ["reeds", book.reed],
     ["malt", book.malt],
+    ["dovecotes", book.dove],
     ["smokehouses", book.smoke],
     ["fishmongers", book.monger],
     ["pilots", book.pilot],
@@ -1116,7 +1126,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}, hives ${count("hive")}, drift yards ${count("drift")}, vineyards ${count("vine")}, bells ${count("bell")}, sails ${count("sail")}, cisterns ${count("cistern")}, hearths ${count("char")}, reeds ${count("reed")}, malt ${count("malt")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. A hive keeps one grass or plain tile, pays 8 grain and 6 gold, and each grove yields 10 more grain. Key $ raises it. A drift yard keeps one shore lot, pays 5 gold, and strips 16 gold of timber from a wreck within two hexes. Key D raises it. A vineyard keeps a hill and pays 6 grain and 14 gold. Two vineyards is the limit. A hive adds 8 gold to each row. A sail presses 8 grain from each row into 14 gold. Key Shift+A plants it. Key | hangs a bell. A bell keeps grass or plain, pays 5 gold, and a wild ride takes half. A sail keeps one hill. While stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. Key _ raises it. A cistern keeps grass, plain, or marsh. Above 48 grain it banks 10 an hour up to 80, and below 24 it gives back up to 20. A full cistern seeps 4 grain. Key > digs it. A charcoal hearth keeps one wood lot. While stores hold 40 grain it burns 12 into 30 gold. A timber yard feeds it for 22 gold and spends no grain. A drift yard adds 8 gold. A thin store pays 6 gold. Smoke takes 12 gold and 2 riders from a wild ride. Key Shift+C banks it. A reed bed keeps marsh and pays 20 grain and 6 gold. Two beds is the limit. A tide wheel adds 8 grain to each bed. One bed feeds a charcoal hearth for 14 gold, and two beds feed it for 22, with no grain spent. Key Shift+R cuts one. A malt house keeps one grass or plain lot. While stores hold 30 grain it malts 10 into 18 gold. A reed bed adds 6 gold and a vineyard adds 8. A thin store pays 4 gold. The charcoal hearth drinks first. Key Shift+M raises it. Each stake adds 4 to the wall.`;
+  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}, hives ${count("hive")}, drift yards ${count("drift")}, vineyards ${count("vine")}, bells ${count("bell")}, sails ${count("sail")}, cisterns ${count("cistern")}, hearths ${count("char")}, reeds ${count("reed")}, malt ${count("malt")}, doves ${count("dove")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. A hive keeps one grass or plain tile, pays 8 grain and 6 gold, and each grove yields 10 more grain. Key $ raises it. A drift yard keeps one shore lot, pays 5 gold, and strips 16 gold of timber from a wreck within two hexes. Key D raises it. A vineyard keeps a hill and pays 6 grain and 14 gold. Two vineyards is the limit. A hive adds 8 gold to each row. A sail presses 8 grain from each row into 14 gold. Key Shift+A plants it. Key | hangs a bell. A bell keeps grass or plain, pays 5 gold, and a wild ride takes half. A sail keeps one hill. While stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. Key _ raises it. A cistern keeps grass, plain, or marsh. Above 48 grain it banks 10 an hour up to 80, and below 24 it gives back up to 20. A full cistern seeps 4 grain. Key > digs it. A charcoal hearth keeps one wood lot. While stores hold 40 grain it burns 12 into 30 gold. A timber yard feeds it for 22 gold and spends no grain. A drift yard adds 8 gold. A thin store pays 6 gold. Smoke takes 12 gold and 2 riders from a wild ride. Key Shift+C banks it. A reed bed keeps marsh and pays 20 grain and 6 gold. Two beds is the limit. A tide wheel adds 8 grain to each bed. One bed feeds a charcoal hearth for 14 gold, and two beds feed it for 22, with no grain spent. Key Shift+R cuts one. A malt house keeps one grass or plain lot. While stores hold 30 grain it malts 10 into 18 gold. A reed bed adds 6 gold and a vineyard adds 8. A thin store pays 4 gold. The charcoal hearth drinks first. Key Shift+M raises it. A dovecote keeps one grass or plain lot and pays 14 grain and 5 gold. A bell brings the birds home for 8 more grain. A wild ride loses 2 people to the doves. Key Shift+D raises it. Each stake adds 4 to the wall.`;
 }
 
 function relicLine(actor) {
@@ -1666,7 +1676,8 @@ function bindMap(canvas) {
       if (event.key === "?" && world) order({ type: "pan" }, "build");
       if (event.key === ":" && world) order({ type: "grove" }, "build");
       if (event.key === "$" && world) order({ type: "hive" }, "build");
-      if (event.key.toLowerCase() === "d" && world) order({ type: "drift" }, "build");
+      if (event.key === "d" && world) order({ type: "drift" }, "build");
+      if (event.key === "D" && world) order({ type: "dove" }, "build");
       if (event.key === "A" && world) order({ type: "vine" }, "build");
       if (event.key === "|" && world) order({ type: "bell" }, "build");
       if (event.key === "_" && world) order({ type: "sail" }, "build");
@@ -2038,6 +2049,10 @@ app.addEventListener("click", async (event) => {
     order({ type: "malt" }, "build");
     return;
   }
+  if (node.dataset.dove) {
+    order({ type: "dove" }, "build");
+    return;
+  }
   if (node.dataset.founder) {
     order({ type: "founder" }, "build");
     return;
@@ -2304,6 +2319,7 @@ app.addEventListener("submit", async (event) => {
         ruler: String(data.get("ruler") || "Ruler"),
         province: String(data.get("province") || "First Acre"),
         faction: String(data.get("faction") || "marcher"),
+        wallet: wallet || "",
       }),
     });
     const json = await res.json();
@@ -2372,6 +2388,10 @@ function connectSocket(next) {
   if (socket) socket.close();
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${proto}//${location.host}/api/ws?realm=${encodeURIComponent(next.realmId)}&token=${encodeURIComponent(next.token)}`);
+  socket.addEventListener("open", () => {
+    if (gen !== socketGen) return;
+    publishWallet();
+  });
   socket.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === "error") {
@@ -2391,9 +2411,10 @@ function connectSocket(next) {
       return;
     }
     if (msg.type === "state") {
-      const won = msg.world && world && msg.world.log[0] && world.log[0] && msg.world.log[0].text !== world.log[0].text && /breaks|seized|sacked|Earned/.test(msg.world.log[0].text);
+      const ended = msg.meta && msg.meta.status === "ended" && meta.status !== "ended";
+      const won = msg.world && world && msg.world.log[0] && world.log[0] && msg.world.log[0].text !== world.log[0].text && /breaks|seized|sacked|Earned|wins/.test(msg.world.log[0].text);
       takeState(msg);
-      if (won) play("win");
+      if (won || ended) play("win");
     }
   });
   socket.addEventListener("close", () => {
@@ -2409,6 +2430,20 @@ function readStake() {
   if (stakeNode) stake = Number(stakeNode.value);
 }
 
+function placeWord(n) {
+  const j = n % 10;
+  const k = n % 100;
+  if (j === 1 && k !== 11) return `${n}st`;
+  if (j === 2 && k !== 12) return `${n}nd`;
+  if (j === 3 && k !== 13) return `${n}rd`;
+  return `${n}th`;
+}
+
+function publishWallet() {
+  if (!wallet || !socket || socket.readyState !== 1) return;
+  socket.send(JSON.stringify({ type: "wallet", wallet }));
+}
+
 function downloadReceipt() {
   const p = seat();
   const blob = new Blob([JSON.stringify({
@@ -2420,10 +2455,12 @@ function downloadReceipt() {
     ruler: p.ruler,
     province: p.name,
     hour: world.hour,
+    place: p.place || null,
+    placePay: p.placePay ? formatUtopia(p.placePay) : null,
     utopia: formatUtopia(p.utopia),
     utopiaCents: p.utopia,
-    wallet: wallet || null,
-    note: "Local earn ledger. Not a Solana transfer.",
+    wallet: p.wallet || wallet || null,
+    note: "Local earn ledger for this matched age. Not a Solana transfer.",
   }, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -2442,6 +2479,7 @@ async function connectPhantom() {
   try {
     const res = await provider.connect();
     wallet = res.publicKey.toString();
+    publishWallet();
     await refreshChain();
     play("coin");
     note(shortWallet());

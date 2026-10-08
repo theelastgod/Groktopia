@@ -6000,6 +6000,134 @@ test("a malt house turns grain into gold and takes reeds and vines", () => {
   assert.ok(raid.log.some((row) => row.text.includes("spoiled the malt house")));
 });
 
+test("a dovecote feeds the acres, homes on a bell, and lifts people from a ride", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.dove, 87);
+  assert.equal(EARN.malt, 86);
+  const flats = [];
+  let hill = null;
+  for (let q = -50; q <= 50 && (flats.length < 2 || !hill); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 2) flats.push({ q, r });
+      if (!hill && kind === "hill") hill = { q, r };
+    }
+  }
+  assert.equal(flats.length, 2);
+  assert.ok(hill);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: hill.q, r: hill.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "dove" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "dove" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "dove" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "dove" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "dove" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "dove");
+  assert.equal(you.gold, 830);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.dove, EARN.dove);
+  assert.equal(applyAction(w.realm, "you", { type: "dove" }).ok, false);
+
+  const bare = hush(5);
+  bare.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "dove" }];
+  advanceHour(bare.realm);
+  assert.equal(bare.seat.gold, 1005);
+  assert.equal(bare.seat.grain, 14);
+
+  const tolled = hush(6);
+  tolled.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "dove" },
+    { q: flats[1].q, r: flats[1].r, crew: "bell" },
+  ];
+  advanceHour(tolled.realm);
+  assert.equal(tolled.seat.gold, 1010);
+  assert.equal(tolled.seat.grain, 22);
+
+  const ride = (coted) => {
+    const realm = newWorld({ seed: 7 });
+    realm.provinces = [byId(realm, "you")];
+    const seat = realm.provinces[0];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.muster = 0;
+    seat.peasants = 40;
+    seat.gold = 500;
+    seat.grain = 500;
+    seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: coted ? "dove" : "hand" }];
+    seat.patrol = 0;
+    seat.patrolUntil = 0;
+    seat.keel = 0;
+    seat.keelUntil = 0;
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    const [x, y] = seatPoint(seat);
+    realm.hour = 1;
+    realm.bands = [{ id: "ash", name: "Ash Camp", x, y, men: 20, hoard: 0, downUntil: 0, truce: {}, raid: null }];
+    pressBands(realm);
+    return { lost: 40 - seat.peasants, text: realm.log.map((row) => row.text).join(" ") };
+  };
+  const open = ride(false);
+  const saved = ride(true);
+  assert.equal(open.lost - saved.lost, 2);
+  assert.match(saved.text, /doves carry 2 people clear/);
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "dove" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("toppled the dovecote")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
