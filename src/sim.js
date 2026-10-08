@@ -91,6 +91,7 @@ export const EARN = {
   reed: 85,
   malt: 86,
   dove: 87,
+  oven: 88,
 };
 
 export const FACTIONS = {
@@ -904,6 +905,7 @@ export const AMBITIONS = [
   { id: "reed", name: "Cut a reed bed", purse: 35, blurb: "Cut a reed bed in the marsh.", match: (action) => action.type === "reed" },
   { id: "malt", name: "Raise a malt house", purse: 35, blurb: "Raise a malt house on open ground.", match: (action) => action.type === "malt" },
   { id: "dove", name: "Raise a dovecote", purse: 35, blurb: "Raise a dovecote on open ground.", match: (action) => action.type === "dove" },
+  { id: "oven", name: "Raise a bakehouse", purse: 35, blurb: "Raise a bakehouse on open ground.", match: (action) => action.type === "oven" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -977,6 +979,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "reed") result = doReed(world, actor);
   else if (action.type === "malt") result = doMalt(world, actor);
   else if (action.type === "dove") result = doDove(world, actor);
+  else if (action.type === "oven") result = doOven(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2273,6 +2276,42 @@ function doDove(world, actor) {
   }
   log(world, `${actor.name} raises a dovecote. It pays 14 grain and 5 gold an hour. A bell brings the birds home for 8 more grain. A wild ride loses 2 people to the doves. A sack topples the cote.${purse}`);
   return { ok: true, message: `Dovecote on the open ground.${purse}` };
+}
+
+function doOven(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "oven")) return fail("A bakehouse already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 190) return fail("A bakehouse wants 190 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
+  if (!plot) return fail("A bakehouse needs a hand or an open lot on grass or plain.");
+  actor.gold -= 190;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "oven";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.oven;
+    notePurse(actor, "oven", EARN.oven);
+    purse = ` Purse +${formatUtopia(EARN.oven)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a bakehouse. It bakes only after a malt house has stood. While 24 grain remains it spends 8 for 20 gold, and each grove adds 6. A cold oven pays 6 gold. A sack breaks the floor.${purse}`);
+  return { ok: true, message: `Bakehouse on the open ground.${purse}` };
+}
+
+function bakeHouse(world, p) {
+  const oven = (p.plots || []).find((tile) => tile.crew === "oven");
+  if (!oven) return;
+  const malted = (p.plots || []).some((tile) => tile.crew === "malt");
+  const groves = (p.plots || []).filter((tile) => tile.crew === "grove").length;
+  if (malted && (p.grain || 0) >= 24) {
+    const pay = 20 + groves * 6;
+    p.grain -= 8;
+    p.gold += pay;
+    log(world, `${p.name}'s bakehouse bakes 8 grain into ${pay} gold.`);
+    return;
+  }
+  p.gold += 6;
 }
 
 function maltHouse(world, p) {
@@ -4890,6 +4929,15 @@ function doAttack(world, actor, action) {
       dovecote.crew = "hand";
       cote = " and toppled the dovecote";
     }
+    let loaf = "";
+    const oven = (target.plots || []).find((tile) => tile.crew === "oven");
+    if (oven) {
+      const crumb = Math.min(target.gold, 22);
+      target.gold -= crumb;
+      g += crumb;
+      oven.crew = "hand";
+      loaf = " and broke the bakehouse";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4900,7 +4948,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5233,6 +5281,7 @@ function economy(world, p, hour) {
   pressVines(world, p);
   burnChar(world, p);
   maltHouse(world, p);
+  bakeHouse(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5672,6 +5721,8 @@ export function chooseAction(world, agent) {
     if (!malted && flatLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "malt" };
     const coted = (agent.plots || []).some((tile) => tile.crew === "dove");
     if (!coted && flatLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "dove" };
+    const baked = (agent.plots || []).some((tile) => tile.crew === "oven");
+    if (!baked && flatLot && agent.gold >= 450 && agent.orders >= 1 && rng.next() < 0.08) return { type: "oven" };
     const pits = quarryPits(agent);
     const stone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (pits < 1 && stone && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) return { type: "quarry" };

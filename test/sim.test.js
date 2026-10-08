@@ -6128,6 +6128,132 @@ test("a dovecote feeds the acres, homes on a bell, and lifts people from a ride"
   assert.ok(raid.log.some((row) => row.text.includes("toppled the dovecote")));
 });
 
+test("a bakehouse bakes after the malt house and takes fruit from a grove", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.oven, 88);
+  assert.equal(EARN.dove, 87);
+  const flats = [];
+  let hill = null;
+  for (let q = -50; q <= 50 && (flats.length < 3 || !hill); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 3) flats.push({ q, r });
+      if (!hill && kind === "hill") hill = { q, r };
+    }
+  }
+  assert.equal(flats.length, 3);
+  assert.ok(hill);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: hill.q, r: hill.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "oven" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "oven" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "oven" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "oven" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "oven" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "oven");
+  assert.equal(you.gold, 810);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.oven, EARN.oven);
+  assert.equal(applyAction(w.realm, "you", { type: "oven" }).ok, false);
+
+  const cold = hush(5);
+  cold.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "oven" }];
+  cold.seat.grain = 40;
+  advanceHour(cold.realm);
+  assert.equal(cold.seat.gold, 1006);
+  assert.equal(cold.seat.grain, 40);
+  assert.equal(cold.realm.log.some((row) => row.text.includes("bakes 8 grain")), false);
+
+  const hot = hush(6);
+  hot.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "oven" },
+    { q: flats[1].q, r: flats[1].r, crew: "malt" },
+  ];
+  hot.seat.grain = 40;
+  advanceHour(hot.realm);
+  assert.equal(hot.seat.gold, 1038);
+  assert.equal(hot.seat.grain, 22);
+  assert.ok(hot.realm.log.some((row) => row.text.includes("bakes 8 grain into 20 gold")));
+
+  const short = hush(7);
+  short.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "oven" },
+    { q: flats[1].q, r: flats[1].r, crew: "malt" },
+  ];
+  short.seat.grain = 20;
+  advanceHour(short.realm);
+  assert.equal(short.seat.gold, 1010);
+  assert.equal(short.seat.grain, 20);
+  assert.equal(short.realm.log.some((row) => row.text.includes("bakes 8 grain")), false);
+
+  const fruited = hush(8);
+  fruited.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "oven" },
+    { q: flats[1].q, r: flats[1].r, crew: "malt" },
+    { q: flats[2].q, r: flats[2].r, crew: "grove" },
+  ];
+  advanceHour(fruited.realm);
+  assert.equal(fruited.seat.gold, 1034);
+  assert.equal(fruited.seat.grain, 16);
+  assert.ok(fruited.realm.log.some((row) => row.text.includes("bakes 8 grain into 26 gold")));
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "oven" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("broke the bakehouse")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
