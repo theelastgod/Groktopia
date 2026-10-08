@@ -86,6 +86,7 @@ export const EARN = {
   pilot: 80,
   hive: 81,
   drift: 82,
+  vine: 83,
 };
 
 export const FACTIONS = {
@@ -960,6 +961,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "grove") result = doGrove(world, actor);
   else if (action.type === "hive") result = doHive(world, actor);
   else if (action.type === "drift") result = doDrift(world, actor);
+  else if (action.type === "vine") result = doVine(world, actor);
   else if (action.type === "bell") result = doBell(world, actor);
   else if (action.type === "sail") result = doSail(world, actor);
   else if (action.type === "cistern") result = doCistern(world, actor);
@@ -2082,6 +2084,28 @@ function doDrift(world, actor) {
   return { ok: true, message: `Drift yard on the ${kind} tile.${purse}` };
 }
 
+function doVine(world, actor) {
+  ensurePlots(world);
+  const held = (actor.plots || []).filter((tile) => tile.crew === "vine").length;
+  if (held >= 2) return fail("Two vineyards already stand on the hills.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 190) return fail("A vineyard wants 190 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "hill");
+  if (!plot) return fail("A vineyard needs a hand or an open lot on a hill.");
+  actor.gold -= 190;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "vine";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.vine;
+    notePurse(actor, "vine", EARN.vine);
+    purse = ` Purse +${formatUtopia(EARN.vine)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} plants a vineyard on a hill. It pays 6 grain and 14 gold an hour. A hive adds 8 gold to each row. A sail presses 8 grain from each row into 14 gold. A sack treads one vineyard.${purse}`);
+  return { ok: true, message: `Vineyard on the hill.${purse}` };
+}
+
 function doBell(world, actor) {
   ensurePlots(world);
   if ((actor.plots || []).some((tile) => tile.crew === "bell")) return fail("A bell already hangs over the acres.");
@@ -2179,6 +2203,19 @@ function grindSail(p) {
     return;
   }
   p.gold += 4;
+}
+
+function pressVines(world, p) {
+  const vines = (p.plots || []).filter((tile) => tile.crew === "vine").length;
+  if (!vines) return;
+  if (!(p.plots || []).some((tile) => tile.crew === "sail")) return;
+  let rows = 0;
+  while (rows < vines && (p.grain || 0) >= 8) {
+    p.grain -= 8;
+    p.gold += 14;
+    rows += 1;
+  }
+  if (rows > 0) log(world, `${p.name}'s sail presses ${rows} vineyard ${rows === 1 ? "row" : "rows"} and mills ${rows * 8} grain into ${rows * 14} gold.`);
 }
 
 export function stonePrice(actor, key) {
@@ -4628,6 +4665,15 @@ function doAttack(world, actor, action) {
       drift.crew = "hand";
       scatteredWood = " and scattered the driftwood";
     }
+    let trod = "";
+    const vine = (target.plots || []).find((tile) => tile.crew === "vine");
+    if (vine) {
+      const cask = Math.min(target.gold, 26);
+      target.gold -= cask;
+      g += cask;
+      vine.crew = "hand";
+      trod = " and trod a vineyard";
+    }
     let clapper = "";
     const bellTile = (target.plots || []).find((tile) => tile.crew === "bell");
     if (bellTile) {
@@ -4665,7 +4711,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${clapper}${vanes}${cracked}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4879,10 +4925,16 @@ function economy(world, p, hour) {
       goldIn += 6;
     }
     else if (tile.crew === "drift") goldIn += 5;
+    else if (tile.crew === "vine") {
+      foodIn += 6;
+      goldIn += 14;
+    }
     else if (tile.crew === "bell") goldIn += 5;
   }
   const groveCount = (p.plots || []).filter((tile) => tile.crew === "grove").length;
   if (groveCount && (p.plots || []).some((tile) => tile.crew === "hive")) foodIn += 10 * groveCount;
+  const vineCount = (p.plots || []).filter((tile) => tile.crew === "vine").length;
+  if (vineCount && (p.plots || []).some((tile) => tile.crew === "hive")) goldIn += 8 * vineCount;
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
     const hold = blockadeAt(world, p, colony);
@@ -4978,6 +5030,7 @@ function economy(world, p, hour) {
     p.grain = 0;
   }
   grindSail(p);
+  pressVines(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5388,6 +5441,8 @@ export function chooseAction(world, agent) {
     const sailed = (agent.plots || []).some((tile) => tile.crew === "sail");
     const hillLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "hill");
     if (!sailed && hillLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) return { type: "sail" };
+    const vines = (agent.plots || []).filter((tile) => tile.crew === "vine").length;
+    if (vines < 2 && hillLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) return { type: "vine" };
     const groves = (agent.plots || []).filter((tile) => tile.crew === "grove").length;
     const field = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
     if (groves < 2 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "grove" };

@@ -460,6 +460,45 @@ function drawDrift(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawVine(ctx, x, y, time) {
+  const sway = Math.sin(time * 1.8 + x) * 0.12;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(sway);
+  ctx.strokeStyle = "#6a4632";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-10, 6);
+  ctx.lineTo(-10, -2);
+  ctx.moveTo(0, 6);
+  ctx.lineTo(0, -4);
+  ctx.moveTo(10, 6);
+  ctx.lineTo(10, -1);
+  ctx.stroke();
+  ctx.strokeStyle = "#3f7a45";
+  ctx.lineWidth = 2;
+  for (const col of [-10, 0, 10]) {
+    ctx.beginPath();
+    ctx.moveTo(col, 2);
+    ctx.quadraticCurveTo(col - 5, -2, col, -6);
+    ctx.quadraticCurveTo(col + 5, -2, col, 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#6b2d4a";
+  ctx.beginPath();
+  ctx.arc(-10, -4, 1.5, 0, Math.PI * 2);
+  ctx.arc(0, -6, 1.5, 0, Math.PI * 2);
+  ctx.arc(10, -3, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8d7b68";
+  ctx.fillRect(6, 2, 7, 5);
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("VINE", 0, 18);
+  ctx.restore();
+}
+
 function drawHive(ctx, x, y, time) {
   const buzz = Math.sin(time * 8) * 2;
   ctx.save();
@@ -749,6 +788,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "pan") { /* pans already drawn */ }
     else if (plot && plot.crew === "grove") drawGrove(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "hive") drawHive(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "vine") drawVine(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "drift") { /* stacks already drawn, including on the shore */ }
     else if (plot && plot.crew === "bell") drawBell(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "sail") drawSail(ctx, cell.pos.x, cell.pos.y, time || 0);

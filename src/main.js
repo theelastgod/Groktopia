@@ -274,44 +274,50 @@ function gate() {
   const linked = wallet
     ? `Phantom ${esc(shortWallet())}${chainBalance ? ` · ${esc(chainBalance)}` : ""}`
     : "Connect Phantom. This page never asks for a seed phrase.";
-  return `<main class="gate">
+  const film = introSeen ? "" : `<div class="intro" id="intro">
+      <video id="trailer" class="intro-film" poster="/public/art/banner.jpg" src="/public/trailer.mp4" autoplay muted playsinline preload="auto"></video>
+      <div class="intro-chrome">
+        <p class="intro-mark">Groktopia</p>
+        <div class="intro-actions">
+          <button class="btn" id="trailer-sound" type="button">${trailerMuted ? "Hear the score" : "Quiet"}</button>
+          <button class="btn primary" id="trailer-skip" type="button">Enter</button>
+        </div>
+      </div>
+    </div>`;
+  return `${film}<main class="gate">
     <header class="gate-bar">
       <div class="brand-row"><img class="coin-mark" src="/public/art/coin.jpg" alt=""><span class="brand">Groktopia</span></div>
       <div class="row gate-wallet">
-        <button class="btn primary" id="phantom" type="button">${wallet ? esc(shortWallet()) : "Connect Phantom"}</button>
+        <button class="btn" id="phantom" type="button">${wallet ? esc(shortWallet()) : "Connect Phantom"}</button>
         ${wallet ? `<button class="btn" id="phantom-off" type="button">Disconnect</button>` : ""}
       </div>
     </header>
-    <section class="hero">
-      <figure class="hero-film">
-        <video id="trailer" class="hero-art" poster="/public/art/banner.jpg" src="/public/trailer.mp4" autoplay muted playsinline preload="auto"></video>
-        <button class="btn hero-sound" id="trailer-sound" type="button">${trailerMuted ? "Hear the score" : "Quiet"}</button>
-      </figure>
-      <div class="hero-copy">
-        <img class="coin-hero" src="/public/art/coin.jpg" alt="$UTOPIA coin">
+    <section class="home">
+      <div class="home-lead">
         <p class="eyebrow">Play to earn $UTOPIA</p>
-        <h1>Groktopia</h1>
-        <p class="earn-line">The purse is the in-game ledger. An active hour pays ${formatUtopia(EARN.hourActive)} $UTOPIA. Settling pays ${formatUtopia(EARN.settle)}. A study, a civic, and a fair march pay their own lines. One hundred cents is 1.00.</p>
-        <p class="lede">A two-hour realm, seen from above. The age starts the moment you sit. Eleven more rulers can join for two minutes, and every hour you play before they arrive is yours. Settle acres, found a port, and send hulls across the ocean. A galley, dromon, or hulk can close on a lighter hull, or sit on an enemy port and stop its fish. Any hull can salvage a wreck. A war hull can escort a trader. A port can raise a mole that shoves enemy hulls off the quay. A hull can tow a wreck home to a wharf. A port can raise a lee that shelters its hulls. A skiff, fisher, or cog can lay nets that hold an enemy hull, or slip a boom and land the port's fish. Any hull can drop a buoy that lets your ships sail farther. A skiff, fisher, or cog can carry a cargo to one of your ports. A port can stretch a chain that holds an enemy hull in the mouth. Two ports can run a ferry that lands gold and grain.</p>
-        <ul class="pillars">
-          <li><b>Earn</b><span>Hours, acres, studies, caravans, marches</span></li>
-          <li><b>Ages</b><span>Camp, Borough, Realm, Crown</span></li>
-          <li><b>Match</b><span>Starts now. Twelve seats stay open for two minutes</span></li>
-        </ul>
+        <h1>A realm, seen from above</h1>
+        <p class="lede">Sit, and the age starts. The map is the game. The purse is the ledger on this page.</p>
+        <ol class="steps">
+          <li><b>Sit</b><span>Name a ruler and a province. Twelve seats stay open for two minutes. Hours you play before the others arrive are yours.</span></li>
+          <li><b>Settle</b><span>Two rings beside your city start open. Buy further ground, then choose a building and the tile to raise it.</span></li>
+          <li><b>Earn</b><span>An active hour, new acres, studies, and fair marches fill the purse. Connect Phantom if you want. This page never asks for a seed phrase.</span></li>
+          <li><b>Move</b><span>Drag the map. The wheel zooms. On a phone, Orders is the sheet at the bottom. Ports fish, and hulls sail where you point them.</span></li>
+        </ol>
       </div>
+      <form class="card found home-seat" id="found">
+        <p class="wallet-line">${linked}</p>
+        <h2>Take a seat</h2>
+        <div class="found-grid">
+          <label>Ruler <input name="ruler" required maxlength="32" value="Ada" autocomplete="nickname"></label>
+          <label>Province <input name="province" required maxlength="32" value="First Acre"></label>
+          <label>Faction <select name="faction">${options}</select></label>
+        </div>
+        <div class="row">
+          <button class="btn primary" type="submit">Find a realm</button>
+          ${saved ? `<button class="btn" type="button" id="resume">Rejoin</button>` : ""}
+        </div>
+      </form>
     </section>
-    <form class="card found" id="found">
-      <p class="wallet-line">${linked}</p>
-      <div class="found-grid">
-        <label>Ruler <input name="ruler" required maxlength="32" value="Ada" autocomplete="nickname"></label>
-        <label>Province <input name="province" required maxlength="32" value="First Acre"></label>
-        <label>Faction <select name="faction">${options}</select></label>
-      </div>
-      <div class="row">
-        <button class="btn primary" type="submit">Find a realm</button>
-        ${saved ? `<button class="btn" type="button" id="resume">Rejoin</button>` : ""}
-      </div>
-    </form>
     ${toast ? `<div class="toast">${esc(toast)}</div>` : ""}
   </main>`;
 }
@@ -346,8 +352,9 @@ function render() {
     mounted = false;
     document.body.classList.remove("playing");
     cancelAnimationFrame(raf);
+    document.body.classList.toggle("intro-open", !introSeen);
     app.innerHTML = gate();
-    mountTrailer();
+    if (!introSeen) mountTrailer();
     return;
   }
   document.body.classList.add("playing");
@@ -711,6 +718,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-grove="1">Plant a grove · 160g · +${formatUtopia(EARN.grove)}</button>
         <button class="btn" type="button" data-hive="1">Raise a hive · 150g · +${formatUtopia(EARN.hive)}</button>
         <button class="btn" type="button" data-drift="1">Raise a drift yard · 170g · +${formatUtopia(EARN.drift)}</button>
+        <button class="btn" type="button" data-vine="1">Plant a vineyard · 190g · +${formatUtopia(EARN.vine)}</button>
         <button class="btn" type="button" data-bell="1">Hang a bell · 170g · +${formatUtopia(EARN.bell)}</button>
         <button class="btn" type="button" data-sail="1">Raise a sail · 220g · +${formatUtopia(EARN.sail)}</button>
         <button class="btn" type="button" data-cistern="1">Dig a cistern · 180g · +${formatUtopia(EARN.cistern)}</button>
@@ -894,6 +902,7 @@ function ledgerLine(actor) {
     ["groves", book.grove],
     ["hives", book.hive],
     ["drift yards", book.drift],
+    ["vineyards", book.vine],
     ["ropes", book.rope],
     ["bells", book.bell],
     ["sails", book.sail],
@@ -1101,7 +1110,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}, hives ${count("hive")}, drift yards ${count("drift")}, bells ${count("bell")}, sails ${count("sail")}, cisterns ${count("cistern")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. A hive keeps one grass or plain tile, pays 8 grain and 6 gold, and each grove yields 10 more grain. Key $ raises it. A drift yard keeps one shore lot, pays 5 gold, and strips 16 gold of timber from a wreck within two hexes. Key D raises it. Key | hangs a bell. A bell keeps grass or plain, pays 5 gold, and a wild ride takes half. A sail keeps one hill. While stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. Key _ raises it. A cistern keeps grass, plain, or marsh. Above 48 grain it banks 10 an hour up to 80, and below 24 it gives back up to 20. A full cistern seeps 4 grain. Key > digs it. Each stake adds 4 to the wall.`;
+  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}, hives ${count("hive")}, drift yards ${count("drift")}, vineyards ${count("vine")}, bells ${count("bell")}, sails ${count("sail")}, cisterns ${count("cistern")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. A hive keeps one grass or plain tile, pays 8 grain and 6 gold, and each grove yields 10 more grain. Key $ raises it. A drift yard keeps one shore lot, pays 5 gold, and strips 16 gold of timber from a wreck within two hexes. Key D raises it. A vineyard keeps a hill and pays 6 grain and 14 gold. Two vineyards is the limit. A hive adds 8 gold to each row. A sail presses 8 grain from each row into 14 gold. Key Shift+A plants it. Key | hangs a bell. A bell keeps grass or plain, pays 5 gold, and a wild ride takes half. A sail keeps one hill. While stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. Key _ raises it. A cistern keeps grass, plain, or marsh. Above 48 grain it banks 10 an hour up to 80, and below 24 it gives back up to 20. A full cistern seeps 4 grain. Key > digs it. Each stake adds 4 to the wall.`;
 }
 
 function relicLine(actor) {
@@ -1643,6 +1652,7 @@ function bindMap(canvas) {
       if (event.key === ":" && world) order({ type: "grove" }, "build");
       if (event.key === "$" && world) order({ type: "hive" }, "build");
       if (event.key.toLowerCase() === "d" && world) order({ type: "drift" }, "build");
+      if (event.key === "A" && world) order({ type: "vine" }, "build");
       if (event.key === "|" && world) order({ type: "bell" }, "build");
       if (event.key === "_" && world) order({ type: "sail" }, "build");
       if (event.key === ">" && world) order({ type: "cistern" }, "build");
@@ -1829,6 +1839,12 @@ app.addEventListener("click", async (event) => {
     video.play().catch(() => {});
     return;
   }
+  if (node.id === "trailer-skip") {
+    const video = document.querySelector("#trailer");
+    if (video) video.pause();
+    finishIntro();
+    return;
+  }
   if (node.id === "again") {
     session = null;
     socketGen += 1;
@@ -1974,6 +1990,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.drift) {
     order({ type: "drift" }, "build");
+    return;
+  }
+  if (node.dataset.vine) {
+    order({ type: "vine" }, "build");
     return;
   }
   if (node.dataset.bell) {

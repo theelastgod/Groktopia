@@ -5425,6 +5425,142 @@ test("a drift yard strips timber from a nearby wreck", () => {
   assert.ok(raid.log.some((row) => row.text.includes("scattered the driftwood")));
 });
 
+test("a vineyard pays a hill, takes bees, and presses under a sail", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.vine, 83);
+  assert.equal(EARN.drift, 82);
+  const hills = [];
+  let grass = null;
+  let mount = null;
+  for (let q = -50; q <= 50 && (hills.length < 3 || !grass || !mount); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if (kind === "hill" && hills.length < 3) hills.push({ q, r });
+      if (!grass && kind === "grass") grass = { q, r };
+      if (!mount && kind === "mount") mount = { q, r };
+    }
+  }
+  assert.equal(hills.length, 3);
+  assert.ok(grass && mount);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.muster = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.ferries = [];
+  you.plots = [{ q: grass.q, r: grass.r, crew: "hand" }, { q: mount.q, r: mount.r, crew: "lot" }];
+  you.grain = 0;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.kind = "human";
+  you.studies = {};
+  you.marks = {};
+  you.relics = {};
+  you.doctrine = "";
+  you.spells = { bulwark: 0, fury: 0, shade: 0 };
+  assert.equal(applyAction(w, "you", { type: "vine" }).ok, false);
+  you.plots = [{ q: hills[0].q, r: hills[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w, "you", { type: "vine" }).ok, false);
+  you.plots = [
+    { q: hills[0].q, r: hills[0].r, crew: "hand" },
+    { q: hills[1].q, r: hills[1].r, crew: "lot" },
+    { q: hills[2].q, r: hills[2].r, crew: "hand" },
+  ];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "vine" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w, "you", { type: "vine" }).ok, false);
+  you.orders = ORDERS;
+  const first = applyAction(w, "you", { type: "vine" });
+  assert.equal(first.ok, true, first.message);
+  assert.equal(you.plots[0].crew, "vine");
+  assert.equal(you.gold, 810);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.vine, EARN.vine);
+  const second = applyAction(w, "you", { type: "vine" });
+  assert.equal(second.ok, true, second.message);
+  assert.equal(you.plots.filter((tile) => tile.crew === "vine").length, 2);
+  assert.equal(you.ledger.vine, EARN.vine * 2);
+  assert.equal(applyAction(w, "you", { type: "vine" }).ok, false);
+
+  you.acted = false;
+  you.gold = 1000;
+  you.grain = 0;
+  you.plots = [
+    { q: hills[0].q, r: hills[0].r, crew: "vine" },
+    { q: hills[1].q, r: hills[1].r, crew: "vine" },
+  ];
+  advanceHour(w);
+  assert.equal(you.gold, 1028);
+  assert.equal(you.grain, 12);
+
+  you.acted = false;
+  you.gold = 1000;
+  you.grain = 0;
+  you.plots.push({ q: grass.q, r: grass.r, crew: "hive" });
+  advanceHour(w);
+  assert.equal(you.gold, 1050);
+  assert.equal(you.grain, 20);
+
+  you.acted = false;
+  you.gold = 1000;
+  you.grain = 40;
+  you.plots = [
+    { q: hills[0].q, r: hills[0].r, crew: "vine" },
+    { q: hills[1].q, r: hills[1].r, crew: "vine" },
+    { q: hills[2].q, r: hills[2].r, crew: "sail" },
+  ];
+  advanceHour(w);
+  assert.equal(you.gold, 1084);
+  assert.equal(you.grain, 20);
+  assert.ok(w.log.some((row) => row.text.includes("presses 2 vineyard rows")));
+
+  you.acted = false;
+  you.gold = 1000;
+  you.grain = 0;
+  you.plots = [
+    { q: hills[0].q, r: hills[0].r, crew: "vine" },
+    { q: hills[2].q, r: hills[2].r, crew: "sail" },
+  ];
+  w.log = [];
+  advanceHour(w);
+  assert.equal(you.gold, 1018);
+  assert.equal(you.grain, 6);
+  assert.equal(w.log.some((row) => row.text.includes("presses 1 vineyard row")), false);
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 40;
+  vic.plots = [
+    { q: hills[0].q, r: hills[0].r, crew: "vine" },
+    { q: hills[1].q, r: hills[1].r, crew: "vine" },
+  ];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots.filter((tile) => tile.crew === "vine").length, 1);
+  assert.equal(vic.plots.filter((tile) => tile.crew === "hand").length, 1);
+  assert.ok(raid.log.some((row) => row.text.includes("trod a vineyard")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
