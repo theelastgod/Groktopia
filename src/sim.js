@@ -83,6 +83,7 @@ export const EARN = {
   cistern: 77,
   smoke: 78,
   monger: 79,
+  pilot: 80,
 };
 
 export const FACTIONS = {
@@ -977,6 +978,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "rope") result = doRope(world, actor, action.colony);
   else if (action.type === "smoke") result = doSmoke(world, actor, action.colony);
   else if (action.type === "monger") result = doMonger(world, actor, action.colony);
+  else if (action.type === "pilot") result = doPilot(world, actor, action.colony);
   else if (action.type === "refit") result = doRefit(world, actor, action);
   else if (action.type === "mole") result = doMole(world, actor, action.colony);
   else if (action.type === "lee") result = doLee(world, actor, action.colony);
@@ -3182,6 +3184,27 @@ function doMonger(world, actor, colonyId) {
   return { ok: true, message: `Fishmonger open at ${colony.name}.${purse}` };
 }
 
+function doPilot(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A pilot needs a port.");
+  if (colony.pilot) return fail(`${colony.name} already keeps a pilot.`);
+  if (actor.gold < 200) return fail("A pilot wants 200 gold.");
+  actor.gold -= 200;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.pilot = true;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.pilot;
+    notePurse(actor, "pilot", EARN.pilot);
+    purse = ` Purse +${formatUtopia(EARN.pilot)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} posts a pilot at ${colony.name}. The house pays 5 gold an hour. A friendly hull within three hexes ignores an enemy lamp. A chain still holds. A landing sends the pilot home.${purse}`);
+  return { ok: true, message: `Pilot posted at ${colony.name}.${purse}` };
+}
+
 function doRefit(world, actor, action) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   if ((actor.ships || []).length >= 6) return fail("Six hulls already ride for this holding.");
@@ -3671,13 +3694,18 @@ function landRaid(world, realm, ship) {
     mark.colony.monger = false;
     boards = " The fishmonger is smashed.";
   }
+  let pilot = "";
+  if (mark.colony.pilot) {
+    mark.colony.pilot = false;
+    pilot = " The pilot is sent home.";
+  }
   let purse = "";
   if (realm.kind === "human" && (gold > 0 || grain > 0)) {
     realm.utopia += EARN.raid;
     notePurse(realm, "raid", EARN.raid);
     purse = ` Purse +${formatUtopia(EARN.raid)} $UTOPIA.`;
   }
-  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${staves}${coils}${racks}${boards}${purse}`);
+  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${staves}${coils}${racks}${boards}${pilot}${purse}`);
 }
 
 function chainHold(world, realm, ship, hour) {
@@ -3700,6 +3728,10 @@ function lampNear(world, realm, ship, hour) {
     }
   }
   return false;
+}
+
+function pilotNear(realm, ship) {
+  return (realm.colonies || []).some((colony) => colony.port && colony.pilot && hexDist(ship.q, ship.r, colony.q, colony.r) <= 3);
 }
 
 function buoyLit(realm, ship, hour) {
@@ -4061,7 +4093,11 @@ function sailHour(world) {
       if (ship.destQ == null) continue;
       const spec = NAVY[ship.kind];
       let left = (spec ? spec.speed : 1) + (buoyLit(realm, ship, world.hour || 0) ? 1 : 0) + (ropeNear(realm, ship) ? 1 : 0);
-      if (lampNear(world, realm, ship, world.hour || 0)) left = Math.max(1, left - 1);
+      const lamp = lampNear(world, realm, ship, world.hour || 0);
+      if (lamp && pilotNear(realm, ship)) {
+        const steered = NAVY[ship.kind];
+        log(world, `${realm.name}'s pilot keeps the ${steered ? steered.name : "hull"} off the lamp.`);
+      } else if (lamp) left = Math.max(1, left - 1);
       while (left > 0 && (ship.q !== ship.destQ || ship.r !== ship.destR)) {
         const next = stepToward(ship.q, ship.r, ship.destQ, ship.destR, (q, r) => sailKind(terrainKind(q, r)));
         if (next.q === ship.q && next.r === ship.r) break;
@@ -4758,6 +4794,7 @@ function economy(world, p, hour) {
     if (colony.rope) goldIn += 6;
     if (colony.smoke) goldIn += 4;
     if (colony.monger) goldIn += 3;
+    if (colony.pilot) goldIn += 5;
     if (!hold || (colony.slipUntil || 0) > hour) {
       let fish = 12;
       if ((colony.quayUntil || 0) > hour && (colony.quay || 0) > 0) fish += 6;
@@ -5100,6 +5137,8 @@ export function chooseAction(world, agent) {
     if (smokePort && agent.gold >= 480 && agent.orders >= 1 && rng.next() < 0.1) return { type: "smoke", colony: smokePort.id };
     const mongerPort = (agent.colonies || []).find((colony) => colony.port && colony.smoke && !colony.monger);
     if (mongerPort && agent.gold >= 520 && agent.orders >= 1 && rng.next() < 0.1) return { type: "monger", colony: mongerPort.id };
+    const pilotPort = (agent.colonies || []).find((colony) => colony.port && !colony.pilot && world.provinces.some((other) => other.id !== agent.id && (other.colonies || []).some((row) => row.port && (row.lampUntil || 0) > (world.hour || 0))));
+    if (pilotPort && agent.gold >= 480 && agent.orders >= 1 && rng.next() < 0.12) return { type: "pilot", colony: pilotPort.id };
     const pans = (agent.plots || []).filter((tile) => tile.crew === "pan").length;
     const brineWet = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && saltGround(tile));
     if (pans < 2 && brineWet && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "pan" };

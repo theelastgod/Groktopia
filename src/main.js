@@ -75,6 +75,7 @@ let stake = 100;
 let soundOn = true;
 let trailerAt = 0;
 let trailerMuted = true;
+let introSeen = false;
 let wallet = "";
 let chainBalance = null;
 let mint = { symbol: "UTOPIA", mint: "", decimals: 6, cluster: "mainnet-beta" };
@@ -117,6 +118,13 @@ function nowServer() {
   return Date.now() + skew;
 }
 
+function finishIntro() {
+  introSeen = true;
+  document.body.classList.remove("intro-open");
+  const node = document.querySelector("#intro");
+  if (node) node.remove();
+}
+
 function mountTrailer() {
   const video = document.querySelector("#trailer");
   if (!video) return;
@@ -129,6 +137,7 @@ function mountTrailer() {
     video.play().catch(() => {});
   };
   video.addEventListener("timeupdate", () => { trailerAt = video.currentTime; });
+  video.addEventListener("ended", finishIntro, { once: true });
   if (video.readyState >= 1) resume();
   else video.addEventListener("loadedmetadata", resume, { once: true });
 }
@@ -887,6 +896,7 @@ function ledgerLine(actor) {
     ["cisterns", book.cistern],
     ["smokehouses", book.smoke],
     ["fishmongers", book.monger],
+    ["pilots", book.pilot],
   ].filter((row) => row[1] > 0);
   if (!bits.length) return "The purse is empty. Settle land, complete a study, adopt a civic and keep the hour active, or march inside the fair band.";
   return `Purse from ${bits.map(([name, cents]) => `${name} ${formatUtopia(cents)}`).join(" · ")}.`;
@@ -1202,6 +1212,11 @@ function fleetLine(actor) {
       rows.push(`<p class="muted">${esc(port.name)}'s fishmonger pays 3 gold an hour. An open quay sells up to 8 cured fish above a reserve of 16, at 3 gold each. A closed quay keeps the racks.</p>`);
     } else {
       rows.push(`<button class="btn" type="button" data-monger="${esc(port.id)}">Open a fishmonger at ${esc(port.name)} · 210g · +${formatUtopia(EARN.monger)}</button>`);
+    }
+    if (port.pilot) {
+      rows.push(`<p class="muted">${esc(port.name)}'s pilot pays 5 gold an hour. A friendly hull within three hexes ignores an enemy lamp. A chain still holds. Key { posts one.</p>`);
+    } else {
+      rows.push(`<button class="btn" type="button" data-pilot="${esc(port.id)}">Post a pilot at ${esc(port.name)} · 200g · +${formatUtopia(EARN.pilot)}</button>`);
     }
     if ((port.lampUntil || 0) > world.hour) {
       rows.push(`<p class="muted">${esc(port.name)}'s lamp burns through hour ${port.lampUntil - 1}. Enemy hulls within four hexes sail one hex slower.</p>`);
@@ -1641,6 +1656,10 @@ function bindMap(canvas) {
         const port = (seat().colonies || []).find((row) => row.port && !row.monger);
         if (port) order({ type: "monger", colony: port.id }, "build");
       }
+      if (event.key === "{" && world && seat()) {
+        const port = (seat().colonies || []).find((row) => row.port && !row.pilot);
+        if (port) order({ type: "pilot", colony: port.id }, "build");
+      }
       if (event.key.toLowerCase() === "u" && world) order({ type: "founder" }, "build");
       if (event.key.toLowerCase() === "x" && world && seat()) {
         const fleet = seat().ships || [];
@@ -2037,6 +2056,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.monger) {
     order({ type: "monger", colony: node.dataset.monger }, "build");
+    return;
+  }
+  if (node.dataset.pilot) {
+    order({ type: "pilot", colony: node.dataset.pilot }, "build");
     return;
   }
   if (node.dataset.lamp) {

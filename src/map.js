@@ -3333,6 +3333,29 @@ function drawSmoke(ctx, x, y, time, cured) {
   ctx.restore();
 }
 
+function drawPilot(ctx, x, y, time) {
+  const wave = Math.sin(time * 2.6) * 2;
+  ctx.save();
+  ctx.translate(x + 16, y - 22);
+  ctx.strokeStyle = "#c4a15a";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.lineTo(0, -8);
+  ctx.stroke();
+  ctx.fillStyle = "#7d9a72";
+  ctx.beginPath();
+  ctx.moveTo(0, -8);
+  ctx.lineTo(8, -2 + wave * 0.3);
+  ctx.lineTo(0, -1);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("PILOT", 0, 16);
+  ctx.restore();
+}
+
 function drawMonger(ctx, x, y, time) {
   const sway = Math.sin(time * 2.1) * 1.4;
   ctx.save();
@@ -3543,6 +3566,7 @@ function drawColonies(ctx, world, time) {
       if (colony.port && colony.rope) drawRope(ctx, pos.x, pos.y, time);
       if (colony.port && colony.smoke) drawSmoke(ctx, pos.x, pos.y, time, colony.cured || 0);
       if (colony.port && colony.monger) drawMonger(ctx, pos.x, pos.y, time);
+      if (colony.port && colony.pilot) drawPilot(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);
