@@ -88,6 +88,7 @@ export const EARN = {
   drift: 82,
   vine: 83,
   char: 84,
+  reed: 85,
 };
 
 export const FACTIONS = {
@@ -898,6 +899,7 @@ export const AMBITIONS = [
   { id: "keel", name: "Launch a keel", purse: 40, blurb: "Put a boat on the water.", match: (action) => action.type === "keel" },
   { id: "founder", name: "Send a founder", purse: 40, blurb: "Raise a founder for a new town.", match: (action) => action.type === "founder" },
   { id: "char", name: "Bank a hearth", purse: 35, blurb: "Bank a charcoal hearth in the woods.", match: (action) => action.type === "char" },
+  { id: "reed", name: "Cut a reed bed", purse: 35, blurb: "Cut a reed bed in the marsh.", match: (action) => action.type === "reed" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -968,6 +970,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "sail") result = doSail(world, actor);
   else if (action.type === "cistern") result = doCistern(world, actor);
   else if (action.type === "char") result = doChar(world, actor);
+  else if (action.type === "reed") result = doReed(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2202,15 +2205,44 @@ function doChar(world, actor) {
   return { ok: true, message: `Charcoal hearth in the woods.${purse}` };
 }
 
+function doReed(world, actor) {
+  ensurePlots(world);
+  const held = (actor.plots || []).filter((tile) => tile.crew === "reed").length;
+  if (held >= 2) return fail("Two reed beds already stand in the marsh.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 160) return fail("A reed bed wants 160 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "marsh");
+  if (!plot) return fail("A reed bed needs a hand or an open lot in the marsh.");
+  actor.gold -= 160;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "reed";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.reed;
+    notePurse(actor, "reed", EARN.reed);
+    purse = ` Purse +${formatUtopia(EARN.reed)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} cuts a reed bed in the marsh. It pays 20 grain and 6 gold an hour. A tide wheel adds 8 grain to each bed. One bed feeds a charcoal hearth for 14 gold, and two beds feed it for 22, with no grain spent. A sack drowns one bed.${purse}`);
+  return { ok: true, message: `Reed bed in the marsh.${purse}` };
+}
+
 function burnChar(world, p) {
   const hearth = (p.plots || []).find((tile) => tile.crew === "char");
   if (!hearth) return;
   const fed = timberYards(p) > 0;
   const drift = (p.plots || []).some((tile) => tile.crew === "drift");
   const extra = drift ? 8 : 0;
+  const reeds = (p.plots || []).filter((tile) => tile.crew === "reed").length;
   if (fed) {
     p.gold += 22 + extra;
     log(world, `${p.name}'s timber yard feeds the charcoal hearth for ${22 + extra} gold.`);
+    return;
+  }
+  if (reeds > 0) {
+    const pay = (reeds >= 2 ? 22 : 14) + extra;
+    p.gold += pay;
+    log(world, `${p.name}'s reed beds feed the charcoal hearth for ${pay} gold.`);
     return;
   }
   if ((p.grain || 0) >= 40) {
@@ -4762,6 +4794,15 @@ function doAttack(world, actor, action) {
       hearth.crew = "hand";
       quenched = " and quenched the charcoal hearth";
     }
+    let drowned = "";
+    const reedBed = (target.plots || []).find((tile) => tile.crew === "reed");
+    if (reedBed) {
+      const thatch = Math.min(target.grain, 30);
+      target.grain -= thatch;
+      f += thatch;
+      reedBed.crew = "hand";
+      drowned = " and drowned a reed bed";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4772,7 +4813,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4991,11 +5032,17 @@ function economy(world, p, hour) {
       goldIn += 14;
     }
     else if (tile.crew === "bell") goldIn += 5;
+    else if (tile.crew === "reed") {
+      foodIn += 20;
+      goldIn += 6;
+    }
   }
   const groveCount = (p.plots || []).filter((tile) => tile.crew === "grove").length;
   if (groveCount && (p.plots || []).some((tile) => tile.crew === "hive")) foodIn += 10 * groveCount;
   const vineCount = (p.plots || []).filter((tile) => tile.crew === "vine").length;
   if (vineCount && (p.plots || []).some((tile) => tile.crew === "hive")) goldIn += 8 * vineCount;
+  const reedCount = (p.plots || []).filter((tile) => tile.crew === "reed").length;
+  if (reedCount && tideWheels(p) > 0) foodIn += 8 * reedCount;
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
     const hold = blockadeAt(world, p, colony);
@@ -5524,6 +5571,9 @@ export function chooseAction(world, agent) {
     const charred = (agent.plots || []).some((tile) => tile.crew === "char");
     const woodLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "wood");
     if (!charred && woodLot && agent.gold >= 450 && agent.orders >= 1 && rng.next() < 0.1) return { type: "char" };
+    const reeds = (agent.plots || []).filter((tile) => tile.crew === "reed").length;
+    const marshLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "marsh");
+    if (reeds < 2 && marshLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "reed" };
     const pits = quarryPits(agent);
     const stone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (pits < 1 && stone && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) return { type: "quarry" };

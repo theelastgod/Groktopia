@@ -5719,6 +5719,153 @@ test("a charcoal hearth burns grain, takes timber and driftwood, and smokes a ri
   assert.ok(raid.log.some((row) => row.text.includes("quenched the charcoal hearth")));
 });
 
+test("a reed bed pays the marsh, feeds a hearth, and a sack drowns one", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.reed, 85);
+  assert.equal(EARN.char, 84);
+  const marshes = [];
+  let grass = null;
+  let wood = null;
+  let wet = null;
+  for (let q = -50; q <= 50 && (marshes.length < 3 || !grass || !wood || !wet); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if (kind === "marsh" && marshes.length < 3) marshes.push({ q, r });
+      if (!grass && kind === "grass") grass = { q, r };
+      if (!wood && kind === "wood") wood = { q, r };
+      if (!wet && (kind === "coast" || kind === "river")) wet = { q, r };
+    }
+  }
+  assert.equal(marshes.length, 3);
+  assert.ok(grass && wood && wet);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: grass.q, r: grass.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "reed" }).ok, false);
+  you.plots = [{ q: marshes[0].q, r: marshes[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "reed" }).ok, false);
+  you.plots = [
+    { q: marshes[0].q, r: marshes[0].r, crew: "hand" },
+    { q: marshes[1].q, r: marshes[1].r, crew: "lot" },
+    { q: marshes[2].q, r: marshes[2].r, crew: "hand" },
+  ];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "reed" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "reed" }).ok, false);
+  you.orders = ORDERS;
+  const first = applyAction(w.realm, "you", { type: "reed" });
+  assert.equal(first.ok, true, first.message);
+  assert.equal(you.plots[0].crew, "reed");
+  assert.equal(you.gold, 840);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.reed, EARN.reed);
+  const second = applyAction(w.realm, "you", { type: "reed" });
+  assert.equal(second.ok, true, second.message);
+  assert.equal(you.plots.filter((tile) => tile.crew === "reed").length, 2);
+  assert.equal(you.ledger.reed, EARN.reed * 2);
+  assert.equal(applyAction(w.realm, "you", { type: "reed" }).ok, false);
+
+  const one = hush(5);
+  one.seat.plots = [{ q: marshes[0].q, r: marshes[0].r, crew: "reed" }];
+  advanceHour(one.realm);
+  assert.equal(one.seat.gold, 1006);
+  assert.equal(one.seat.grain, 20);
+
+  const pair = hush(6);
+  pair.seat.plots = [
+    { q: marshes[0].q, r: marshes[0].r, crew: "reed" },
+    { q: marshes[1].q, r: marshes[1].r, crew: "reed" },
+  ];
+  advanceHour(pair.realm);
+  assert.equal(pair.seat.gold, 1012);
+  assert.equal(pair.seat.grain, 40);
+
+  const turned = hush(7);
+  turned.seat.plots = [
+    { q: marshes[0].q, r: marshes[0].r, crew: "reed" },
+    { q: wet.q, r: wet.r, crew: "wheel" },
+  ];
+  advanceHour(turned.realm);
+  assert.equal(turned.seat.gold, 1018);
+  assert.equal(turned.seat.grain, 56);
+
+  const fed = hush(8);
+  fed.seat.plots = [
+    { q: marshes[0].q, r: marshes[0].r, crew: "reed" },
+    { q: wood.q, r: wood.r, crew: "char" },
+  ];
+  advanceHour(fed.realm);
+  assert.equal(fed.seat.gold, 1020);
+  assert.equal(fed.seat.grain, 20);
+  assert.ok(fed.realm.log.some((row) => row.text.includes("reed beds feed the charcoal hearth for 14 gold")));
+
+  const deep = hush(9);
+  deep.seat.plots = [
+    { q: marshes[0].q, r: marshes[0].r, crew: "reed" },
+    { q: marshes[1].q, r: marshes[1].r, crew: "reed" },
+    { q: wood.q, r: wood.r, crew: "char" },
+  ];
+  deep.seat.grain = 40;
+  advanceHour(deep.realm);
+  assert.equal(deep.seat.gold, 1034);
+  assert.equal(deep.seat.grain, 80);
+  assert.ok(deep.realm.log.some((row) => row.text.includes("reed beds feed the charcoal hearth for 22 gold")));
+
+  const raid = newWorld({ seed: 10 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [
+    { q: marshes[0].q, r: marshes[0].r, crew: "reed" },
+    { q: marshes[1].q, r: marshes[1].r, crew: "reed" },
+  ];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots.filter((tile) => tile.crew === "reed").length, 1);
+  assert.equal(vic.plots.filter((tile) => tile.crew === "hand").length, 1);
+  assert.ok(raid.log.some((row) => row.text.includes("drowned a reed bed")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

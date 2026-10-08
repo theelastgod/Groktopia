@@ -723,6 +723,7 @@ function cardFor(actor, selected) {
         <button class="btn" type="button" data-sail="1">Raise a sail · 220g · +${formatUtopia(EARN.sail)}</button>
         <button class="btn" type="button" data-cistern="1">Dig a cistern · 180g · +${formatUtopia(EARN.cistern)}</button>
         <button class="btn" type="button" data-char="1">Bank a charcoal hearth · 200g · +${formatUtopia(EARN.char)}</button>
+        <button class="btn" type="button" data-reed="1">Cut a reed bed · 160g · +${formatUtopia(EARN.reed)}</button>
         <button class="btn" type="button" data-founder="1">Raise a founder · 260g · +${formatUtopia(EARN.founder)}</button>
         ${fleetLine(actor)}
         ${patrolButton(actor)}
@@ -909,6 +910,7 @@ function ledgerLine(actor) {
     ["sails", book.sail],
     ["cisterns", book.cistern],
     ["charcoal", book.char],
+    ["reeds", book.reed],
     ["smokehouses", book.smoke],
     ["fishmongers", book.monger],
     ["pilots", book.pilot],
@@ -1112,7 +1114,7 @@ function beaconButton(actor) {
 function armsLine(actor) {
   const plots = actor.plots || [];
   const count = (crew) => plots.filter((tile) => tile.crew === crew).length;
-  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}, hives ${count("hive")}, drift yards ${count("drift")}, vineyards ${count("vine")}, bells ${count("bell")}, sails ${count("sail")}, cisterns ${count("cistern")}, hearths ${count("char")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. A hive keeps one grass or plain tile, pays 8 grain and 6 gold, and each grove yields 10 more grain. Key $ raises it. A drift yard keeps one shore lot, pays 5 gold, and strips 16 gold of timber from a wreck within two hexes. Key D raises it. A vineyard keeps a hill and pays 6 grain and 14 gold. Two vineyards is the limit. A hive adds 8 gold to each row. A sail presses 8 grain from each row into 14 gold. Key Shift+A plants it. Key | hangs a bell. A bell keeps grass or plain, pays 5 gold, and a wild ride takes half. A sail keeps one hill. While stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. Key _ raises it. A cistern keeps grass, plain, or marsh. Above 48 grain it banks 10 an hour up to 80, and below 24 it gives back up to 20. A full cistern seeps 4 grain. Key > digs it. A charcoal hearth keeps one wood lot. While stores hold 40 grain it burns 12 into 30 gold. A timber yard feeds it for 22 gold and spends no grain. A drift yard adds 8 gold. A thin store pays 6 gold. Smoke takes 12 gold and 2 riders from a wild ride. Key Shift+C banks it. Each stake adds 4 to the wall.`;
+  return `${plots.length} tiles. Open lots ${count("lot")}, hands ${count("hand")}, foot ${count("foot")}, riders ${count("rider")}, catapults ${count("engine")}, sappers ${count("sapper")}, hamlets ${count("hamlet")}, timber ${count("timber")}, quarries ${count("quarry")}, wheels ${count("wheel")}, lookouts ${count("look")}, pales ${count("pale")}, pans ${count("pan")}, groves ${count("grove")}, hives ${count("hive")}, drift yards ${count("drift")}, vineyards ${count("vine")}, bells ${count("bell")}, sails ${count("sail")}, cisterns ${count("cistern")}, hearths ${count("char")}, reeds ${count("reed")}. Horses take open ground. Catapults take a hill or a field. Sappers take stone and timber. A hamlet keeps a grass or wheat tile. A timber yard keeps a wood tile. A quarry keeps a hill or a mountain. A tide wheel keeps a coast or river lot and pays 28 grain and 12 gold. A lookout keeps a hill or a mountain, pays 6 gold, and marks an enemy hull within six hexes. A salt pan keeps marsh, coast, or a river bank and pays 16 gold. Two pans is the shore's limit. Key K opens a quarry. Key # raises a wheel. Key % raises a lookout. Key ^ raises a palisade on up to three edge lots. A grove keeps grass or plain and pays 24 grain and 4 gold. Two groves is the field's limit. Key ? cuts a salt pan. Key : plants a grove. A hive keeps one grass or plain tile, pays 8 grain and 6 gold, and each grove yields 10 more grain. Key $ raises it. A drift yard keeps one shore lot, pays 5 gold, and strips 16 gold of timber from a wreck within two hexes. Key D raises it. A vineyard keeps a hill and pays 6 grain and 14 gold. Two vineyards is the limit. A hive adds 8 gold to each row. A sail presses 8 grain from each row into 14 gold. Key Shift+A plants it. Key | hangs a bell. A bell keeps grass or plain, pays 5 gold, and a wild ride takes half. A sail keeps one hill. While stores hold 36 grain it mills 16 into 28 gold. A thin store pays 4 gold. Key _ raises it. A cistern keeps grass, plain, or marsh. Above 48 grain it banks 10 an hour up to 80, and below 24 it gives back up to 20. A full cistern seeps 4 grain. Key > digs it. A charcoal hearth keeps one wood lot. While stores hold 40 grain it burns 12 into 30 gold. A timber yard feeds it for 22 gold and spends no grain. A drift yard adds 8 gold. A thin store pays 6 gold. Smoke takes 12 gold and 2 riders from a wild ride. Key Shift+C banks it. A reed bed keeps marsh and pays 20 grain and 6 gold. Two beds is the limit. A tide wheel adds 8 grain to each bed. One bed feeds a charcoal hearth for 14 gold, and two beds feed it for 22, with no grain spent. Key Shift+R cuts one. Each stake adds 4 to the wall.`;
 }
 
 function relicLine(actor) {
@@ -1659,6 +1661,7 @@ function bindMap(canvas) {
       if (event.key === "_" && world) order({ type: "sail" }, "build");
       if (event.key === ">" && world) order({ type: "cistern" }, "build");
       if (event.key === "C" && world) order({ type: "char" }, "build");
+      if (event.key === "R" && world) order({ type: "reed" }, "build");
       if (event.key === "~" && world && seat()) {
         const port = (seat().colonies || []).find((row) => row.port && !row.cooper);
         if (port) order({ type: "cooper", colony: port.id }, "build");
@@ -1805,7 +1808,7 @@ function bindMap(canvas) {
       }
       if (event.key === "c" && world && selectedId && selectedId !== seat().id) order({ type: "road", target: selectedId }, "build");
       if (event.key.toLowerCase() === "b" && world && selectedId && selectedId !== seat().id) order({ type: "bounty", target: selectedId }, "coin");
-      if (event.key.toLowerCase() === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
+      if (event.key === "r" && world && selectedId && selectedId !== seat().id) order({ type: "relief", target: selectedId }, "coin");
       if (event.key === "4" && world) {
         const next = STUDIES.find((row) => !(seat().studies || {})[row.id] && studyCount(seat()) >= row.need);
         if (next) order({ type: "study", study: next.id }, "build");
@@ -2013,6 +2016,10 @@ app.addEventListener("click", async (event) => {
   }
   if (node.dataset.char) {
     order({ type: "char" }, "build");
+    return;
+  }
+  if (node.dataset.reed) {
+    order({ type: "reed" }, "build");
     return;
   }
   if (node.dataset.founder) {
