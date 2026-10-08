@@ -3313,6 +3313,26 @@ function drawCooper(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawSmoke(ctx, x, y, time, cured) {
+  const puff = Math.sin(time * 2.4) * 2;
+  ctx.save();
+  ctx.translate(x, y - 18);
+  ctx.fillStyle = "#5c4034";
+  ctx.fillRect(-8, 2, 16, 10);
+  ctx.fillStyle = "#3a2a22";
+  ctx.fillRect(-2, -6, 4, 8);
+  ctx.fillStyle = "rgba(203, 184, 146, 0.75)";
+  ctx.beginPath();
+  ctx.arc(0, -10 + puff, 3.2, 0, Math.PI * 2);
+  ctx.arc(3, -16 + puff * 0.4, 2.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#c4a15a";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText(cured ? `SMOKE ${cured}` : "SMOKE", 0, 24);
+  ctx.restore();
+}
+
 function drawRope(ctx, x, y, time) {
   const spin = Math.sin(time * 1.8) * 0.2;
   ctx.save();
@@ -3503,6 +3523,7 @@ function drawColonies(ctx, world, time) {
       if (colony.wharf) drawCrane(ctx, pos.x, pos.y, time);
       if (colony.port && colony.cooper) drawCooper(ctx, pos.x, pos.y, time);
       if (colony.port && colony.rope) drawRope(ctx, pos.x, pos.y, time);
+      if (colony.port && colony.smoke) drawSmoke(ctx, pos.x, pos.y, time, colony.cured || 0);
       if (colony.port && (colony.moleUntil || 0) > (world.hour || 0)) drawMole(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.quayUntil || 0) > (world.hour || 0) && (colony.quay || 0) > 0) drawQuay(ctx, pos.x, pos.y, time);
       if (colony.port && (colony.duesUntil || 0) > (world.hour || 0)) drawDues(ctx, pos.x, pos.y, time);

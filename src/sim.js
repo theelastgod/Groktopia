@@ -81,6 +81,7 @@ export const EARN = {
   bell: 75,
   sail: 76,
   cistern: 77,
+  smoke: 78,
 };
 
 export const FACTIONS = {
@@ -973,6 +974,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "wharf") result = doWharf(world, actor, action.colony);
   else if (action.type === "cooper") result = doCooper(world, actor, action.colony);
   else if (action.type === "rope") result = doRope(world, actor, action.colony);
+  else if (action.type === "smoke") result = doSmoke(world, actor, action.colony);
   else if (action.type === "refit") result = doRefit(world, actor, action);
   else if (action.type === "mole") result = doMole(world, actor, action.colony);
   else if (action.type === "lee") result = doLee(world, actor, action.colony);
@@ -3135,6 +3137,28 @@ function doRope(world, actor, colonyId) {
   return { ok: true, message: `Ropewalk laid at ${colony.name}.${purse}` };
 }
 
+function doSmoke(world, actor, colonyId) {
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  const colony = (actor.colonies || []).find((row) => row.id === colonyId);
+  if (!colony) return fail("That town is not yours.");
+  if (!colony.port) return fail("A smokehouse needs a port.");
+  if (colony.smoke) return fail(`${colony.name} already has a smokehouse.`);
+  if (actor.gold < 200) return fail("A smokehouse wants 200 gold.");
+  actor.gold -= 200;
+  actor.orders -= 1;
+  actor.acted = true;
+  colony.smoke = true;
+  colony.cured = colony.cured || 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.smoke;
+    notePurse(actor, "smoke", EARN.smoke);
+    purse = ` Purse +${formatUtopia(EARN.smoke)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a smokehouse at ${colony.name}. The yard pays 4 gold an hour. An open quay cures 8 fish, up to 48. A closed quay feeds 12 from the racks. A landing smashes it.${purse}`);
+  return { ok: true, message: `Smokehouse raised at ${colony.name}.${purse}` };
+}
+
 function doRefit(world, actor, action) {
   if (actor.orders < 1) return fail("No orders left this hour.");
   if ((actor.ships || []).length >= 6) return fail("Six hulls already ride for this holding.");
@@ -3611,13 +3635,21 @@ function landRaid(world, realm, ship) {
     mark.colony.rope = false;
     coils = " The ropewalk is cut.";
   }
+  let racks = "";
+  if (mark.colony.smoke) {
+    const spilled = mark.colony.cured || 0;
+    mark.colony.smoke = false;
+    mark.colony.cured = 0;
+    if (spilled) realm.grain += spilled;
+    racks = spilled ? ` The smokehouse is smashed and ${spilled} cured grain is taken.` : " The smokehouse is smashed.";
+  }
   let purse = "";
   if (realm.kind === "human" && (gold > 0 || grain > 0)) {
     realm.utopia += EARN.raid;
     notePurse(realm, "raid", EARN.raid);
     purse = ` Purse +${formatUtopia(EARN.raid)} $UTOPIA.`;
   }
-  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${staves}${coils}${purse}`);
+  log(world, `${realm.name} lands a company at ${mark.colony.name}. The quay loses ${gold} gold and ${grain} grain.${staves}${coils}${racks}${purse}`);
 }
 
 function chainHold(world, realm, ship, hour) {
@@ -4696,16 +4728,31 @@ function economy(world, p, hour) {
     if (colony.wharf) goldIn += 8;
     if (colony.cooper) goldIn += 10;
     if (colony.rope) goldIn += 6;
+    if (colony.smoke) goldIn += 4;
     if (!hold || (colony.slipUntil || 0) > hour) {
-      foodIn += 12;
-      if ((colony.quayUntil || 0) > hour && (colony.quay || 0) > 0) foodIn += 6;
+      let fish = 12;
+      if ((colony.quayUntil || 0) > hour && (colony.quay || 0) > 0) fish += 6;
+      if (colony.smoke) {
+        const room = Math.max(0, 48 - (colony.cured || 0));
+        const cure = Math.min(8, fish, room);
+        colony.cured = (colony.cured || 0) + cure;
+        fish -= cure;
+      }
+      foodIn += fish;
       if (hold) log(world, `${p.name} slips the boom at ${colony.name}. The quay lands its fish.`);
       continue;
     }
     const skim = Math.min(p.gold, 18);
     p.gold -= skim;
     hold.realm.gold += skim;
-    log(world, `${hold.realm.name} holds ${colony.name} closed. The quay lands no fish${skim ? ` and ${skim} gold is taken` : ""}.`);
+    let ration = "";
+    if (colony.smoke && (colony.cured || 0) > 0) {
+      const feed = Math.min(12, colony.cured);
+      colony.cured -= feed;
+      foodIn += feed;
+      ration = ` The smokehouse feeds ${feed} grain.`;
+    }
+    log(world, `${hold.realm.name} holds ${colony.name} closed. The quay lands no fish${skim ? ` and ${skim} gold is taken` : ""}.${ration}`);
   }
   for (const colony of p.colonies || []) {
     if (!colony.port || (colony.duesUntil || 0) <= hour) continue;
@@ -5012,6 +5059,8 @@ export function chooseAction(world, agent) {
     if (cooperPort && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.1) return { type: "cooper", colony: cooperPort.id };
     const ropePort = (agent.colonies || []).find((colony) => colony.port && !colony.rope);
     if (ropePort && agent.gold >= 450 && agent.orders >= 1 && rng.next() < 0.1) return { type: "rope", colony: ropePort.id };
+    const smokePort = (agent.colonies || []).find((colony) => colony.port && !colony.smoke);
+    if (smokePort && agent.gold >= 480 && agent.orders >= 1 && rng.next() < 0.1) return { type: "smoke", colony: smokePort.id };
     const pans = (agent.plots || []).filter((tile) => tile.crew === "pan").length;
     const brineWet = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && saltGround(tile));
     if (pans < 2 && brineWet && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "pan" };
