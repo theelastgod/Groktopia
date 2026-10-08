@@ -94,6 +94,7 @@ export const EARN = {
   oven: 88,
   churn: 89,
   tan: 90,
+  dye: 91,
 };
 
 export const FACTIONS = {
@@ -910,6 +911,7 @@ export const AMBITIONS = [
   { id: "oven", name: "Raise a bakehouse", purse: 35, blurb: "Raise a bakehouse on open ground.", match: (action) => action.type === "oven" },
   { id: "churn", name: "Raise a creamery", purse: 35, blurb: "Raise a creamery on open ground.", match: (action) => action.type === "churn" },
   { id: "tan", name: "Raise a tannery", purse: 35, blurb: "Raise a tannery in the marsh.", match: (action) => action.type === "tan" },
+  { id: "dye", name: "Raise a dye works", purse: 35, blurb: "Raise a dye works on open ground.", match: (action) => action.type === "dye" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -986,6 +988,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "oven") result = doOven(world, actor);
   else if (action.type === "churn") result = doChurn(world, actor);
   else if (action.type === "tan") result = doTan(world, actor);
+  else if (action.type === "dye") result = doDye(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2384,6 +2387,43 @@ function tanHides(world, p, hour) {
     return;
   }
   p.gold += 6;
+}
+
+function doDye(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "dye")) return fail("A dye works already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 155) return fail("A dye works wants 155 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A dye works needs a hand or an open lot on grass or plain.");
+  actor.gold -= 155;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "dye";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.dye;
+    notePurse(actor, "dye", EARN.dye);
+    purse = ` Purse +${formatUtopia(EARN.dye)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a dye works. An empty line pays 4 gold. A reed bed dyes 14 gold, and a tannery adds 10 for the hide. The tannery still works the flock first. A sack rinses the vats.${purse}`);
+  return { ok: true, message: `Dye works on the open ground.${purse}` };
+}
+
+function dyeCloth(world, p) {
+  const yard = (p.plots || []).find((tile) => tile.crew === "dye");
+  if (!yard) return;
+  const reed = (p.plots || []).some((tile) => tile.crew === "reed");
+  const hide = (p.plots || []).some((tile) => tile.crew === "tan");
+  if (reed) {
+    const pay = 14 + (hide ? 10 : 0);
+    p.gold += pay;
+    log(world, hide
+      ? `${p.name}'s dye works dyes the reed and the hide for ${pay} gold.`
+      : `${p.name}'s dye works dyes the reed for ${pay} gold.`);
+    return;
+  }
+  p.gold += 4;
 }
 
 function maltHouse(world, p) {
@@ -5028,6 +5068,15 @@ function doAttack(world, actor, action) {
       tanYard.crew = "hand";
       vats = " and spoiled the tannery";
     }
+    let rinsed = "";
+    const dyeYard = (target.plots || []).find((tile) => tile.crew === "dye");
+    if (dyeYard) {
+      const woad = Math.min(target.gold, 20);
+      target.gold -= woad;
+      g += woad;
+      dyeYard.crew = "hand";
+      rinsed = " and rinsed the dye works";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5038,7 +5087,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5374,6 +5423,7 @@ function economy(world, p, hour) {
   bakeHouse(world, p);
   churnMilk(world, p, hour);
   tanHides(world, p, hour);
+  dyeCloth(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5810,6 +5860,9 @@ export function chooseAction(world, agent) {
     if (reeds < 2 && marshLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "reed" };
     const tanned = (agent.plots || []).some((tile) => tile.crew === "tan");
     if (!tanned && marshLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "tan" };
+    const dyed = (agent.plots || []).some((tile) => tile.crew === "dye");
+    const dryLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+    if (!dyed && reeds > 0 && dryLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "dye" };
     const malted = (agent.plots || []).some((tile) => tile.crew === "malt");
     const flatLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
     if (!malted && flatLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "malt" };

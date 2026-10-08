@@ -6487,6 +6487,121 @@ test("a tannery works a penned flock and a charcoal hearth cures the hide", () =
   assert.ok(raid.log.some((row) => row.text.includes("spoiled the tannery")));
 });
 
+test("a dye works colors reed and hide", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.dye, 91);
+  assert.equal(EARN.tan, 90);
+  const flats = [];
+  const marshes = [];
+  for (let q = -50; q <= 50 && (flats.length < 2 || marshes.length < 1); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 2) flats.push({ q, r });
+      if (kind === "marsh" && marshes.length < 1) marshes.push({ q, r });
+    }
+  }
+  assert.equal(flats.length, 2);
+  assert.equal(marshes.length, 1);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.fold = 0;
+    seat.foldUntil = 0;
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: marshes[0].q, r: marshes[0].r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "dye" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "dye" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "dye" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "dye" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "dye" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "dye");
+  assert.equal(you.gold, 845);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.dye, EARN.dye);
+  assert.equal(applyAction(w.realm, "you", { type: "dye" }).ok, false);
+
+  const empty = hush(5);
+  empty.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "dye" }];
+  advanceHour(empty.realm);
+  assert.equal(empty.seat.gold, 1004);
+  assert.equal(empty.seat.grain, 0);
+  assert.equal(empty.realm.log.some((row) => row.text.includes("dyes the reed")), false);
+
+  const woad = hush(6);
+  woad.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "dye" },
+    { q: marshes[0].q, r: marshes[0].r, crew: "reed" },
+  ];
+  advanceHour(woad.realm);
+  assert.equal(woad.seat.gold, 1020);
+  assert.equal(woad.seat.grain, 20);
+  assert.ok(woad.realm.log.some((row) => row.text.includes("dyes the reed for 14 gold")));
+
+  const hide = hush(7);
+  hide.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "dye" },
+    { q: marshes[0].q, r: marshes[0].r, crew: "reed" },
+    { q: flats[1].q, r: flats[1].r, crew: "tan" },
+  ];
+  advanceHour(hide.realm);
+  assert.equal(hide.seat.gold, 1036);
+  assert.equal(hide.seat.grain, 20);
+  assert.ok(hide.realm.log.some((row) => row.text.includes("dyes the reed and the hide for 24 gold")));
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "dye" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("rinsed the dye works")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

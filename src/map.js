@@ -330,6 +330,41 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawDye(ctx, x, y, time) {
+  const sway = Math.sin(time * 2.2 + y) * 0.18;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "#3a2a22";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-11, -8);
+  ctx.lineTo(11, -8);
+  ctx.stroke();
+  ctx.fillStyle = "#2a241c";
+  ctx.fillRect(-12, -10, 2, 16);
+  ctx.fillRect(10, -10, 2, 16);
+  const cloth = ["#3d4e8a", "#6a3d78", "#2f6a62"];
+  for (let i = 0; i < 3; i++) {
+    ctx.save();
+    ctx.translate(-7 + i * 6, -8);
+    ctx.rotate(sway * (i === 1 ? -1 : 1));
+    ctx.fillStyle = cloth[i];
+    ctx.fillRect(-2, 0, 4, 9);
+    ctx.fillStyle = "rgba(243, 230, 200, 0.35)";
+    ctx.fillRect(-2, 6, 4, 2);
+    ctx.restore();
+  }
+  ctx.fillStyle = "#5a4638";
+  ctx.beginPath();
+  ctx.ellipse(0, 8, 7, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("DYE", 0, 18);
+  ctx.restore();
+}
+
 function drawTan(ctx, x, y, time) {
   const sway = Math.sin(time * 1.5 + x) * 0.12;
   ctx.save();
@@ -1000,6 +1035,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "oven") drawOven(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "churn") drawChurn(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "tan") drawTan(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "dye") drawDye(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
