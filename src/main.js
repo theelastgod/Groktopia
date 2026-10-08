@@ -1567,7 +1567,10 @@ function bindMap(canvas) {
     }
     selectedSite = null;
     selectedBand = null;
-    if (!hoverId) return;
+    if (!hoverId) {
+      if (window.matchMedia("(max-width: 760px)").matches) setSheet(false);
+      return;
+    }
     selectedId = hoverId;
     if (window.matchMedia("(max-width: 760px)").matches) setSheet(true);
     play("click");
@@ -1623,6 +1626,12 @@ function bindMap(canvas) {
       resize();
       draw();
     });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", () => {
+        resize();
+        draw();
+      });
+    }
     window.addEventListener("keydown", (event) => {
       const tag = event.target && event.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
