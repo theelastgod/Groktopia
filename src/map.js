@@ -365,6 +365,38 @@ function drawDye(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawWarp(ctx, x, y, time) {
+  const shuttle = Math.sin(time * 3) * 8;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "#6a4a32";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-10, -8);
+  ctx.lineTo(-10, 8);
+  ctx.moveTo(10, -8);
+  ctx.lineTo(10, 8);
+  ctx.moveTo(-10, -8);
+  ctx.lineTo(10, -8);
+  ctx.stroke();
+  ctx.strokeStyle = "#cbb892";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath();
+    ctx.moveTo(-10, -6 + i * 3);
+    ctx.lineTo(10, -6 + i * 3);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#3d4e8a";
+  ctx.fillRect(-8, -2, 7, 8);
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(shuttle - 3, -1, 6, 3);
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("WARP", 0, 18);
+  ctx.restore();
+}
+
 function drawPot(ctx, x, y, time) {
   const spin = time * 2.4;
   const glow = 0.4 + Math.sin(time * 4) * 0.25;
@@ -1068,6 +1100,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "tan") drawTan(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "dye") drawDye(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "pot") drawPot(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "warp") drawWarp(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

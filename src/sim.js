@@ -96,6 +96,7 @@ export const EARN = {
   tan: 90,
   dye: 91,
   pot: 92,
+  warp: 93,
 };
 
 export const FACTIONS = {
@@ -914,6 +915,7 @@ export const AMBITIONS = [
   { id: "tan", name: "Raise a tannery", purse: 35, blurb: "Raise a tannery in the marsh.", match: (action) => action.type === "tan" },
   { id: "dye", name: "Raise a dye works", purse: 35, blurb: "Raise a dye works on open ground.", match: (action) => action.type === "dye" },
   { id: "pot", name: "Raise a pot bank", purse: 35, blurb: "Raise a pot bank on open ground.", match: (action) => action.type === "pot" },
+  { id: "warp", name: "Raise a warp shed", purse: 35, blurb: "Raise a warp shed on open ground.", match: (action) => action.type === "warp" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -992,6 +994,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "tan") result = doTan(world, actor);
   else if (action.type === "dye") result = doDye(world, actor);
   else if (action.type === "pot") result = doPot(world, actor);
+  else if (action.type === "warp") result = doWarp(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2465,6 +2468,43 @@ function firePots(world, p) {
   const how = glaze ? "glazed clay" : "quarry clay";
   const where = hearth ? " by the hearth" : "";
   log(world, `${p.name}'s pot bank throws ${how}${where} for ${pay} gold.`);
+}
+
+function doWarp(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "warp")) return fail("A warp shed already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 160) return fail("A warp shed wants 160 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A warp shed needs a hand or an open lot on grass or plain.");
+  actor.gold -= 160;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "warp";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.warp;
+    notePurse(actor, "warp", EARN.warp);
+    purse = ` Purse +${formatUtopia(EARN.warp)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a warp shed. An empty frame pays 3 gold. A reed bed weaves 12 gold. A dye works adds 9, and a penned flock adds 7 for the wool. The dye works still colors first. A sack cuts the warp.${purse}`);
+  return { ok: true, message: `Warp shed on the open ground.${purse}` };
+}
+
+function weaveCloth(world, p, hour) {
+  const shed = (p.plots || []).find((tile) => tile.crew === "warp");
+  if (!shed) return;
+  const reed = (p.plots || []).some((tile) => tile.crew === "reed");
+  const dyed = (p.plots || []).some((tile) => tile.crew === "dye");
+  const wool = foldLive(p, hour);
+  if (!reed) {
+    p.gold += 3;
+    return;
+  }
+  const pay = 12 + (dyed ? 9 : 0) + (wool ? 7 : 0);
+  p.gold += pay;
+  const cloth = dyed && wool ? "dyed wool" : dyed ? "dyed cloth" : wool ? "wool and reed" : "the reed";
+  log(world, `${p.name}'s warp shed weaves ${cloth} for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5127,6 +5167,15 @@ function doAttack(world, actor, action) {
       potBank.crew = "hand";
       smashed = " and smashed the pot bank";
     }
+    let cutWarp = "";
+    const warpShed = (target.plots || []).find((tile) => tile.crew === "warp");
+    if (warpShed) {
+      const thread = Math.min(target.gold, 18);
+      target.gold -= thread;
+      g += thread;
+      warpShed.crew = "hand";
+      cutWarp = " and cut the warp shed";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5137,7 +5186,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5475,6 +5524,7 @@ function economy(world, p, hour) {
   tanHides(world, p, hour);
   dyeCloth(world, p);
   firePots(world, p);
+  weaveCloth(world, p, hour);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5914,6 +5964,8 @@ export function chooseAction(world, agent) {
     const dyed = (agent.plots || []).some((tile) => tile.crew === "dye");
     const dryLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
     if (!dyed && reeds > 0 && dryLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "dye" };
+    const warped = (agent.plots || []).some((tile) => tile.crew === "warp");
+    if (!warped && reeds > 0 && dryLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "warp" };
     const malted = (agent.plots || []).some((tile) => tile.crew === "malt");
     const flatLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
     if (!malted && flatLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "malt" };
