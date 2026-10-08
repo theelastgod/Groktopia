@@ -5237,6 +5237,100 @@ test("a pilot keeps a friendly hull off an enemy lamp", () => {
   assert.ok(raid.log.some((row) => row.text.includes("pilot is sent home")));
 });
 
+test("a hive pays the field and pollinates each grove", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.hive, 81);
+  assert.equal(EARN.pilot, 80);
+  let grass = null;
+  let grass2 = null;
+  let plain = null;
+  let wood = null;
+  for (let q = -30; q <= 30 && (!grass || !grass2 || !plain || !wood); q++) {
+    for (let r = -30; r <= 30; r++) {
+      const kind = terrainKind(q, r);
+      if (!grass && kind === "grass") grass = { q, r };
+      else if (!grass2 && kind === "grass") grass2 = { q, r };
+      if (!plain && kind === "plain") plain = { q, r };
+      if (!wood && kind === "wood") wood = { q, r };
+    }
+  }
+  assert.ok(grass && grass2 && plain && wood);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.muster = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.ferries = [];
+  you.plots = [{ q: wood.q, r: wood.r, crew: "hand" }];
+  you.grain = 0;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.kind = "human";
+  you.studies = {};
+  you.marks = {};
+  you.relics = {};
+  you.spells = { bulwark: 0, fury: 0, shade: 0 };
+  assert.equal(applyAction(w, "you", { type: "hive" }).ok, false);
+  you.plots = [{ q: grass.q, r: grass.r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "hive" }).ok, false);
+  you.gold = 1000;
+  const raised = applyAction(w, "you", { type: "hive" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "hive");
+  assert.equal(you.gold, 850);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.hive, EARN.hive);
+  assert.equal(applyAction(w, "you", { type: "hive" }).ok, false);
+  you.acted = false;
+  you.gold = 1000;
+  you.grain = 0;
+  advanceHour(w);
+  assert.equal(you.grain, 8);
+  assert.equal(you.gold, 1006);
+  you.plots.push({ q: grass2.q, r: grass2.r, crew: "grove" });
+  you.gold = 1000;
+  you.grain = 0;
+  you.acted = false;
+  advanceHour(w);
+  assert.equal(you.grain, 42);
+  assert.equal(you.gold, 1010);
+  you.plots.push({ q: plain.q, r: plain.r, crew: "grove" });
+  you.gold = 1000;
+  you.grain = 0;
+  you.acted = false;
+  advanceHour(w);
+  assert.equal(you.grain, 76);
+  assert.equal(you.gold, 1014);
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 40;
+  vic.plots = [{ q: grass.q, r: grass.r, crew: "hive" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("smoked the hive")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

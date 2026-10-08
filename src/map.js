@@ -441,6 +441,37 @@ function drawGrove(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawHive(ctx, x, y, time) {
+  const buzz = Math.sin(time * 8) * 2;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#c4a15a";
+  ctx.beginPath();
+  ctx.moveTo(0, -10);
+  ctx.lineTo(8, 6);
+  ctx.lineTo(-8, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#6a4632";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-5, 0);
+  ctx.lineTo(5, 0);
+  ctx.moveTo(-6, 3);
+  ctx.lineTo(6, 3);
+  ctx.stroke();
+  ctx.fillStyle = "#1a1612";
+  ctx.beginPath();
+  ctx.arc(4 + buzz, -8, 1.3, 0, Math.PI * 2);
+  ctx.arc(-6, -6 + buzz * 0.4, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("HIVE", 0, 18);
+  ctx.restore();
+}
+
 function drawPan(ctx, x, y, time) {
   const glint = 0.45 + Math.sin(time * 2.4 + x) * 0.2;
   ctx.save();
@@ -697,6 +728,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "pale") { /* stakes already drawn */ }
     else if (plot && plot.crew === "pan") { /* pans already drawn */ }
     else if (plot && plot.crew === "grove") drawGrove(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "hive") drawHive(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "bell") drawBell(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "sail") drawSail(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "cistern") drawCistern(ctx, cell.pos.x, cell.pos.y, time || 0, plot.store || 0);

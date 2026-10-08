@@ -84,6 +84,7 @@ export const EARN = {
   smoke: 78,
   monger: 79,
   pilot: 80,
+  hive: 81,
 };
 
 export const FACTIONS = {
@@ -956,6 +957,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "pale") result = doPale(world, actor);
   else if (action.type === "pan") result = doPan(world, actor);
   else if (action.type === "grove") result = doGrove(world, actor);
+  else if (action.type === "hive") result = doHive(world, actor);
   else if (action.type === "bell") result = doBell(world, actor);
   else if (action.type === "sail") result = doSail(world, actor);
   else if (action.type === "cistern") result = doCistern(world, actor);
@@ -2032,6 +2034,28 @@ function doGrove(world, actor) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} plants a grove on a ${kind} tile. It pays 24 grain and 4 gold an hour. A sack burns one grove.${purse}`);
   return { ok: true, message: `Grove on the ${kind} tile.${purse}` };
+}
+
+function doHive(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "hive")) return fail("A hive already stands in the fields.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 150) return fail("A hive wants 150 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A hive needs a hand or an open lot on grass or plain.");
+  actor.gold -= 150;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "hive";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.hive;
+    notePurse(actor, "hive", EARN.hive);
+    purse = ` Purse +${formatUtopia(EARN.hive)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} raises a hive on a ${kind} tile. It pays 8 grain and 6 gold an hour. Each grove beside the acres yields 10 more grain. A sack smokes the hive.${purse}`);
+  return { ok: true, message: `Hive on the ${kind} tile.${purse}` };
 }
 
 function doBell(world, actor) {
@@ -4538,6 +4562,15 @@ function doAttack(world, actor, action) {
       grove.crew = "hand";
       ashes = " and burned a grove";
     }
+    let smoked = "";
+    const hive = (target.plots || []).find((tile) => tile.crew === "hive");
+    if (hive) {
+      const wax = Math.min(target.gold, 22);
+      target.gold -= wax;
+      g += wax;
+      hive.crew = "hand";
+      smoked = " and smoked the hive";
+    }
     let clapper = "";
     const bellTile = (target.plots || []).find((tile) => tile.crew === "bell");
     if (bellTile) {
@@ -4575,7 +4608,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${clapper}${vanes}${cracked}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${clapper}${vanes}${cracked}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4784,8 +4817,14 @@ function economy(world, p, hour) {
       foodIn += 24;
       goldIn += 4;
     }
+    else if (tile.crew === "hive") {
+      foodIn += 8;
+      goldIn += 6;
+    }
     else if (tile.crew === "bell") goldIn += 5;
   }
+  const groveCount = (p.plots || []).filter((tile) => tile.crew === "grove").length;
+  if (groveCount && (p.plots || []).some((tile) => tile.crew === "hive")) foodIn += 10 * groveCount;
   for (const colony of p.colonies || []) {
     if (!colony.port) continue;
     const hold = blockadeAt(world, p, colony);
@@ -5294,6 +5333,8 @@ export function chooseAction(world, agent) {
     const groves = (agent.plots || []).filter((tile) => tile.crew === "grove").length;
     const field = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
     if (groves < 2 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "grove" };
+    const hived = (agent.plots || []).some((tile) => tile.crew === "hive");
+    if (!hived && groves > 0 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) return { type: "hive" };
     const wheels = tideWheels(agent);
     const wetLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
     if (wheels < 1 && wetLot && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) return { type: "wheel" };
