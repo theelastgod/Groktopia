@@ -330,6 +330,29 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawChurn(ctx, x, y, time) {
+  const dash = Math.sin(time * 4) * 3;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#f3e6c8";
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 8, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#6a5648";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(0, 2);
+  ctx.lineTo(0, -8 + dash);
+  ctx.stroke();
+  ctx.fillStyle = "#c6a15a";
+  ctx.fillRect(-3, -10 + dash, 6, 2);
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("CHURN", 0, 18);
+  ctx.restore();
+}
+
 function drawOven(ctx, x, y, time) {
   const glow = 0.45 + Math.sin(time * 5) * 0.25;
   ctx.save();
@@ -946,6 +969,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "malt") drawMalt(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "dove") drawDove(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "oven") drawOven(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "churn") drawChurn(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

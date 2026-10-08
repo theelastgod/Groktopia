@@ -6254,6 +6254,121 @@ test("a bakehouse bakes after the malt house and takes fruit from a grove", () =
   assert.ok(raid.log.some((row) => row.text.includes("broke the bakehouse")));
 });
 
+test("a creamery churns a penned flock and a bakehouse sweetens it", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.churn, 89);
+  assert.equal(EARN.oven, 88);
+  const flats = [];
+  let hill = null;
+  for (let q = -50; q <= 50 && (flats.length < 2 || !hill); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 2) flats.push({ q, r });
+      if (!hill && kind === "hill") hill = { q, r };
+    }
+  }
+  assert.equal(flats.length, 2);
+  assert.ok(hill);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.fold = 0;
+    seat.foldUntil = 0;
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: hill.q, r: hill.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "churn" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "churn" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "churn" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "churn" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "churn" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "churn");
+  assert.equal(you.gold, 825);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.churn, EARN.churn);
+  assert.equal(applyAction(w.realm, "you", { type: "churn" }).ok, false);
+
+  const empty = hush(5);
+  empty.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "churn" }];
+  advanceHour(empty.realm);
+  assert.equal(empty.seat.gold, 1005);
+  assert.equal(empty.seat.grain, 0);
+  assert.equal(empty.realm.log.some((row) => row.text.includes("churns the flock")), false);
+
+  const penned = hush(6);
+  penned.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "churn" }];
+  penned.seat.fold = 28;
+  penned.seat.foldUntil = 6;
+  advanceHour(penned.realm);
+  assert.equal(penned.seat.gold, 1040);
+  assert.equal(penned.seat.grain, 48);
+  assert.ok(penned.realm.log.some((row) => row.text.includes("churns the flock for 18 gold")));
+
+  const sweet = hush(7);
+  sweet.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "churn" },
+    { q: flats[1].q, r: flats[1].r, crew: "oven" },
+  ];
+  sweet.seat.fold = 28;
+  sweet.seat.foldUntil = 6;
+  advanceHour(sweet.realm);
+  assert.equal(sweet.seat.gold, 1056);
+  assert.equal(sweet.seat.grain, 48);
+  assert.ok(sweet.realm.log.some((row) => row.text.includes("churns the flock for 28 gold")));
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "churn" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("spilled the creamery")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

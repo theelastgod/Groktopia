@@ -92,6 +92,7 @@ export const EARN = {
   malt: 86,
   dove: 87,
   oven: 88,
+  churn: 89,
 };
 
 export const FACTIONS = {
@@ -906,6 +907,7 @@ export const AMBITIONS = [
   { id: "malt", name: "Raise a malt house", purse: 35, blurb: "Raise a malt house on open ground.", match: (action) => action.type === "malt" },
   { id: "dove", name: "Raise a dovecote", purse: 35, blurb: "Raise a dovecote on open ground.", match: (action) => action.type === "dove" },
   { id: "oven", name: "Raise a bakehouse", purse: 35, blurb: "Raise a bakehouse on open ground.", match: (action) => action.type === "oven" },
+  { id: "churn", name: "Raise a creamery", purse: 35, blurb: "Raise a creamery on open ground.", match: (action) => action.type === "churn" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -980,6 +982,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "malt") result = doMalt(world, actor);
   else if (action.type === "dove") result = doDove(world, actor);
   else if (action.type === "oven") result = doOven(world, actor);
+  else if (action.type === "churn") result = doChurn(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2312,6 +2315,39 @@ function bakeHouse(world, p) {
     return;
   }
   p.gold += 6;
+}
+
+function doChurn(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "churn")) return fail("A creamery already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 175) return fail("A creamery wants 175 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
+  if (!plot) return fail("A creamery needs a hand or an open lot on grass or plain.");
+  actor.gold -= 175;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "churn";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.churn;
+    notePurse(actor, "churn", EARN.churn);
+    purse = ` Purse +${formatUtopia(EARN.churn)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a creamery. An empty shed pays 5 gold. A penned flock churns 18 gold, and a bakehouse adds 10 more. A sack spills the floor.${purse}`);
+  return { ok: true, message: `Creamery on the open ground.${purse}` };
+}
+
+function churnMilk(world, p, hour) {
+  const shed = (p.plots || []).find((tile) => tile.crew === "churn");
+  if (!shed) return;
+  if (foldLive(p, hour)) {
+    const pay = 18 + ((p.plots || []).some((tile) => tile.crew === "oven") ? 10 : 0);
+    p.gold += pay;
+    log(world, `${p.name}'s creamery churns the flock for ${pay} gold.`);
+    return;
+  }
+  p.gold += 5;
 }
 
 function maltHouse(world, p) {
@@ -4938,6 +4974,15 @@ function doAttack(world, actor, action) {
       oven.crew = "hand";
       loaf = " and broke the bakehouse";
     }
+    let spilled = "";
+    const shed = (target.plots || []).find((tile) => tile.crew === "churn");
+    if (shed) {
+      const whey = Math.min(target.gold, 26);
+      target.gold -= whey;
+      g += whey;
+      shed.crew = "hand";
+      spilled = " and spilled the creamery";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4948,7 +4993,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5282,6 +5327,7 @@ function economy(world, p, hour) {
   burnChar(world, p);
   maltHouse(world, p);
   bakeHouse(world, p);
+  churnMilk(world, p, hour);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5723,6 +5769,8 @@ export function chooseAction(world, agent) {
     if (!coted && flatLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "dove" };
     const baked = (agent.plots || []).some((tile) => tile.crew === "oven");
     if (!baked && flatLot && agent.gold >= 450 && agent.orders >= 1 && rng.next() < 0.08) return { type: "oven" };
+    const churned = (agent.plots || []).some((tile) => tile.crew === "churn");
+    if (!churned && flatLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "churn" };
     const pits = quarryPits(agent);
     const stone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (pits < 1 && stone && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) return { type: "quarry" };
