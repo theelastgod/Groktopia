@@ -330,6 +330,36 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawChar(ctx, x, y, time) {
+  const puff = (time * 18) % 16;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#3a2a22";
+  ctx.beginPath();
+  ctx.moveTo(-12, 6);
+  ctx.lineTo(0, -2);
+  ctx.lineTo(12, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(-8, 2, 10, 3);
+  ctx.fillRect(-5, -1, 8, 3);
+  ctx.fillStyle = "#e07a3c";
+  ctx.beginPath();
+  ctx.arc(1, 1, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(203, 184, 146, 0.75)";
+  ctx.beginPath();
+  ctx.arc(2, -4 - puff * 0.45, 2.4 + puff * 0.08, 0, Math.PI * 2);
+  ctx.arc(-2, -10 - puff * 0.2, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#cbb892";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("CHAR", 0, 18);
+  ctx.restore();
+}
+
 function drawCistern(ctx, x, y, time, store) {
   const held = Math.max(0, Math.min(80, store || 0));
   const ripple = Math.sin(time * 2.2 + x) * 0.6;
@@ -793,6 +823,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "bell") drawBell(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "sail") drawSail(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "cistern") drawCistern(ctx, cell.pos.x, cell.pos.y, time || 0, plot.store || 0);
+    else if (plot && plot.crew === "char") drawChar(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

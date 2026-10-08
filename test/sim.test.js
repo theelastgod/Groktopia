@@ -5561,6 +5561,164 @@ test("a vineyard pays a hill, takes bees, and presses under a sail", () => {
   assert.ok(raid.log.some((row) => row.text.includes("trod a vineyard")));
 });
 
+test("a charcoal hearth burns grain, takes timber and driftwood, and smokes a ride", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.char, 84);
+  assert.equal(EARN.vine, 83);
+  const woods = [];
+  let grass = null;
+  let shore = null;
+  for (let q = -50; q <= 50 && (woods.length < 2 || !grass || !shore); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if (kind === "wood" && woods.length < 2) woods.push({ q, r });
+      if (!grass && kind === "grass") grass = { q, r };
+      if (!shore && (kind === "coast" || kind === "river")) shore = { q, r };
+    }
+  }
+  assert.equal(woods.length, 2);
+  assert.ok(grass && shore);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: grass.q, r: grass.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "char" }).ok, false);
+  you.plots = [{ q: woods[0].q, r: woods[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "char" }).ok, false);
+  you.plots = [{ q: woods[0].q, r: woods[0].r, crew: "timber" }];
+  assert.equal(applyAction(w.realm, "you", { type: "char" }).ok, false);
+  you.plots = [
+    { q: woods[0].q, r: woods[0].r, crew: "hand" },
+    { q: woods[1].q, r: woods[1].r, crew: "lot" },
+  ];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "char" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "char" }).ok, false);
+  you.orders = ORDERS;
+  const banked = applyAction(w.realm, "you", { type: "char" });
+  assert.equal(banked.ok, true, banked.message);
+  assert.equal(you.plots[0].crew, "char");
+  assert.equal(you.gold, 800);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.char, EARN.char);
+  assert.equal(applyAction(w.realm, "you", { type: "char" }).ok, false);
+
+  const thin = hush(5);
+  thin.seat.plots = [{ q: woods[0].q, r: woods[0].r, crew: "char" }];
+  advanceHour(thin.realm);
+  assert.equal(thin.seat.gold, 1006);
+  assert.equal(thin.seat.grain, 0);
+
+  const fat = hush(6);
+  fat.seat.plots = [{ q: woods[0].q, r: woods[0].r, crew: "char" }];
+  fat.seat.grain = 40;
+  advanceHour(fat.realm);
+  assert.equal(fat.seat.gold, 1030);
+  assert.equal(fat.seat.grain, 28);
+  assert.ok(fat.realm.log.some((row) => row.text.includes("burns 12 grain into 30 gold")));
+
+  const fed = hush(7);
+  fed.seat.plots = [
+    { q: woods[0].q, r: woods[0].r, crew: "char" },
+    { q: woods[1].q, r: woods[1].r, crew: "timber" },
+  ];
+  fed.seat.grain = 40;
+  advanceHour(fed.realm);
+  assert.equal(fed.seat.gold, 1048);
+  assert.equal(fed.seat.grain, 40);
+  assert.ok(fed.realm.log.some((row) => row.text.includes("feeds the charcoal hearth for 22 gold")));
+
+  const drifted = hush(8);
+  drifted.seat.plots = [
+    { q: woods[0].q, r: woods[0].r, crew: "char" },
+    { q: shore.q, r: shore.r, crew: "drift" },
+  ];
+  drifted.seat.grain = 40;
+  advanceHour(drifted.realm);
+  assert.equal(drifted.seat.gold, 1043);
+  assert.equal(drifted.seat.grain, 28);
+  assert.ok(drifted.realm.log.some((row) => row.text.includes("burns 12 grain into 38 gold")));
+
+  const ride = (smoked) => {
+    const realm = newWorld({ seed: 9 });
+    realm.provinces = [byId(realm, "you")];
+    const seat = realm.provinces[0];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.muster = 0;
+    seat.peasants = 40;
+    seat.gold = 500;
+    seat.grain = 500;
+    seat.plots = [{ q: woods[0].q, r: woods[0].r, crew: smoked ? "char" : "hand" }];
+    seat.patrol = 0;
+    seat.patrolUntil = 0;
+    seat.keel = 0;
+    seat.keelUntil = 0;
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    const [x, y] = seatPoint(seat);
+    realm.hour = 1;
+    realm.bands = [{ id: "ash", name: "Ash Camp", x, y, men: 20, hoard: 0, downUntil: 0, truce: {}, raid: null }];
+    pressBands(realm);
+    const band = realm.bands[0];
+    return { lost: 500 - seat.gold, men: band.men, text: realm.log.map((row) => row.text).join(" ") };
+  };
+  const open = ride(false);
+  const smoked = ride(true);
+  assert.equal(open.lost - smoked.lost, 12);
+  assert.equal(smoked.men, open.men - 2);
+  assert.match(smoked.text, /charcoal smoke takes 2 riders/);
+
+  const raid = newWorld({ seed: 10 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: woods[0].q, r: woods[0].r, crew: "char" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("quenched the charcoal hearth")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);

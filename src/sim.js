@@ -87,6 +87,7 @@ export const EARN = {
   hive: 81,
   drift: 82,
   vine: 83,
+  char: 84,
 };
 
 export const FACTIONS = {
@@ -896,6 +897,7 @@ export const AMBITIONS = [
   { id: "patrol", name: "Post the screen", purse: 40, blurb: "Send outriders against a wild camp.", match: (action) => action.type === "patrol" },
   { id: "keel", name: "Launch a keel", purse: 40, blurb: "Put a boat on the water.", match: (action) => action.type === "keel" },
   { id: "founder", name: "Send a founder", purse: 40, blurb: "Raise a founder for a new town.", match: (action) => action.type === "founder" },
+  { id: "char", name: "Bank a hearth", purse: 35, blurb: "Bank a charcoal hearth in the woods.", match: (action) => action.type === "char" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -965,6 +967,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "bell") result = doBell(world, actor);
   else if (action.type === "sail") result = doSail(world, actor);
   else if (action.type === "cistern") result = doCistern(world, actor);
+  else if (action.type === "char") result = doChar(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2176,6 +2179,47 @@ function doCistern(world, actor) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} digs a cistern on a ${kind} tile. Spare grain above 48 fills it, ten a hour, up to 80. Below 24 grain it gives back up to 20. A full cistern seeps 4 grain. A sack cracks it.${purse}`);
   return { ok: true, message: `Cistern on the ${kind} tile.${purse}` };
+}
+
+function doChar(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "char")) return fail("A charcoal hearth already smokes in the woods.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 200) return fail("A charcoal hearth wants 200 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "wood");
+  if (!plot) return fail("A charcoal hearth needs a hand or an open lot in the woods.");
+  actor.gold -= 200;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "char";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.char;
+    notePurse(actor, "char", EARN.char);
+    purse = ` Purse +${formatUtopia(EARN.char)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} banks a charcoal hearth in the woods. While stores hold 40 grain it burns 12 into 30 gold. A timber yard feeds the fire and pays 22 gold with no grain spent. A drift yard adds 8 gold. A thin store pays 6 gold. Smoke takes 12 gold and 2 riders from a wild ride. A sack quenches it.${purse}`);
+  return { ok: true, message: `Charcoal hearth in the woods.${purse}` };
+}
+
+function burnChar(world, p) {
+  const hearth = (p.plots || []).find((tile) => tile.crew === "char");
+  if (!hearth) return;
+  const fed = timberYards(p) > 0;
+  const drift = (p.plots || []).some((tile) => tile.crew === "drift");
+  const extra = drift ? 8 : 0;
+  if (fed) {
+    p.gold += 22 + extra;
+    log(world, `${p.name}'s timber yard feeds the charcoal hearth for ${22 + extra} gold.`);
+    return;
+  }
+  if ((p.grain || 0) >= 40) {
+    p.grain -= 12;
+    p.gold += 30 + extra;
+    log(world, `${p.name}'s charcoal hearth burns 12 grain into ${30 + extra} gold.`);
+    return;
+  }
+  p.gold += 6 + extra;
 }
 
 function tendCistern(p) {
@@ -4392,16 +4436,24 @@ function strikeBand(world, band, target) {
     if (band.men < 8) quietBand(world, band, hour, `${band.name} scatters. The camp is ash for six hours.`);
     return;
   }
-  const gold = Math.min(target.gold, Math.floor((36 + band.men) * cut));
+  let gold = Math.min(target.gold, Math.floor((36 + band.men) * cut));
   const grain = Math.min(target.grain, Math.floor((50 + band.men * 2) * cut));
+  const folk = Math.min(target.peasants, Math.floor((6 + Math.floor(band.men / 8)) * cut));
+  let smoke = "";
+  if ((target.plots || []).some((tile) => tile.crew === "char")) {
+    const choke = Math.min(gold, 12);
+    gold -= choke;
+    const fallen = Math.min(band.men, 2);
+    band.men -= fallen;
+    if (fallen) smoke = ` The charcoal smoke takes ${fallen} riders.`;
+  }
   target.gold -= gold;
   target.grain -= grain;
   band.hoard = (band.hoard || 0) + Math.floor(gold / 2);
-  const folk = Math.min(target.peasants, Math.floor((6 + Math.floor(band.men / 8)) * cut));
   target.peasants -= folk;
   target.soldiers = Math.max(0, (target.soldiers || 0) - Math.min(target.soldiers || 0, 2));
   const toll = tolled ? " The bell saves half." : "";
-  log(world, `${band.name} rides through ${target.name}, taking ${gold} gold and ${grain} grain. ${folk} people fall.${toll}`);
+  log(world, `${band.name} rides through ${target.name}, taking ${gold} gold and ${grain} grain. ${folk} people fall.${toll}${smoke}`);
 }
 
 export function pressBands(world) {
@@ -4701,6 +4753,15 @@ function doAttack(world, actor, action) {
       well.crew = "hand";
       cracked = " and cracked the cistern";
     }
+    let quenched = "";
+    const hearth = (target.plots || []).find((tile) => tile.crew === "char");
+    if (hearth) {
+      const ash = Math.min(target.gold, 32);
+      target.gold -= ash;
+      g += ash;
+      hearth.crew = "hand";
+      quenched = " and quenched the charcoal hearth";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4711,7 +4772,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5031,6 +5092,7 @@ function economy(world, p, hour) {
   }
   grindSail(p);
   pressVines(world, p);
+  burnChar(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5459,6 +5521,9 @@ export function chooseAction(world, agent) {
     const yards = timberYards(agent);
     const woods = (agent.plots || []).some((tile) => tile.crew === "hand" && terrainKind(tile.q, tile.r) === "wood");
     if (yards < 2 && woods && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.16) return { type: "timber" };
+    const charred = (agent.plots || []).some((tile) => tile.crew === "char");
+    const woodLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "wood");
+    if (!charred && woodLot && agent.gold >= 450 && agent.orders >= 1 && rng.next() < 0.1) return { type: "char" };
     const pits = quarryPits(agent);
     const stone = (agent.plots || []).some((tile) => tile.crew === "hand" && (terrainKind(tile.q, tile.r) === "hill" || terrainKind(tile.q, tile.r) === "mount"));
     if (pits < 1 && stone && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.14) return { type: "quarry" };
