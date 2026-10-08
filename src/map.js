@@ -441,6 +441,25 @@ function drawGrove(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawDrift(ctx, x, y, time) {
+  const wash = Math.sin(time * 1.7) * 1.2;
+  ctx.save();
+  ctx.translate(x, y + wash);
+  ctx.fillStyle = "#6a4632";
+  ctx.fillRect(-10, -2, 14, 4);
+  ctx.fillRect(-6, -6, 12, 4);
+  ctx.fillRect(-2, -10, 10, 4);
+  ctx.strokeStyle = "#cbb892";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-10, -2, 14, 4);
+  ctx.strokeRect(-6, -6, 12, 4);
+  ctx.fillStyle = "#7d9a72";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("DRIFT", 0, 14);
+  ctx.restore();
+}
+
 function drawHive(ctx, x, y, time) {
   const buzz = Math.sin(time * 8) * 2;
   ctx.save();
@@ -716,6 +735,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     if (plot && plot.crew === "lot") drawLot(ctx, cell.pos.x, cell.pos.y);
     if (plot && plot.crew === "pale") drawPale(ctx, cell.pos.x, cell.pos.y, time || 0);
     if (plot && plot.crew === "pan") drawPan(ctx, cell.pos.x, cell.pos.y, time || 0);
+    if (plot && plot.crew === "drift") drawDrift(ctx, cell.pos.x, cell.pos.y, time || 0);
     if (cell.kind === "sea" || cell.kind === "river" || cell.kind === "coast") continue;
     drawHexFeature(ctx, cell.kind, cell.pos.x, cell.pos.y, hash(cell.key));
     if (cam.z >= 1 && cell.owner && !(plot && plot.crew === "lot")) drawYields(ctx, cell.pos.x, cell.pos.y, cell.kind);
@@ -729,6 +749,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "pan") { /* pans already drawn */ }
     else if (plot && plot.crew === "grove") drawGrove(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "hive") drawHive(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "drift") { /* stacks already drawn, including on the shore */ }
     else if (plot && plot.crew === "bell") drawBell(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "sail") drawSail(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "cistern") drawCistern(ctx, cell.pos.x, cell.pos.y, time || 0, plot.store || 0);

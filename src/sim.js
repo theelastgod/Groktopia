@@ -85,6 +85,7 @@ export const EARN = {
   monger: 79,
   pilot: 80,
   hive: 81,
+  drift: 82,
 };
 
 export const FACTIONS = {
@@ -958,6 +959,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "pan") result = doPan(world, actor);
   else if (action.type === "grove") result = doGrove(world, actor);
   else if (action.type === "hive") result = doHive(world, actor);
+  else if (action.type === "drift") result = doDrift(world, actor);
   else if (action.type === "bell") result = doBell(world, actor);
   else if (action.type === "sail") result = doSail(world, actor);
   else if (action.type === "cistern") result = doCistern(world, actor);
@@ -2056,6 +2058,28 @@ function doHive(world, actor) {
   const kind = terrainKind(plot.q, plot.r);
   log(world, `${actor.name} raises a hive on a ${kind} tile. It pays 8 grain and 6 gold an hour. Each grove beside the acres yields 10 more grain. A sack smokes the hive.${purse}`);
   return { ok: true, message: `Hive on the ${kind} tile.${purse}` };
+}
+
+function doDrift(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "drift")) return fail("A drift yard already stands on the shore.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 170) return fail("A drift yard wants 170 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
+  if (!plot) return fail("A drift yard needs a hand or an open lot on the shore.");
+  actor.gold -= 170;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "drift";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.drift;
+    notePurse(actor, "drift", EARN.drift);
+    purse = ` Purse +${formatUtopia(EARN.drift)} $UTOPIA.`;
+  }
+  const kind = terrainKind(plot.q, plot.r);
+  log(world, `${actor.name} raises a drift yard on a ${kind} tile. It pays 5 gold an hour and strips 16 gold of timber from a wreck within two hexes. A sack scatters the wood.${purse}`);
+  return { ok: true, message: `Drift yard on the ${kind} tile.${purse}` };
 }
 
 function doBell(world, actor) {
@@ -4136,12 +4160,36 @@ function sailHour(world) {
   resolveCuts(world);
   resolveGrapples(world);
   resolveSalvage(world);
+  tendDrift(world);
   sailFerries(world);
   const hour = world.hour || 0;
   world.wrecks = (world.wrecks || []).filter((row) => (row.until || 0) > hour);
   for (const realm of world.provinces || []) {
     realm.nets = (realm.nets || []).filter((row) => (row.until || 0) > hour);
     realm.buoys = (realm.buoys || []).filter((row) => (row.until || 0) > hour);
+  }
+}
+
+function tendDrift(world) {
+  const hour = world.hour || 0;
+  for (const realm of world.provinces || []) {
+    const yard = (realm.plots || []).find((tile) => tile.crew === "drift");
+    if (!yard) continue;
+    const wreck = (world.wrecks || []).find((row) => (row.until || 0) > hour && hexDist(row.q, row.r, yard.q, yard.r) <= 2);
+    if (!wreck) continue;
+    const pile = Number.isFinite(wreck.gold) ? wreck.gold : wreckGold(wreck.kind);
+    const take = Math.min(16, pile);
+    if (take <= 0) continue;
+    wreck.gold = pile - take;
+    realm.gold += take;
+    const spec = NAVY[wreck.kind];
+    const name = spec ? spec.name : "hull";
+    if (wreck.gold <= 0) {
+      world.wrecks = (world.wrecks || []).filter((row) => row !== wreck);
+      log(world, `${realm.name}'s drift yard takes the last ${take} gold of a wrecked ${name}.`);
+    } else {
+      log(world, `${realm.name}'s drift yard strips ${take} gold from a wrecked ${name}. ${wreck.gold} gold of timber remains.`);
+    }
   }
 }
 
@@ -4571,6 +4619,15 @@ function doAttack(world, actor, action) {
       hive.crew = "hand";
       smoked = " and smoked the hive";
     }
+    let scatteredWood = "";
+    const drift = (target.plots || []).find((tile) => tile.crew === "drift");
+    if (drift) {
+      const boards = Math.min(target.gold, 20);
+      target.gold -= boards;
+      g += boards;
+      drift.crew = "hand";
+      scatteredWood = " and scattered the driftwood";
+    }
     let clapper = "";
     const bellTile = (target.plots || []).find((tile) => tile.crew === "bell");
     if (bellTile) {
@@ -4608,7 +4665,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${clapper}${vanes}${cracked}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${clapper}${vanes}${cracked}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -4821,6 +4878,7 @@ function economy(world, p, hour) {
       foodIn += 8;
       goldIn += 6;
     }
+    else if (tile.crew === "drift") goldIn += 5;
     else if (tile.crew === "bell") goldIn += 5;
   }
   const groveCount = (p.plots || []).filter((tile) => tile.crew === "grove").length;
@@ -5335,6 +5393,9 @@ export function chooseAction(world, agent) {
     if (groves < 2 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "grove" };
     const hived = (agent.plots || []).some((tile) => tile.crew === "hive");
     if (!hived && groves > 0 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) return { type: "hive" };
+    const drifted = (agent.plots || []).some((tile) => tile.crew === "drift");
+    const shoreLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
+    if (!drifted && shoreLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "drift" };
     const wheels = tideWheels(agent);
     const wetLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
     if (wheels < 1 && wetLot && agent.gold >= 500 && agent.orders >= 1 && rng.next() < 0.12) return { type: "wheel" };

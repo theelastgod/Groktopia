@@ -5331,6 +5331,100 @@ test("a hive pays the field and pollinates each grove", () => {
   assert.ok(raid.log.some((row) => row.text.includes("smoked the hive")));
 });
 
+test("a drift yard strips timber from a nearby wreck", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.drift, 82);
+  assert.equal(EARN.hive, 81);
+  let shore = null;
+  let dry = null;
+  for (let q = -30; q <= 30 && (!shore || !dry); q++) {
+    for (let r = -30; r <= 30; r++) {
+      const kind = terrainKind(q, r);
+      if (!shore && kind === "coast") shore = { q, r };
+      if (!dry && kind === "grass" && !waterTouch({ q, r })) dry = { q, r };
+    }
+  }
+  assert.ok(shore && dry);
+  const w = newWorld({ seed: 4 });
+  w.bands = [];
+  const you = byId(w, "you");
+  w.provinces = [you];
+  for (const key of Object.keys(you.buildings)) you.buildings[key] = 0;
+  you.peasants = 0;
+  you.soldiers = 0;
+  you.elites = 0;
+  you.thieves = 0;
+  you.mystics = 0;
+  you.muster = 0;
+  you.colonies = [];
+  you.ships = [];
+  you.ferries = [];
+  you.plots = [{ q: dry.q, r: dry.r, crew: "hand" }];
+  you.grain = 0;
+  you.gold = 1000;
+  you.utopia = 0;
+  you.ledger = {};
+  you.orders = ORDERS;
+  you.acted = false;
+  you.kind = "human";
+  you.studies = {};
+  you.marks = {};
+  you.relics = {};
+  you.spells = { bulwark: 0, fury: 0, shade: 0 };
+  assert.equal(applyAction(w, "you", { type: "drift" }).ok, false);
+  you.plots = [{ q: shore.q, r: shore.r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w, "you", { type: "drift" }).ok, false);
+  you.gold = 1000;
+  const raised = applyAction(w, "you", { type: "drift" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.equal(you.plots[0].crew, "drift");
+  assert.equal(you.gold, 830);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.drift, EARN.drift);
+  assert.equal(applyAction(w, "you", { type: "drift" }).ok, false);
+
+  you.acted = false;
+  you.gold = 1000;
+  w.wrecks = [{ q: shore.q + 8, r: shore.r + 8, kind: "cog", gold: 40, until: 9 }];
+  advanceHour(w);
+  assert.equal(you.gold, 1005);
+  assert.equal(w.wrecks[0].gold, 40);
+
+  you.acted = false;
+  you.gold = 1000;
+  w.wrecks = [{ q: shore.q + 1, r: shore.r, kind: "cog", gold: 40, until: 9 }];
+  advanceHour(w);
+  assert.equal(you.gold, 1021);
+  assert.equal(w.wrecks.length, 1);
+  assert.equal(w.wrecks[0].gold, 24);
+  assert.ok(w.log.some((row) => row.text.includes("strips 16 gold")));
+
+  you.acted = false;
+  you.gold = 1000;
+  w.wrecks[0].gold = 10;
+  advanceHour(w);
+  assert.equal(you.gold, 1015);
+  assert.equal(w.wrecks.length, 0);
+  assert.ok(w.log.some((row) => row.text.includes("takes the last 10 gold")));
+
+  const raid = newWorld({ seed: 8 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 40;
+  vic.plots = [{ q: shore.q, r: shore.r, crew: "drift" }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.ok(raid.log.some((row) => row.text.includes("scattered the driftwood")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
