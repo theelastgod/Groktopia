@@ -93,6 +93,7 @@ export const EARN = {
   dove: 87,
   oven: 88,
   churn: 89,
+  tan: 90,
 };
 
 export const FACTIONS = {
@@ -908,6 +909,7 @@ export const AMBITIONS = [
   { id: "dove", name: "Raise a dovecote", purse: 35, blurb: "Raise a dovecote on open ground.", match: (action) => action.type === "dove" },
   { id: "oven", name: "Raise a bakehouse", purse: 35, blurb: "Raise a bakehouse on open ground.", match: (action) => action.type === "oven" },
   { id: "churn", name: "Raise a creamery", purse: 35, blurb: "Raise a creamery on open ground.", match: (action) => action.type === "churn" },
+  { id: "tan", name: "Raise a tannery", purse: 35, blurb: "Raise a tannery in the marsh.", match: (action) => action.type === "tan" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -983,6 +985,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "dove") result = doDove(world, actor);
   else if (action.type === "oven") result = doOven(world, actor);
   else if (action.type === "churn") result = doChurn(world, actor);
+  else if (action.type === "tan") result = doTan(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2348,6 +2351,39 @@ function churnMilk(world, p, hour) {
     return;
   }
   p.gold += 5;
+}
+
+function doTan(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "tan")) return fail("A tannery already stands in the marsh.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 165) return fail("A tannery wants 165 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "marsh");
+  if (!plot) return fail("A tannery needs a hand or an open lot in the marsh.");
+  actor.gold -= 165;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "tan";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.tan;
+    notePurse(actor, "tan", EARN.tan);
+    purse = ` Purse +${formatUtopia(EARN.tan)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a tannery in the marsh. An empty yard pays 6 gold. A penned flock tans 16 gold, and a charcoal hearth adds 8. The hearth still drinks grain first. A sack spoils the vats.${purse}`);
+  return { ok: true, message: `Tannery in the marsh.${purse}` };
+}
+
+function tanHides(world, p, hour) {
+  const yard = (p.plots || []).find((tile) => tile.crew === "tan");
+  if (!yard) return;
+  if (foldLive(p, hour)) {
+    const pay = 16 + ((p.plots || []).some((tile) => tile.crew === "char") ? 8 : 0);
+    p.gold += pay;
+    log(world, `${p.name}'s tannery tans the flock for ${pay} gold.`);
+    return;
+  }
+  p.gold += 6;
 }
 
 function maltHouse(world, p) {
@@ -4983,6 +5019,15 @@ function doAttack(world, actor, action) {
       shed.crew = "hand";
       spilled = " and spilled the creamery";
     }
+    let vats = "";
+    const tanYard = (target.plots || []).find((tile) => tile.crew === "tan");
+    if (tanYard) {
+      const hide = Math.min(target.gold, 24);
+      target.gold -= hide;
+      g += hide;
+      tanYard.crew = "hand";
+      vats = " and spoiled the tannery";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -4993,7 +5038,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5328,6 +5373,7 @@ function economy(world, p, hour) {
   maltHouse(world, p);
   bakeHouse(world, p);
   churnMilk(world, p, hour);
+  tanHides(world, p, hour);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5762,6 +5808,8 @@ export function chooseAction(world, agent) {
     const reeds = (agent.plots || []).filter((tile) => tile.crew === "reed").length;
     const marshLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && terrainKind(tile.q, tile.r) === "marsh");
     if (reeds < 2 && marshLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "reed" };
+    const tanned = (agent.plots || []).some((tile) => tile.crew === "tan");
+    if (!tanned && marshLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "tan" };
     const malted = (agent.plots || []).some((tile) => tile.crew === "malt");
     const flatLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && (terrainKind(tile.q, tile.r) === "grass" || terrainKind(tile.q, tile.r) === "plain"));
     if (!malted && flatLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "malt" };

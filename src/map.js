@@ -330,6 +330,35 @@ function drawTimberCamp(ctx, x, y, time) {
   ctx.fill();
 }
 
+function drawTan(ctx, x, y, time) {
+  const sway = Math.sin(time * 1.5 + x) * 0.12;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#3a2a22";
+  ctx.beginPath();
+  ctx.ellipse(-5, 4, 4, 2.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(5, 5, 4, 2.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a5a3a";
+  ctx.lineWidth = 1.4;
+  ctx.save();
+  ctx.rotate(sway);
+  ctx.beginPath();
+  ctx.moveTo(-8, 2);
+  ctx.lineTo(-8, -8);
+  ctx.lineTo(2, -8);
+  ctx.lineTo(2, 2);
+  ctx.stroke();
+  ctx.fillStyle = "#a14a3c";
+  ctx.fillRect(-7, -7, 8, 6);
+  ctx.restore();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TAN", 0, 18);
+  ctx.restore();
+}
+
 function drawChurn(ctx, x, y, time) {
   const dash = Math.sin(time * 4) * 3;
   ctx.save();
@@ -970,6 +999,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "dove") drawDove(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "oven") drawOven(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "churn") drawChurn(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "tan") drawTan(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
