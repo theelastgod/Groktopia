@@ -97,6 +97,7 @@ export const EARN = {
   dye: 91,
   pot: 92,
   warp: 93,
+  wick: 94,
 };
 
 export const FACTIONS = {
@@ -916,6 +917,7 @@ export const AMBITIONS = [
   { id: "dye", name: "Raise a dye works", purse: 35, blurb: "Raise a dye works on open ground.", match: (action) => action.type === "dye" },
   { id: "pot", name: "Raise a pot bank", purse: 35, blurb: "Raise a pot bank on open ground.", match: (action) => action.type === "pot" },
   { id: "warp", name: "Raise a warp shed", purse: 35, blurb: "Raise a warp shed on open ground.", match: (action) => action.type === "warp" },
+  { id: "wick", name: "Raise a candle house", purse: 35, blurb: "Raise a candle house on open ground.", match: (action) => action.type === "wick" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -995,6 +997,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "dye") result = doDye(world, actor);
   else if (action.type === "pot") result = doPot(world, actor);
   else if (action.type === "warp") result = doWarp(world, actor);
+  else if (action.type === "wick") result = doWick(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2505,6 +2508,43 @@ function weaveCloth(world, p, hour) {
   p.gold += pay;
   const cloth = dyed && wool ? "dyed wool" : dyed ? "dyed cloth" : wool ? "wool and reed" : "the reed";
   log(world, `${p.name}'s warp shed weaves ${cloth} for ${pay} gold.`);
+}
+
+function doWick(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "wick")) return fail("A candle house already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 150) return fail("A candle house wants 150 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A candle house needs a hand or an open lot on grass or plain.");
+  actor.gold -= 150;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "wick";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.wick;
+    notePurse(actor, "wick", EARN.wick);
+    purse = ` Purse +${formatUtopia(EARN.wick)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a candle house. An empty wick pays 3 gold. A hive dips 13 gold of wax, and a charcoal hearth adds 8. The hearth still drinks grain first. A sack snuffs the candles.${purse}`);
+  return { ok: true, message: `Candle house on the open ground.${purse}` };
+}
+
+function dipWicks(world, p) {
+  const house = (p.plots || []).find((tile) => tile.crew === "wick");
+  if (!house) return;
+  const wax = (p.plots || []).some((tile) => tile.crew === "hive");
+  const hearth = (p.plots || []).some((tile) => tile.crew === "char");
+  if (!wax) {
+    p.gold += 3;
+    return;
+  }
+  const pay = 13 + (hearth ? 8 : 0);
+  p.gold += pay;
+  log(world, hearth
+    ? `${p.name}'s candle house dips wax by the hearth for ${pay} gold.`
+    : `${p.name}'s candle house dips wax for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5176,6 +5216,15 @@ function doAttack(world, actor, action) {
       warpShed.crew = "hand";
       cutWarp = " and cut the warp shed";
     }
+    let snuffed = "";
+    const candle = (target.plots || []).find((tile) => tile.crew === "wick");
+    if (candle) {
+      const tallow = Math.min(target.gold, 16);
+      target.gold -= tallow;
+      g += tallow;
+      candle.crew = "hand";
+      snuffed = " and snuffed the candles";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5186,7 +5235,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5525,6 +5574,7 @@ function economy(world, p, hour) {
   dyeCloth(world, p);
   firePots(world, p);
   weaveCloth(world, p, hour);
+  dipWicks(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5942,6 +5992,8 @@ export function chooseAction(world, agent) {
     if (groves < 2 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.1) return { type: "grove" };
     const hived = (agent.plots || []).some((tile) => tile.crew === "hive");
     if (!hived && groves > 0 && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.12) return { type: "hive" };
+    const wicked = (agent.plots || []).some((tile) => tile.crew === "wick");
+    if (!wicked && hived && field && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "wick" };
     const drifted = (agent.plots || []).some((tile) => tile.crew === "drift");
     const shoreLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && waterTouch(tile));
     if (!drifted && shoreLot && agent.gold >= 420 && agent.orders >= 1 && rng.next() < 0.1) return { type: "drift" };

@@ -365,6 +365,29 @@ function drawDye(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawWick(ctx, x, y, time) {
+  const flicker = 0.45 + Math.sin(time * 8) * 0.3;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#f3e6c8";
+  for (let i = 0; i < 3; i++) {
+    const cx = -6 + i * 6;
+    ctx.fillRect(cx - 1.2, -2, 2.4, 8);
+    ctx.fillStyle = `rgba(224, 160, 70, ${flicker})`;
+    ctx.beginPath();
+    ctx.arc(cx, -4, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f3e6c8";
+  }
+  ctx.fillStyle = "#5a4638";
+  ctx.fillRect(-9, 6, 18, 2);
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("WICK", 0, 18);
+  ctx.restore();
+}
+
 function drawWarp(ctx, x, y, time) {
   const shuttle = Math.sin(time * 3) * 8;
   ctx.save();
@@ -1101,6 +1124,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "dye") drawDye(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "pot") drawPot(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "warp") drawWarp(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "wick") drawWick(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
