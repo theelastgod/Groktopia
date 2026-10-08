@@ -99,6 +99,7 @@ export const EARN = {
   warp: 93,
   wick: 94,
   soap: 95,
+  basket: 96,
 };
 
 export const FACTIONS = {
@@ -920,6 +921,7 @@ export const AMBITIONS = [
   { id: "warp", name: "Raise a warp shed", purse: 35, blurb: "Raise a warp shed on open ground.", match: (action) => action.type === "warp" },
   { id: "wick", name: "Raise a candle house", purse: 35, blurb: "Raise a candle house on open ground.", match: (action) => action.type === "wick" },
   { id: "soap", name: "Raise a soap kettle", purse: 35, blurb: "Raise a soap kettle on open ground.", match: (action) => action.type === "soap" },
+  { id: "basket", name: "Raise a basket shed", purse: 35, blurb: "Raise a basket shed on open ground.", match: (action) => action.type === "basket" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -1001,6 +1003,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "warp") result = doWarp(world, actor);
   else if (action.type === "wick") result = doWick(world, actor);
   else if (action.type === "soap") result = doSoap(world, actor);
+  else if (action.type === "basket") result = doBasket(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2586,6 +2589,43 @@ function boilSoap(world, p, hour) {
   const fat = tallow ? "tallow" : "the pan";
   const where = hearth ? " by the hearth" : "";
   log(world, `${p.name}'s soap kettle boils ${fat}${where} for ${pay} gold.`);
+}
+
+function doBasket(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "basket")) return fail("A basket shed already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 140) return fail("A basket shed wants 140 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A basket shed needs a hand or an open lot on grass or plain.");
+  actor.gold -= 140;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "basket";
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.basket;
+    notePurse(actor, "basket", EARN.basket);
+    purse = ` Purse +${formatUtopia(EARN.basket)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a basket shed. An empty frame pays 3 gold. A reed bed weaves 12 gold, and a timber yard adds 8 for the handles. A sack smashes the baskets.${purse}`);
+  return { ok: true, message: `Basket shed on the open ground.${purse}` };
+}
+
+function weaveBaskets(world, p) {
+  const shed = (p.plots || []).find((tile) => tile.crew === "basket");
+  if (!shed) return;
+  const reed = (p.plots || []).some((tile) => tile.crew === "reed");
+  const timber = timberYards(p) > 0;
+  if (!reed) {
+    p.gold += 3;
+    return;
+  }
+  const pay = 12 + (timber ? 8 : 0);
+  p.gold += pay;
+  log(world, timber
+    ? `${p.name}'s basket shed weaves reed and timber into baskets for ${pay} gold.`
+    : `${p.name}'s basket shed weaves reed into baskets for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5275,6 +5315,15 @@ function doAttack(world, actor, action) {
       kettle.crew = "hand";
       lather = " and cracked the soap kettle";
     }
+    let wicker = "";
+    const basketShed = (target.plots || []).find((tile) => tile.crew === "basket");
+    if (basketShed) {
+      const osier = Math.min(target.gold, 12);
+      target.gold -= osier;
+      g += osier;
+      basketShed.crew = "hand";
+      wicker = " and smashed the baskets";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5285,7 +5334,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5626,6 +5675,7 @@ function economy(world, p, hour) {
   weaveCloth(world, p, hour);
   dipWicks(world, p);
   boilSoap(world, p, hour);
+  weaveBaskets(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -5890,6 +5940,9 @@ export function chooseAction(world, agent) {
     const soaped = (agent.plots || []).some((tile) => tile.crew === "soap");
     const soapLot = (agent.plots || []).some((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
     if (!soaped && pans > 0 && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "soap" };
+    const basketed = (agent.plots || []).some((tile) => tile.crew === "basket");
+    const reedCut = (agent.plots || []).some((tile) => tile.crew === "reed");
+    if (!basketed && reedCut && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "basket" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };

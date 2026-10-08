@@ -365,6 +365,31 @@ function drawDye(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawBasket(ctx, x, y, time) {
+  const sway = Math.sin(time * 1.6) * 1.2;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = "#8a5a32";
+  ctx.lineWidth = 1.4;
+  ctx.fillStyle = "#c6a15a";
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.ellipse(-4 + i * 4, 4 - i * 3, 5, 2.4, sway * 0.02, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#3d6a48";
+  ctx.beginPath();
+  ctx.moveTo(4, -4);
+  ctx.lineTo(8 + sway, -9);
+  ctx.stroke();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("BASK", 0, 18);
+  ctx.restore();
+}
+
 function drawSoap(ctx, x, y, time) {
   const bubble = Math.sin(time * 3) * 2;
   ctx.save();
@@ -1153,6 +1178,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "warp") drawWarp(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "wick") drawWick(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "soap") drawSoap(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "basket") drawBasket(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
