@@ -365,6 +365,24 @@ function drawDye(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawOil(ctx, x, y, time) {
+  const turn = Math.sin(time * 2) * 0.4;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#6e5428";
+  ctx.fillRect(-8, 2, 16, 4);
+  ctx.fillStyle = "#c4a46a";
+  ctx.beginPath();
+  ctx.ellipse(-3, 1, 3.2, 4, turn, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e2c078";
+  ctx.fillRect(3, -6, 2, 8);
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("OIL", 0, 18);
+  ctx.restore();
+}
+
 function drawBrew(ctx, x, y, time) {
   const drip = (Math.sin(time * 3) + 1) * 2;
   ctx.save();
@@ -1228,6 +1246,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "basket") drawBasket(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "boot") drawBoot(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "brew") drawBrew(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "oil") drawOil(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
