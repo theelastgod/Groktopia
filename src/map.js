@@ -533,6 +533,39 @@ function drawBoard(ctx, x, y, time, notices) {
   ctx.restore();
 }
 
+function drawMoot(ctx, x, y, time, rulings) {
+  const lean = Math.sin(time * 1.5) * 0.8;
+  const marks = Math.max(0, Math.min(4, rulings || 0));
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#6a6358";
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 8, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8d8476";
+  ctx.beginPath();
+  ctx.moveTo(-4, 2);
+  ctx.lineTo(0, -8);
+  ctx.lineTo(4, 2);
+  ctx.fill();
+  ctx.fillStyle = "#cbb892";
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2 + lean * 0.05;
+    ctx.beginPath();
+    ctx.arc(Math.cos(ang) * 6, 4 + Math.sin(ang) * 2, 1.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  for (let i = 0; i < marks; i++) {
+    ctx.fillStyle = "#e2c078";
+    ctx.fillRect(-6 + i * 3, -2, 2, 2);
+  }
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("MOOT", 0, 18);
+  ctx.restore();
+}
+
 function drawCurd(ctx, x, y, time) {
   const wobble = Math.sin(time * 1.4) * 0.6;
   ctx.save();
@@ -1443,6 +1476,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "scroll") drawScroll(ctx, cell.pos.x, cell.pos.y, time || 0, plot.copies || 0);
     else if (plot && plot.crew === "crier") drawCrier(ctx, cell.pos.x, cell.pos.y, time || 0, plot.cries || 0);
     else if (plot && plot.crew === "board") drawBoard(ctx, cell.pos.x, cell.pos.y, time || 0, plot.notices || 0);
+    else if (plot && plot.crew === "moot") drawMoot(ctx, cell.pos.x, cell.pos.y, time || 0, plot.rulings || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

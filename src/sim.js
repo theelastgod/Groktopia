@@ -110,6 +110,7 @@ export const EARN = {
   scroll: 104,
   crier: 105,
   board: 106,
+  moot: 107,
 };
 
 export const FACTIONS = {
@@ -942,6 +943,7 @@ export const AMBITIONS = [
   { id: "scroll", name: "Raise a scroll chest", purse: 35, blurb: "Raise a scroll chest on open ground.", match: (action) => action.type === "scroll" },
   { id: "crier", name: "Raise a crier's stand", purse: 35, blurb: "Raise a crier's stand on open ground.", match: (action) => action.type === "crier" },
   { id: "board", name: "Raise a notice board", purse: 35, blurb: "Raise a notice board on open ground.", match: (action) => action.type === "board" },
+  { id: "moot", name: "Raise a moot stone", purse: 35, blurb: "Raise a moot stone on open ground.", match: (action) => action.type === "moot" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -1034,6 +1036,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "scroll") result = doScroll(world, actor);
   else if (action.type === "crier") result = doCrier(world, actor);
   else if (action.type === "board") result = doBoard(world, actor);
+  else if (action.type === "moot") result = doMoot(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -3044,6 +3047,46 @@ function postNotice(world, p) {
   log(world, watched
     ? `${p.name}'s notice board posts a cry in sight of the lookout for ${pay} gold.`
     : `${p.name}'s notice board posts a cry for ${pay} gold.`);
+}
+
+function doMoot(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "moot")) return fail("A moot stone already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 195) return fail("A moot stone wants 195 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A moot stone needs a hand or an open lot on grass or plain.");
+  actor.gold -= 195;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "moot";
+  plot.rulings = 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.moot;
+    notePurse(actor, "moot", EARN.moot);
+    purse = ` Purse +${formatUtopia(EARN.moot)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a moot stone. An empty stone pays 3 gold. A notice board with a notice is heard for 10 gold plus 2 for each ruling kept, up to 6. A bell adds 6 when the town is called. The board still posts first. A sack breaks the moot.${purse}`);
+  return { ok: true, message: `Moot stone on the open ground.${purse}` };
+}
+
+function hearMoot(world, p) {
+  const stone = (p.plots || []).find((tile) => tile.crew === "moot");
+  if (!stone) return;
+  const board = (p.plots || []).find((tile) => tile.crew === "board");
+  const rung = (p.plots || []).some((tile) => tile.crew === "bell");
+  if (!board || (board.notices || 0) < 1) {
+    p.gold += 3;
+    return;
+  }
+  board.notices -= 1;
+  stone.rulings = Math.min(6, (stone.rulings || 0) + 1);
+  const pay = 10 + stone.rulings * 2 + (rung ? 6 : 0);
+  p.gold += pay;
+  log(world, rung
+    ? `${p.name}'s moot hears a notice at the bell for ${pay} gold.`
+    : `${p.name}'s moot hears a notice for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5838,6 +5881,16 @@ function doAttack(world, actor, action) {
       notice.notices = 0;
       tornBoard = " and tore the notices";
     }
+    let brokenMoot = "";
+    const stone = (target.plots || []).find((tile) => tile.crew === "moot");
+    if (stone) {
+      const ruling = Math.min(target.gold, 7);
+      target.gold -= ruling;
+      g += ruling;
+      stone.crew = "hand";
+      stone.rulings = 0;
+      brokenMoot = " and broke the moot";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5848,7 +5901,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${stolenLore}${stolenScroll}${stolenCry}${tornBoard}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${stolenLore}${stolenScroll}${stolenCry}${tornBoard}${brokenMoot}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -6200,6 +6253,7 @@ function economy(world, p, hour) {
   rollScroll(world, p);
   cryCopy(world, p);
   postNotice(world, p);
+  hearMoot(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -6492,6 +6546,8 @@ export function chooseAction(world, agent) {
     if (!cried && rolled && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "crier" };
     const posted = (agent.plots || []).some((tile) => tile.crew === "board");
     if (!posted && cried && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "board" };
+    const heard = (agent.plots || []).some((tile) => tile.crew === "moot");
+    if (!heard && posted && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "moot" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };
