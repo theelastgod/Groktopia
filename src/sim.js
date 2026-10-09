@@ -104,6 +104,7 @@ export const EARN = {
   brew: 98,
   oil: 99,
   curd: 100,
+  ink: 101,
 };
 
 export const FACTIONS = {
@@ -930,6 +931,7 @@ export const AMBITIONS = [
   { id: "brew", name: "Raise a brewhouse", purse: 35, blurb: "Raise a brewhouse on open ground.", match: (action) => action.type === "brew" },
   { id: "oil", name: "Raise an oil press", purse: 35, blurb: "Raise an oil press on open ground.", match: (action) => action.type === "oil" },
   { id: "curd", name: "Raise a cheese cave", purse: 35, blurb: "Raise a cheese cave on open ground.", match: (action) => action.type === "curd" },
+  { id: "ink", name: "Raise an ink loft", purse: 35, blurb: "Raise an ink loft on open ground.", match: (action) => action.type === "ink" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -1016,6 +1018,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "brew") result = doBrew(world, actor);
   else if (action.type === "oil") result = doOil(world, actor);
   else if (action.type === "curd") result = doCurd(world, actor);
+  else if (action.type === "ink") result = doInk(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2787,6 +2790,45 @@ function setCurd(world, p) {
   log(world, cool
     ? `${p.name}'s cheese cave sets the cream in the cool for ${pay} gold.`
     : `${p.name}'s cheese cave sets the cream for ${pay} gold.`);
+}
+
+function doInk(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "ink")) return fail("An ink loft already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 165) return fail("An ink loft wants 165 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("An ink loft needs a hand or an open lot on grass or plain.");
+  actor.gold -= 165;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "ink";
+  plot.quires = 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.ink;
+    notePurse(actor, "ink", EARN.ink);
+    purse = ` Purse +${formatUtopia(EARN.ink)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises an ink loft. An empty loft pays 3 gold. A dovecote copies a letter for 10 gold plus 2 for each quire on the shelf, up to 8. A candle house adds 6 so the clerks can work. The cote still feeds first. A sack spills the ink.${purse}`);
+  return { ok: true, message: `Ink loft on the open ground.${purse}` };
+}
+
+function copyInk(world, p) {
+  const loft = (p.plots || []).find((tile) => tile.crew === "ink");
+  if (!loft) return;
+  const letters = (p.plots || []).some((tile) => tile.crew === "dove");
+  const lit = (p.plots || []).some((tile) => tile.crew === "wick");
+  if (!letters) {
+    p.gold += 3;
+    return;
+  }
+  loft.quires = Math.min(8, (loft.quires || 0) + 1);
+  const pay = 10 + loft.quires * 2 + (lit ? 6 : 0);
+  p.gold += pay;
+  log(world, lit
+    ? `${p.name}'s ink loft copies a letter by candle for ${pay} gold.`
+    : `${p.name}'s ink loft copies a letter for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5521,6 +5563,16 @@ function doAttack(world, actor, action) {
       cheeseCave.crew = "hand";
       stolenCurd = " and stole the curds";
     }
+    let spilledInk = "";
+    const inkLoft = (target.plots || []).find((tile) => tile.crew === "ink");
+    if (inkLoft) {
+      const quire = Math.min(target.gold, 13);
+      target.gold -= quire;
+      g += quire;
+      inkLoft.crew = "hand";
+      inkLoft.quires = 0;
+      spilledInk = " and spilled the ink";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5531,7 +5583,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5877,6 +5929,7 @@ function economy(world, p, hour) {
   brewAle(world, p);
   pressOil(world, p);
   setCurd(world, p);
+  copyInk(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -6156,6 +6209,9 @@ export function chooseAction(world, agent) {
     const curded = (agent.plots || []).some((tile) => tile.crew === "curd");
     const creamed = (agent.plots || []).some((tile) => tile.crew === "churn");
     if (!curded && creamed && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "curd" };
+    const inked = (agent.plots || []).some((tile) => tile.crew === "ink");
+    const lettered = (agent.plots || []).some((tile) => tile.crew === "dove");
+    if (!inked && lettered && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "ink" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };
