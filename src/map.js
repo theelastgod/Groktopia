@@ -508,6 +508,31 @@ function drawCrier(ctx, x, y, time, cries) {
   ctx.restore();
 }
 
+function drawBoard(ctx, x, y, time, notices) {
+  const flutter = Math.sin(time * 2.6) * 0.35;
+  const sheets = Math.max(0, Math.min(4, notices || 0));
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#5a4638";
+  ctx.fillRect(-1, -6, 2, 12);
+  ctx.fillStyle = "#8a5a32";
+  ctx.fillRect(-7, -6, 14, 9);
+  const paper = ["#efe2c4", "#d9c7a2", "#f3e6c8", "#e2c078"];
+  for (let i = 0; i < sheets; i++) {
+    ctx.save();
+    ctx.translate(-5 + (i % 2) * 6, -4 + Math.floor(i / 2) * 4);
+    ctx.rotate(flutter * (i % 2 ? -1 : 1));
+    ctx.fillStyle = paper[i];
+    ctx.fillRect(0, 0, 4, 3);
+    ctx.restore();
+  }
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("POST", 0, 18);
+  ctx.restore();
+}
+
 function drawCurd(ctx, x, y, time) {
   const wobble = Math.sin(time * 1.4) * 0.6;
   ctx.save();
@@ -1417,6 +1442,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "lore") drawLore(ctx, cell.pos.x, cell.pos.y, time || 0, plot.lessons || 0);
     else if (plot && plot.crew === "scroll") drawScroll(ctx, cell.pos.x, cell.pos.y, time || 0, plot.copies || 0);
     else if (plot && plot.crew === "crier") drawCrier(ctx, cell.pos.x, cell.pos.y, time || 0, plot.cries || 0);
+    else if (plot && plot.crew === "board") drawBoard(ctx, cell.pos.x, cell.pos.y, time || 0, plot.notices || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";

@@ -109,6 +109,7 @@ export const EARN = {
   lore: 103,
   scroll: 104,
   crier: 105,
+  board: 106,
 };
 
 export const FACTIONS = {
@@ -940,6 +941,7 @@ export const AMBITIONS = [
   { id: "lore", name: "Raise a lecture hall", purse: 35, blurb: "Raise a lecture hall on open ground.", match: (action) => action.type === "lore" },
   { id: "scroll", name: "Raise a scroll chest", purse: 35, blurb: "Raise a scroll chest on open ground.", match: (action) => action.type === "scroll" },
   { id: "crier", name: "Raise a crier's stand", purse: 35, blurb: "Raise a crier's stand on open ground.", match: (action) => action.type === "crier" },
+  { id: "board", name: "Raise a notice board", purse: 35, blurb: "Raise a notice board on open ground.", match: (action) => action.type === "board" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -1031,6 +1033,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "lore") result = doLore(world, actor);
   else if (action.type === "scroll") result = doScroll(world, actor);
   else if (action.type === "crier") result = doCrier(world, actor);
+  else if (action.type === "board") result = doBoard(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -3001,6 +3004,46 @@ function cryCopy(world, p) {
   log(world, birds
     ? `${p.name}'s crier cries a copy by dove for ${pay} gold.`
     : `${p.name}'s crier cries a copy for ${pay} gold.`);
+}
+
+function doBoard(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "board")) return fail("A notice board already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 190) return fail("A notice board wants 190 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A notice board needs a hand or an open lot on grass or plain.");
+  actor.gold -= 190;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "board";
+  plot.notices = 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.board;
+    notePurse(actor, "board", EARN.board);
+    purse = ` Purse +${formatUtopia(EARN.board)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a notice board. An empty board pays 3 gold. A crier with a cry posts it for 11 gold plus 2 for each notice kept, up to 6. A lookout adds 7 when the tower can see the square. The crier still cries first. A sack tears the notices.${purse}`);
+  return { ok: true, message: `Notice board on the open ground.${purse}` };
+}
+
+function postNotice(world, p) {
+  const board = (p.plots || []).find((tile) => tile.crew === "board");
+  if (!board) return;
+  const stand = (p.plots || []).find((tile) => tile.crew === "crier");
+  const watched = (p.plots || []).some((tile) => tile.crew === "look");
+  if (!stand || (stand.cries || 0) < 1) {
+    p.gold += 3;
+    return;
+  }
+  stand.cries -= 1;
+  board.notices = Math.min(6, (board.notices || 0) + 1);
+  const pay = 11 + board.notices * 2 + (watched ? 7 : 0);
+  p.gold += pay;
+  log(world, watched
+    ? `${p.name}'s notice board posts a cry in sight of the lookout for ${pay} gold.`
+    : `${p.name}'s notice board posts a cry for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5785,6 +5828,16 @@ function doAttack(world, actor, action) {
       stand.cries = 0;
       stolenCry = " and stole the cries";
     }
+    let tornBoard = "";
+    const notice = (target.plots || []).find((tile) => tile.crew === "board");
+    if (notice) {
+      const sheet = Math.min(target.gold, 8);
+      target.gold -= sheet;
+      g += sheet;
+      notice.crew = "hand";
+      notice.notices = 0;
+      tornBoard = " and tore the notices";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5795,7 +5848,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${stolenLore}${stolenScroll}${stolenCry}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${stolenLore}${stolenScroll}${stolenCry}${tornBoard}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -6146,6 +6199,7 @@ function economy(world, p, hour) {
   readLore(world, p);
   rollScroll(world, p);
   cryCopy(world, p);
+  postNotice(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -6436,6 +6490,8 @@ export function chooseAction(world, agent) {
     if (!rolled && lectured && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "scroll" };
     const cried = (agent.plots || []).some((tile) => tile.crew === "crier");
     if (!cried && rolled && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "crier" };
+    const posted = (agent.plots || []).some((tile) => tile.crew === "board");
+    if (!posted && cried && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "board" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };
