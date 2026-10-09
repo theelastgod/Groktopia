@@ -106,6 +106,7 @@ export const EARN = {
   curd: 100,
   ink: 101,
   book: 102,
+  lore: 103,
 };
 
 export const FACTIONS = {
@@ -934,6 +935,7 @@ export const AMBITIONS = [
   { id: "curd", name: "Raise a cheese cave", purse: 35, blurb: "Raise a cheese cave on open ground.", match: (action) => action.type === "curd" },
   { id: "ink", name: "Raise an ink loft", purse: 35, blurb: "Raise an ink loft on open ground.", match: (action) => action.type === "ink" },
   { id: "book", name: "Raise a bindery", purse: 35, blurb: "Raise a bindery on open ground.", match: (action) => action.type === "book" },
+  { id: "lore", name: "Raise a lecture hall", purse: 35, blurb: "Raise a lecture hall on open ground.", match: (action) => action.type === "lore" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -1022,6 +1024,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "curd") result = doCurd(world, actor);
   else if (action.type === "ink") result = doInk(world, actor);
   else if (action.type === "book") result = doBook(world, actor);
+  else if (action.type === "lore") result = doLore(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2872,6 +2875,46 @@ function bindBook(world, p) {
   log(world, dry
     ? `${p.name}'s bindery binds a quire in the dry for ${pay} gold.`
     : `${p.name}'s bindery binds a quire for ${pay} gold.`);
+}
+
+function doLore(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "lore")) return fail("A lecture hall already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 175) return fail("A lecture hall wants 175 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A lecture hall needs a hand or an open lot on grass or plain.");
+  actor.gold -= 175;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "lore";
+  plot.lessons = 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.lore;
+    notePurse(actor, "lore", EARN.lore);
+    purse = ` Purse +${formatUtopia(EARN.lore)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a lecture hall. An empty hall pays 3 gold. A bindery with a volume on the shelf reads it for 14 gold plus 2 for each lesson kept, up to 6. A candle house adds 6 so the hall can sit after dark. The bindery still binds first. A sack steals the lectures.${purse}`);
+  return { ok: true, message: `Lecture hall on the open ground.${purse}` };
+}
+
+function readLore(world, p) {
+  const hall = (p.plots || []).find((tile) => tile.crew === "lore");
+  if (!hall) return;
+  const bench = (p.plots || []).find((tile) => tile.crew === "book");
+  const lit = (p.plots || []).some((tile) => tile.crew === "wick");
+  if (!bench || (bench.volumes || 0) < 1) {
+    p.gold += 3;
+    return;
+  }
+  bench.volumes -= 1;
+  hall.lessons = Math.min(6, (hall.lessons || 0) + 1);
+  const pay = 14 + hall.lessons * 2 + (lit ? 6 : 0);
+  p.gold += pay;
+  log(world, lit
+    ? `${p.name}'s lecture hall reads a volume by candle for ${pay} gold.`
+    : `${p.name}'s lecture hall reads a volume for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5626,6 +5669,16 @@ function doAttack(world, actor, action) {
       bindery.volumes = 0;
       stolenBook = " and stole the books";
     }
+    let stolenLore = "";
+    const lecture = (target.plots || []).find((tile) => tile.crew === "lore");
+    if (lecture) {
+      const lesson = Math.min(target.gold, 11);
+      target.gold -= lesson;
+      g += lesson;
+      lecture.crew = "hand";
+      lecture.lessons = 0;
+      stolenLore = " and stole the lectures";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5636,7 +5689,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${stolenLore}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5984,6 +6037,7 @@ function economy(world, p, hour) {
   setCurd(world, p);
   copyInk(world, p);
   bindBook(world, p);
+  readLore(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -6268,6 +6322,8 @@ export function chooseAction(world, agent) {
     if (!inked && lettered && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "ink" };
     const bound = (agent.plots || []).some((tile) => tile.crew === "book");
     if (!bound && inked && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "book" };
+    const lectured = (agent.plots || []).some((tile) => tile.crew === "lore");
+    if (!lectured && bound && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "lore" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };

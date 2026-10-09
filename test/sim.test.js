@@ -7936,6 +7936,134 @@ test("a bindery spends a quire and dries it in a cistern", () => {
   assert.ok(raid.log.some((row) => row.text.includes("stole the books")));
 });
 
+test("a lecture hall reads a bound volume and keeps the lesson", () => {
+  assert.equal(ORDERS, 10);
+  assert.equal(TICK_MS, 60 * 1000);
+  assert.equal(EARN.lore, 103);
+  assert.equal(EARN.book, 102);
+  const flats = [];
+  let marsh = null;
+  for (let q = -50; q <= 50 && (flats.length < 3 || !marsh); q++) {
+    for (let r = -50; r <= 50; r++) {
+      const kind = terrainKind(q, r);
+      if ((kind === "grass" || kind === "plain") && flats.length < 3) flats.push({ q, r });
+      if (!marsh && kind === "marsh") marsh = { q, r };
+    }
+  }
+  assert.equal(flats.length, 3);
+  assert.ok(marsh);
+  const hush = (seed) => {
+    const realm = newWorld({ seed });
+    realm.bands = [];
+    const seat = byId(realm, "you");
+    realm.provinces = [seat];
+    for (const key of Object.keys(seat.buildings)) seat.buildings[key] = 0;
+    seat.peasants = 0;
+    seat.soldiers = 0;
+    seat.elites = 0;
+    seat.thieves = 0;
+    seat.mystics = 0;
+    seat.muster = 0;
+    seat.ships = [];
+    seat.founders = [];
+    seat.colonies = [];
+    seat.ferries = [];
+    seat.pens = {};
+    seat.plots = [];
+    seat.studies = {};
+    seat.marks = {};
+    seat.relics = {};
+    seat.doctrine = "";
+    seat.spells = { bulwark: 0, fury: 0, shade: 0 };
+    seat.fold = 0;
+    seat.foldUntil = 0;
+    seat.grain = 0;
+    seat.gold = 1000;
+    seat.utopia = 0;
+    seat.ledger = {};
+    seat.orders = ORDERS;
+    seat.acted = false;
+    seat.kind = "human";
+    return { realm, seat };
+  };
+  const w = hush(4);
+  const you = w.seat;
+  you.plots = [{ q: marsh.q, r: marsh.r, crew: "hand" }];
+  assert.equal(applyAction(w.realm, "you", { type: "lore" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "hand", structure: "field" }];
+  assert.equal(applyAction(w.realm, "you", { type: "lore" }).ok, false);
+  you.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lot" }];
+  you.gold = 100;
+  assert.equal(applyAction(w.realm, "you", { type: "lore" }).ok, false);
+  you.gold = 1000;
+  you.orders = 0;
+  assert.equal(applyAction(w.realm, "you", { type: "lore" }).ok, false);
+  you.orders = ORDERS;
+  const raised = applyAction(w.realm, "you", { type: "lore" });
+  assert.equal(raised.ok, true, raised.message);
+  assert.match(raised.message, /Lecture hall/);
+  assert.equal(you.plots[0].crew, "lore");
+  assert.equal(you.plots[0].lessons, 0);
+  assert.equal(you.gold, 825);
+  assert.equal(you.orders, ORDERS - 1);
+  assert.equal(you.ledger.lore, EARN.lore);
+  assert.equal(applyAction(w.realm, "you", { type: "lore" }).ok, false);
+
+  const empty = hush(5);
+  empty.seat.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lore", lessons: 0 }];
+  advanceHour(empty.realm);
+  assert.equal(empty.seat.gold, 1003);
+  assert.equal(empty.seat.grain, 0);
+  assert.equal(empty.seat.plots[0].lessons, 0);
+  assert.equal(empty.realm.log.some((row) => row.text.includes("reads a volume")), false);
+
+  const shelf = hush(6);
+  shelf.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "lore", lessons: 0 },
+    { q: flats[1].q, r: flats[1].r, crew: "book", volumes: 2 },
+  ];
+  advanceHour(shelf.realm);
+  assert.equal(shelf.seat.gold, 1019);
+  assert.equal(shelf.seat.grain, 0);
+  assert.equal(shelf.seat.plots[1].volumes, 1);
+  assert.equal(shelf.seat.plots[0].lessons, 1);
+  assert.ok(shelf.realm.log.some((row) => row.text.includes("reads a volume for 16 gold")));
+  advanceHour(shelf.realm);
+  assert.equal(shelf.seat.gold, 1040);
+  assert.equal(shelf.seat.plots[1].volumes, 0);
+  assert.equal(shelf.seat.plots[0].lessons, 2);
+  assert.ok(shelf.realm.log.some((row) => row.text.includes("reads a volume for 18 gold")));
+
+  const lit = hush(7);
+  lit.seat.plots = [
+    { q: flats[0].q, r: flats[0].r, crew: "lore", lessons: 0 },
+    { q: flats[1].q, r: flats[1].r, crew: "book", volumes: 2 },
+    { q: flats[2].q, r: flats[2].r, crew: "wick" },
+  ];
+  advanceHour(lit.realm);
+  assert.equal(lit.seat.gold, 1028);
+  assert.equal(lit.seat.grain, 0);
+  assert.equal(lit.seat.plots[1].volumes, 1);
+  assert.equal(lit.seat.plots[0].lessons, 1);
+  assert.ok(lit.realm.log.some((row) => row.text.includes("reads a volume by candle for 22 gold")));
+
+  const raid = newWorld({ seed: 11 });
+  const atk = byId(raid, "you");
+  const vic = byId(raid, "harrow");
+  atk.soldiers = 200;
+  vic.soldiers = 8;
+  vic.elites = 0;
+  vic.buildings.keep = 0;
+  vic.gold = 80;
+  vic.plots = [{ q: flats[0].q, r: flats[0].r, crew: "lore", lessons: 3 }];
+  const hit = applyAction(raid, "you", { type: "attack", target: "harrow", mode: "sack" });
+  assert.equal(hit.ok, true, hit.message);
+  assert.equal(hit.win, true);
+  assert.equal(vic.plots[0].crew, "hand");
+  assert.equal(vic.plots[0].lessons, 0);
+  assert.ok(raid.log.some((row) => row.text.includes("stole the lectures")));
+});
+
 test("save and load keep the hour and the random stream", () => {
   const w = newWorld({ seed: 7 });
   advanceHour(w);
