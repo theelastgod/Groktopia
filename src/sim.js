@@ -105,6 +105,7 @@ export const EARN = {
   oil: 99,
   curd: 100,
   ink: 101,
+  book: 102,
 };
 
 export const FACTIONS = {
@@ -932,6 +933,7 @@ export const AMBITIONS = [
   { id: "oil", name: "Raise an oil press", purse: 35, blurb: "Raise an oil press on open ground.", match: (action) => action.type === "oil" },
   { id: "curd", name: "Raise a cheese cave", purse: 35, blurb: "Raise a cheese cave on open ground.", match: (action) => action.type === "curd" },
   { id: "ink", name: "Raise an ink loft", purse: 35, blurb: "Raise an ink loft on open ground.", match: (action) => action.type === "ink" },
+  { id: "book", name: "Raise a bindery", purse: 35, blurb: "Raise a bindery on open ground.", match: (action) => action.type === "book" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -1019,6 +1021,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "oil") result = doOil(world, actor);
   else if (action.type === "curd") result = doCurd(world, actor);
   else if (action.type === "ink") result = doInk(world, actor);
+  else if (action.type === "book") result = doBook(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2829,6 +2832,46 @@ function copyInk(world, p) {
   log(world, lit
     ? `${p.name}'s ink loft copies a letter by candle for ${pay} gold.`
     : `${p.name}'s ink loft copies a letter for ${pay} gold.`);
+}
+
+function doBook(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "book")) return fail("A bindery already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 170) return fail("A bindery wants 170 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A bindery needs a hand or an open lot on grass or plain.");
+  actor.gold -= 170;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "book";
+  plot.volumes = 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.book;
+    notePurse(actor, "book", EARN.book);
+    purse = ` Purse +${formatUtopia(EARN.book)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a bindery. An empty bench pays 3 gold. An ink loft with a quire on the shelf binds it for 15 gold, and a cistern adds 7 for the dry. The loft still copies first. A sack steals the books.${purse}`);
+  return { ok: true, message: `Bindery on the open ground.${purse}` };
+}
+
+function bindBook(world, p) {
+  const bench = (p.plots || []).find((tile) => tile.crew === "book");
+  if (!bench) return;
+  const loft = (p.plots || []).find((tile) => tile.crew === "ink");
+  const dry = (p.plots || []).some((tile) => tile.crew === "cistern");
+  if (!loft || (loft.quires || 0) < 1) {
+    p.gold += 3;
+    return;
+  }
+  loft.quires -= 1;
+  bench.volumes = Math.min(6, (bench.volumes || 0) + 1);
+  const pay = 15 + (dry ? 7 : 0);
+  p.gold += pay;
+  log(world, dry
+    ? `${p.name}'s bindery binds a quire in the dry for ${pay} gold.`
+    : `${p.name}'s bindery binds a quire for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5573,6 +5616,16 @@ function doAttack(world, actor, action) {
       inkLoft.quires = 0;
       spilledInk = " and spilled the ink";
     }
+    let stolenBook = "";
+    const bindery = (target.plots || []).find((tile) => tile.crew === "book");
+    if (bindery) {
+      const volume = Math.min(target.gold, 12);
+      target.gold -= volume;
+      g += volume;
+      bindery.crew = "hand";
+      bindery.volumes = 0;
+      stolenBook = " and stole the books";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5583,7 +5636,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -5930,6 +5983,7 @@ function economy(world, p, hour) {
   pressOil(world, p);
   setCurd(world, p);
   copyInk(world, p);
+  bindBook(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -6212,6 +6266,8 @@ export function chooseAction(world, agent) {
     const inked = (agent.plots || []).some((tile) => tile.crew === "ink");
     const lettered = (agent.plots || []).some((tile) => tile.crew === "dove");
     if (!inked && lettered && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "ink" };
+    const bound = (agent.plots || []).some((tile) => tile.crew === "book");
+    if (!bound && inked && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "book" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };
