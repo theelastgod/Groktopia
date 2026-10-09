@@ -108,6 +108,7 @@ export const EARN = {
   book: 102,
   lore: 103,
   scroll: 104,
+  crier: 105,
 };
 
 export const FACTIONS = {
@@ -938,6 +939,7 @@ export const AMBITIONS = [
   { id: "book", name: "Raise a bindery", purse: 35, blurb: "Raise a bindery on open ground.", match: (action) => action.type === "book" },
   { id: "lore", name: "Raise a lecture hall", purse: 35, blurb: "Raise a lecture hall on open ground.", match: (action) => action.type === "lore" },
   { id: "scroll", name: "Raise a scroll chest", purse: 35, blurb: "Raise a scroll chest on open ground.", match: (action) => action.type === "scroll" },
+  { id: "crier", name: "Raise a crier's stand", purse: 35, blurb: "Raise a crier's stand on open ground.", match: (action) => action.type === "crier" },
 ];
 
 function rollAmbition(actor, hour) {
@@ -1028,6 +1030,7 @@ export function applyAction(world, actorId, action) {
   else if (action.type === "book") result = doBook(world, actor);
   else if (action.type === "lore") result = doLore(world, actor);
   else if (action.type === "scroll") result = doScroll(world, actor);
+  else if (action.type === "crier") result = doCrier(world, actor);
   else if (action.type === "siege") result = doSiege(world, actor, action.target);
   else if (action.type === "sally") result = doSally(world, actor, action.target);
   else if (action.type === "ride") result = doRide(world, actor, action.band);
@@ -2958,6 +2961,46 @@ function rollScroll(world, p) {
   log(world, rung
     ? `${p.name}'s scroll chest rolls a lesson at the bell for ${pay} gold.`
     : `${p.name}'s scroll chest rolls a lesson for ${pay} gold.`);
+}
+
+function doCrier(world, actor) {
+  ensurePlots(world);
+  if ((actor.plots || []).some((tile) => tile.crew === "crier")) return fail("A crier's stand already stands on the acres.");
+  if (actor.orders < 1) return fail("No orders left this hour.");
+  if (actor.gold < 185) return fail("A crier's stand wants 185 gold.");
+  const plot = (actor.plots || []).find((tile) => (tile.crew === "hand" || tile.crew === "lot") && !tile.structure && fieldGround(tile));
+  if (!plot) return fail("A crier's stand needs a hand or an open lot on grass or plain.");
+  actor.gold -= 185;
+  actor.orders -= 1;
+  actor.acted = true;
+  plot.crew = "crier";
+  plot.cries = 0;
+  let purse = "";
+  if (actor.kind === "human") {
+    actor.utopia += EARN.crier;
+    notePurse(actor, "crier", EARN.crier);
+    purse = ` Purse +${formatUtopia(EARN.crier)} $UTOPIA.`;
+  }
+  log(world, `${actor.name} raises a crier's stand. An empty stand pays 3 gold. A scroll chest with a copy cries it for 12 gold plus 2 for each cry kept, up to 6. A dovecote adds 8 when the birds carry the word. The chest still rolls first. A sack steals the cries.${purse}`);
+  return { ok: true, message: `Crier's stand on the open ground.${purse}` };
+}
+
+function cryCopy(world, p) {
+  const stand = (p.plots || []).find((tile) => tile.crew === "crier");
+  if (!stand) return;
+  const chest = (p.plots || []).find((tile) => tile.crew === "scroll");
+  const birds = (p.plots || []).some((tile) => tile.crew === "dove");
+  if (!chest || (chest.copies || 0) < 1) {
+    p.gold += 3;
+    return;
+  }
+  chest.copies -= 1;
+  stand.cries = Math.min(6, (stand.cries || 0) + 1);
+  const pay = 12 + stand.cries * 2 + (birds ? 8 : 0);
+  p.gold += pay;
+  log(world, birds
+    ? `${p.name}'s crier cries a copy by dove for ${pay} gold.`
+    : `${p.name}'s crier cries a copy for ${pay} gold.`);
 }
 
 function maltHouse(world, p) {
@@ -5732,6 +5775,16 @@ function doAttack(world, actor, action) {
       chest.copies = 0;
       stolenScroll = " and stole the scrolls";
     }
+    let stolenCry = "";
+    const stand = (target.plots || []).find((tile) => tile.crew === "crier");
+    if (stand) {
+      const cry = Math.min(target.gold, 9);
+      target.gold -= cry;
+      g += cry;
+      stand.crew = "hand";
+      stand.cries = 0;
+      stolenCry = " and stole the cries";
+    }
     let hull = "";
     if (keelUp(target, world.hour)) {
       const plank = Math.min(target.gold, 55);
@@ -5742,7 +5795,7 @@ function doAttack(world, actor, action) {
     }
     actor.gold += g;
     actor.grain += f;
-    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${stolenLore}${stolenScroll}${hull}`;
+    detail = `sacked ${g} gold and ${f} grain${scattered}${burned}${torn}${logs}${face}${spoke}${tower}${stake}${crust}${ashes}${smoked}${scatteredWood}${trod}${clapper}${vanes}${cracked}${quenched}${drowned}${spoiled}${cote}${loaf}${spilled}${vats}${rinsed}${smashed}${cutWarp}${snuffed}${lather}${wicker}${stolen}${broached}${crackedOil}${stolenCurd}${spilledInk}${stolenBook}${stolenLore}${stolenScroll}${stolenCry}${hull}`;
     const penned = takeCaptives(actor, target);
     if (penned) detail += ` and penned ${penned}`;
   } else if (win && mode === "raze") {
@@ -6092,6 +6145,7 @@ function economy(world, p, hour) {
   bindBook(world, p);
   readLore(world, p);
   rollScroll(world, p);
+  cryCopy(world, p);
   feedCaptives(p);
   p.aether += Math.floor(p.buildings.spire * 6 * f.aether);
   if (p.studies && p.studies.rite) p.aether += 6;
@@ -6380,6 +6434,8 @@ export function chooseAction(world, agent) {
     if (!lectured && bound && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "lore" };
     const rolled = (agent.plots || []).some((tile) => tile.crew === "scroll");
     if (!rolled && lectured && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "scroll" };
+    const cried = (agent.plots || []).some((tile) => tile.crew === "crier");
+    if (!cried && rolled && soapLot && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.08) return { type: "crier" };
     const threatened = (agent.colonies || []).find((colony) => colony.port && (colony.moleUntil || 0) <= (world.hour || 0) && world.provinces.some((other) => other.id !== agent.id && (other.ships || []).some((ship) => hexDist(ship.q, ship.r, colony.q, colony.r) <= 6)));
     if (threatened && agent.gold >= 400 && agent.orders >= 1 && rng.next() < 0.2) {
       return { type: "mole", colony: threatened.id };
