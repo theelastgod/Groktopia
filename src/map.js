@@ -365,6 +365,27 @@ function drawDye(ctx, x, y, time) {
   ctx.restore();
 }
 
+function drawCurd(ctx, x, y, time) {
+  const wobble = Math.sin(time * 1.4) * 0.6;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#e6c56a";
+  ctx.beginPath();
+  ctx.ellipse(-4, 3 + wobble, 4.5, 2.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(4, 2, 4, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#8a5a32";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(-4, 3 + wobble, 2.2, 0, Math.PI);
+  ctx.stroke();
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("CURD", 0, 18);
+  ctx.restore();
+}
+
 function drawOil(ctx, x, y, time) {
   const turn = Math.sin(time * 2) * 0.4;
   ctx.save();
@@ -1247,6 +1268,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "boot") drawBoot(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "brew") drawBrew(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew === "oil") drawOil(ctx, cell.pos.x, cell.pos.y, time || 0);
+    else if (plot && plot.crew === "curd") drawCurd(ctx, cell.pos.x, cell.pos.y, time || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
