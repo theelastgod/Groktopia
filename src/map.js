@@ -448,6 +448,38 @@ function drawLore(ctx, x, y, time, lessons) {
   ctx.restore();
 }
 
+function drawScroll(ctx, x, y, time, copies) {
+  const sway = Math.sin(time * 1.8) * 0.4;
+  const shelf = Math.max(0, Math.min(4, copies || 0));
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#6a3a28";
+  ctx.fillRect(-8, 2, 10, 5);
+  ctx.fillStyle = "#c4a46a";
+  ctx.fillRect(-8, 2, 10, 1.2);
+  for (let i = 0; i < shelf; i++) {
+    ctx.save();
+    ctx.translate(-2 + i * 3, -2 - i);
+    ctx.rotate(sway * (i % 2 ? -1 : 1));
+    ctx.fillStyle = "#efe2c4";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 1.6, 3.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#8a5a32";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(0, -2.4);
+    ctx.lineTo(0, 2.4);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.fillStyle = "#e2c078";
+  ctx.font = "700 10px Palatino, Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.fillText("ROLL", 0, 18);
+  ctx.restore();
+}
+
 function drawCurd(ctx, x, y, time) {
   const wobble = Math.sin(time * 1.4) * 0.6;
   ctx.save();
@@ -1355,6 +1387,7 @@ function drawHexMap(ctx, cam, viewW, viewH, world, time) {
     else if (plot && plot.crew === "ink") drawInk(ctx, cell.pos.x, cell.pos.y, time || 0, plot.quires || 0);
     else if (plot && plot.crew === "book") drawBook(ctx, cell.pos.x, cell.pos.y, time || 0, plot.volumes || 0);
     else if (plot && plot.crew === "lore") drawLore(ctx, cell.pos.x, cell.pos.y, time || 0, plot.lessons || 0);
+    else if (plot && plot.crew === "scroll") drawScroll(ctx, cell.pos.x, cell.pos.y, time || 0, plot.copies || 0);
     else if (plot && plot.crew) {
       const role = plot.crew === "hand" ? "hand" : plot.crew;
       const arms = role === "foot" || role === "soldier" || role === "elite" ? cell.owner.weapon : "";
